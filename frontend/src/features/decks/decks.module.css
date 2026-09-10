@@ -1,0 +1,192 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: var(--size-title);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.deckCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.deckTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.deckName {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--size-lead);
+}
+
+.deckMeta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.folderCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: left;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.folderIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-field);
+  background: var(--color-surface-brand);
+  color: var(--color-text-brand);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.progressStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.divider {
+  height: 1px;
+  background: var(--color-border-soft);
+}
+
+.sectionFooter {
+  display: flex;
+  justify-content: center;
+}
+
+.sheetDestructive {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.meta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cardItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+  width: 100%;
+}
+
+.cardFront {
+  font-weight: 600;
+}
+
+.cardBack {
+  font-size: var(--size-small);
+  color: var(--color-text-secondary);
+}
+
+.cardMeta {
+  font-size: var(--size-meta);
+  color: var(--color-text-muted);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.memberRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.memberRow > :last-child {
+  flex: none;
+}
+
+.memberInfo {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+
+.memberRow:last-child {
+  border-bottom: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (min-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

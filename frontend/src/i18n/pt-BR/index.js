@@ -1,0 +1,15 @@
+import { common } from './common.js'
+import { auth } from './auth.js'
+import { study } from './study.js'
+import { create } from './create.js'
+import { decks } from './decks.js'
+import { community } from './community.js'
+import { wallet } from './wallet.js'
+import { profile } from './profile.js'
+import { proto } from './proto.js'
+import { parental } from './parental.js'
+import { partner } from './partner.js'
+import { b2b } from './b2b.js'
+import { admin } from './admin.js'
+
+export const ptBR = { common, auth, study, create, decks, community, wallet, profile, proto, parental, partner, b2b, admin }

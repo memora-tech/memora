@@ -1,0 +1,2098 @@
+openapi: 3.0.3
+info:
+  title: Memora API (mock)
+  version: "1.0.0"
+  description: |
+    API mock do Memora — Express 5, estado em memória (reinicia com o processo, sem banco de
+    dados). Reproduz as regras de negócio do Escopo Consolidado v2 para servir de backend ao
+    protótipo navegável; não é a API de produção.
+
+    Todas as rotas de negócio vivem sob `/v1`. A autenticação é por sessão simples (token opaco
+    em `Authorization: Bearer <token>`), sem JWT nem refresh — ver
+    [ADR-0008](./adr/0008-autenticacao-por-sessao-simples.md).
+
+    Cada área do produto (aluno, responsável, B2B, back-office, parceiro) faz login com sua
+    própria rota `POST .../auth/login` e recebe um token cujo `role` restringe o que pode
+    acessar (`requireRole` em `backend/src/lib/auth.js`).
+  contact:
+    name: Memora — engenharia
+  license:
+    name: Uso interno
+servers:
+  - url: http://localhost:3180/v1
+    description: Desenvolvimento local (porta configurável via `PORT`)
+
+tags:
+  - name: Sistema
+    description: Health check e utilidades do protótipo (`/_proto`).
+  - name: Autenticação
+    description: Cadastro, login, confirmação e verificação de idade do app do aluno.
+  - name: Perfil
+    description: Dados da própria conta, sessões, consentimentos e solicitações ao responsável.
+  - name: Estudo
+    description: Sessão diária, revisões (FSRS), pausas, metas e objetivos.
+  - name: Decks
+    description: Decks e cards próprios, pastas, publicação e exportação.
+  - name: Geração
+    description: Pipeline de criação de decks por IA a partir de documento, foto, texto ou Anki.
+  - name: Comunidade
+    description: Feed, busca, votos, reações, comentários, denúncias e ranking de decks públicos.
+  - name: Carteira
+    description: Saldo de Neurônios, loja de cupons e resgates.
+  - name: Assinatura
+    description: Plano Premium, cobrança, cancelamento e reembolso.
+  - name: Privacidade
+    description: Exportação e exclusão de dados (LGPD), decisões automatizadas.
+  - name: Suporte
+    description: Chamados do aluno.
+  - name: Nôa
+    description: Catálogo de ações do agente de IA, sugestões e decisões reversíveis.
+  - name: Público
+    description: Prévia pública de decks, sem login.
+  - name: Painel Parental
+    description: Visão e permissões do responsável sobre a conta de um menor.
+  - name: Painel B2B
+    description: Visão institucional (escola) por turma, com agregação mínima.
+  - name: Back-office
+    description: Moderação, suporte, comercial, financeiro, compliance e engenharia.
+  - name: Painel do Parceiro
+    description: Campanhas de cupom, validação de resgate e conversão.
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: >
+        Token de sessão retornado por qualquer rota `auth/login`. Sessões expiram em 30 dias
+        sem uso (deslizante); usar em `me`, `parental`, `b2b`, `admin` e `partner` é mutuamente
+        exclusivo por `role`.
+
+  parameters:
+    deckId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: ID do deck.
+    cardId:
+      name: cardId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Sessão ausente, inválida ou expirada.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { code: unauthorized, message: "Sessão inválida ou expirada." }
+    Forbidden:
+      description: Sessão válida, mas sem permissão para este papel/área.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Recurso não encontrado (ou não pertence ao usuário autenticado).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Validation:
+      description: Corpo da requisição inválido.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, description: "Slug estável da causa, ex.: validation, not_found, guardian_required." }
+        message: { type: string, description: "Mensagem em PT-BR, pronta para exibição." }
+      additionalProperties: true
+      description: Formato uniforme de erro em toda a API (ver `fail()` em `backend/src/lib/helpers.js`).
+
+    User:
+      type: object
+      description: Perfil público do aluno logado (`publicUser()` em `backend/src/lib/helpers.js`).
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        birthDate: { type: string, format: date }
+        isMinor: { type: boolean }
+        guardianId: { type: string, nullable: true }
+        plan: { type: string, enum: [free, premium] }
+        locale: { type: string, example: pt-BR }
+        timezone: { type: string, example: America/Sao_Paulo }
+        verified:
+          type: object
+          properties: { email: { type: boolean }, phone: { type: boolean } }
+        canEarn: { type: boolean, description: "true somente com e-mail e telefone confirmados." }
+        ageVerification:
+          type: object
+          properties:
+            status: { type: string, enum: [pendente, aguardando_responsavel, aprovado] }
+            method: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deactivatedAt: { type: string, format: date-time, nullable: true }
+        publicProfile: { type: object, additionalProperties: true }
+        settings: { type: object, additionalProperties: true }
+        guardianPermissions: { type: object, nullable: true, additionalProperties: true }
+        streak: { type: integer }
+        studyDays: { type: integer }
+        balance: { type: integer, description: "Saldo de Neurônios." }
+        onboardingDone: { type: boolean }
+
+    Session:
+      type: object
+      properties:
+        id: { type: string }
+        device: { type: string }
+        location: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        current: { type: boolean }
+
+    Card:
+      type: object
+      properties:
+        id: { type: string }
+        deckId: { type: string }
+        type: { type: string, enum: [text, image, audio] }
+        front: { type: string }
+        back: { type: string }
+        media: { type: object, nullable: true, additionalProperties: true }
+        lang: { type: string }
+        origin:
+          type: object
+          properties:
+            document: { type: string }
+            page: { type: integer, nullable: true }
+            excerpt: { type: string, nullable: true }
+            model: { type: string, nullable: true }
+            promptVersion: { type: string, nullable: true }
+        uncertain: { type: boolean }
+        sched:
+          type: object
+          description: Estado do agendador FSRS (`backend/src/lib/fsrs.js`).
+          properties:
+            state: { type: string, enum: [new, review, relearning] }
+            stability: { type: number }
+            difficulty: { type: number }
+            due: { type: string, format: date-time, nullable: true }
+            lastReview: { type: string, format: date-time, nullable: true }
+            reps: { type: integer }
+            lapses: { type: integer }
+            consecutiveLapses: { type: integer }
+
+    Deck:
+      type: object
+      properties:
+        id: { type: string }
+        ownerId: { type: string }
+        name: { type: string }
+        categoryId: { type: string }
+        categoryName: { type: string }
+        tags: { type: array, items: { type: string } }
+        difficulty: { type: string, enum: [facil, medio, dificil] }
+        lang: { type: string }
+        difficult: { type: boolean }
+        focus: { type: boolean }
+        complementary: { type: boolean }
+        pinned: { type: boolean }
+        folderId: { type: string, nullable: true }
+        source: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+        lastStudiedAt: { type: string, format: date-time, nullable: true }
+        publication: { type: object, additionalProperties: true }
+        cardCount: { type: integer }
+        progress:
+          type: object
+          properties:
+            total: { type: integer }
+            due: { type: integer }
+            mastered: { type: integer }
+            learning: { type: integer }
+            offlineAvailable: { type: boolean }
+            offlineReason: { type: string, nullable: true }
+
+    Folder:
+      type: object
+      properties:
+        id: { type: string }
+        ownerId: { type: string }
+        name: { type: string }
+        parentId: { type: string, nullable: true }
+        depth: { type: integer }
+        shared: { type: boolean }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              contact: { type: string }
+              role: { type: string }
+              since: { type: string, format: date-time }
+        deckIds: { type: array, items: { type: string } }
+
+    Objective:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        name: { type: string }
+        date: { type: string, format: date }
+        subjects: { type: array, items: { type: string } }
+        outcome: { type: string, nullable: true, enum: [aprovado, reprovado, aguardando, nao_fiz, null] }
+        outcomeRewarded: { type: boolean }
+        daysLeft: { type: integer }
+        past: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    LedgerEntry:
+      type: object
+      description: Lançamento imutável do ledger de Neurônios (`backend/src/lib/ledger.js`).
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        userId: { type: string }
+        amount: { type: integer, description: "Positivo = crédito, negativo = débito." }
+        type:
+          type: string
+          enum: [daily_access, goal_bonus, objective_outcome, clone_bonus, referral_bonus, coupon_redeem, coupon_expired_refund, proto_adjustment]
+        meta: { type: object, additionalProperties: true }
+        balanceAfter: { type: integer }
+
+    GenerationJob:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        plan: { type: string, enum: [free, premium] }
+        source: { type: string, enum: [camera, file, text, anki, empty] }
+        documentName: { type: string }
+        pages: { type: integer }
+        status:
+          type: string
+          enum: [criado, na_fila, lendo, gerando, pronto, aprovado, falhou, cancelado, acima_do_orcamento, tentando_novamente]
+        queuePosition: { type: integer, nullable: true }
+        attempt: { type: integer }
+        result:
+          type: object
+          nullable: true
+          properties:
+            suggested:
+              type: object
+              properties:
+                name: { type: string }
+                categoryId: { type: string }
+                tags: { type: array, items: { type: string } }
+                difficulty: { type: string }
+            cards:
+              type: array
+              items:
+                type: object
+                properties:
+                  tempId: { type: string }
+                  front: { type: string }
+                  back: { type: string }
+                  uncertain: { type: boolean }
+                  origin: { type: object, additionalProperties: true }
+        approvedDeckId: { type: string, nullable: true }
+        overBudget: { type: object, nullable: true, additionalProperties: true }
+
+    Coupon:
+      type: object
+      properties:
+        id: { type: string }
+        partnerId: { type: string }
+        partnerName: { type: string }
+        title: { type: string }
+        description: { type: string }
+        costNeurons: { type: integer }
+        stock: { type: integer }
+        validityDays: { type: integer }
+        positioning: { type: string, nullable: true, enum: [primeira_posicao, destaque, null] }
+        affordable: { type: boolean }
+        soldOut: { type: boolean }
+        lastUnits: { type: boolean }
+
+    MyCoupon:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        couponId: { type: string }
+        partnerName: { type: string }
+        title: { type: string }
+        code: { type: string, example: "MEM-AB3C-9XZ2" }
+        redeemedAt: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+        status: { type: string, enum: [emitido, utilizado, expirado, expirado_reembolsado] }
+        usedAt: { type: string, format: date-time, nullable: true }
+
+    CommunityDeck:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        categoryId: { type: string }
+        categoryName: { type: string }
+        difficulty: { type: string }
+        lang: { type: string }
+        version: { type: integer }
+        publishedAt: { type: string, format: date-time }
+        tags: { type: array, items: { type: string } }
+        stats:
+          type: object
+          properties:
+            studiedWeek: { type: integer }
+            votes: { type: integer }
+            favorites: { type: integer }
+            comments: { type: integer }
+            clones: { type: integer }
+        reactions: { type: object, additionalProperties: { type: integer } }
+        author: { $ref: '#/components/schemas/Author' }
+        cardCount: { type: integer }
+        commentCount: { type: integer }
+        viewer:
+          type: object
+          properties:
+            favorited: { type: boolean }
+            voted: { type: boolean }
+            canVote: { type: boolean }
+            answered: { type: integer }
+            total: { type: integer }
+            myReactions: { type: array, items: { type: string } }
+            cloned: { type: boolean }
+
+    Author:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        handle: { type: string }
+        topic: { type: string }
+        level: { type: integer }
+        points: { type: integer }
+        badges: { type: array, items: { type: string } }
+        neuronsTotal: { type: integer }
+        decksCount: { type: integer }
+        followers: { type: integer }
+        following: { type: boolean }
+
+    Comment:
+      type: object
+      properties:
+        id: { type: string }
+        deckId: { type: string }
+        authorId: { type: string }
+        authorName: { type: string }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+        replies:
+          type: array
+          items: { $ref: '#/components/schemas/Comment' }
+
+    Publication:
+      type: object
+      description: Submissão de um deck para publicação na comunidade (fila de moderação).
+      properties:
+        id: { type: string }
+        deckId: { type: string }
+        authorId: { type: string }
+        authorName: { type: string }
+        deckName: { type: string }
+        version: { type: integer }
+        status: { type: string, enum: [em_triagem, em_revisao, aprovado, rejeitado] }
+        plan: { type: string }
+        submittedAt: { type: string, format: date-time }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        slaHours: { type: integer }
+        risk:
+          type: object
+          properties:
+            score: { type: integer }
+            level: { type: string, enum: [baixo, medio, alto] }
+            factors: { type: array, items: { type: string } }
+        reviewType: { type: string, enum: [integral, amostral] }
+        decision:
+          type: object
+          nullable: true
+          properties:
+            by: { type: string }
+            byName: { type: string }
+            decision: { type: string, enum: [aprovado, rejeitado] }
+            reasonCategory: { type: string, nullable: true }
+            excerpt: { type: string, nullable: true }
+            appealDeadline: { type: string, format: date-time, nullable: true }
+        sla:
+          type: object
+          properties:
+            pct: { type: integer }
+            dueAt: { type: string, format: date-time, nullable: true }
+            alert: { type: boolean }
+            hoursLeft: { type: integer }
+
+    Appeal:
+      type: object
+      properties:
+        id: { type: string }
+        publicationId: { type: string }
+        authorName: { type: string }
+        filedAt: { type: string, format: date-time }
+        deadline: { type: string, format: date-time }
+        text: { type: string }
+        status: { type: string, enum: [em_analise, aceita, mantida] }
+        reviewer: { type: string, nullable: true }
+        originalReviewer: { type: string, nullable: true }
+
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        targetType: { type: string, enum: [deck, comment, contato_suspeito] }
+        targetId: { type: string }
+        targetName: { type: string }
+        reason: { type: string }
+        detail: { type: string, nullable: true }
+        reporter: { type: string }
+        status: { type: string, enum: [aberta, auto_analise, resolvida] }
+        createdAt: { type: string, format: date-time }
+        resolution: { type: object, nullable: true, additionalProperties: true }
+
+    SupportTicket:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        subject: { type: string }
+        message: { type: string }
+        channel: { type: string, enum: [chat, formulario] }
+        status: { type: string, enum: [aberto, respondido, resolvido] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        replies:
+          type: array
+          items:
+            type: object
+            properties:
+              by: { type: string }
+              text: { type: string }
+              at: { type: string, format: date-time }
+
+    NoaSuggestion:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        actionKey: { type: string, enum: [mark_difficult, adjust_goal, suggest_reinforcement, reorder_queue, reminder_time] }
+        title: { type: string }
+        status: { type: string, enum: [pendente, aceita, dispensada] }
+        deckId: { type: string, nullable: true }
+        goal: { type: integer, nullable: true }
+
+    NoaDecision:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        actionKey: { type: string }
+        at: { type: string, format: date-time }
+        text: { type: string }
+        reversible: { type: boolean }
+        reverted: { type: boolean }
+        contested: { type: object, nullable: true, additionalProperties: true }
+
+    StudySession:
+      type: object
+      description: Sessão de estudo do dia — retorno de `todaySession()` em `backend/src/routes/study.js`.
+      properties:
+        date: { type: string, format: date }
+        status: { type: string, enum: [pronto, sem_cards, concluido, reagendado, pausado] }
+        goal: { type: integer }
+        goalSuggested: { type: integer }
+        doneToday: { type: integer }
+        goalHitToday: { type: boolean }
+        cardsDue: { type: integer }
+        estimatedMinutes: { type: integer }
+        plan:
+          type: array
+          items:
+            type: object
+            properties:
+              deckId: { type: string }
+              deckName: { type: string }
+              available: { type: integer }
+              count: { type: integer }
+        cards: { type: array, items: { $ref: '#/components/schemas/Card' } }
+        streak: { type: integer }
+        reschedules: { type: object, properties: { used: { type: integer }, limit: { type: integer } } }
+        pausedUntil: { type: string, format: date-time, nullable: true }
+        nearestObjective: { type: object, nullable: true, additionalProperties: true }
+        noaSuggestion: { $ref: '#/components/schemas/NoaSuggestion' }
+        fatigue: { type: object, additionalProperties: true }
+        offline: { type: object, additionalProperties: true }
+        balance: { type: integer }
+        timezone: { type: string }
+
+paths:
+  # ---------------------------------------------------------------- Sistema
+  /health:
+    get:
+      tags: [Sistema]
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: API no ar.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  seededAt: { type: string, format: date-time }
+                  profile: { type: string }
+
+  # ------------------------------------------------------------ Autenticação
+  /auth/login:
+    post:
+      tags: [Autenticação]
+      summary: Login do aluno (e-mail ou atalho de demonstração)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider: { type: string, enum: [email, google, microsoft], default: email }
+                email: { type: string }
+                password: { type: string }
+                device: { type: string }
+      responses:
+        "200":
+          description: Sessão criada. Qualquer credencial preenchida funciona no protótipo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  sessionId: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /auth/register:
+    post:
+      tags: [Autenticação]
+      summary: Cadastro (telefone e data de nascimento obrigatórios)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, phone, birthDate, student]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                phone: { type: string, description: "10 a 11 dígitos com DDD." }
+                birthDate: { type: string, format: date }
+                student: { type: boolean }
+                origin: { type: string, nullable: true }
+                captchaToken: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Conta criada; próximo passo é confirmar e-mail/telefone.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+                  age: { type: integer, nullable: true }
+                  requiresGuardianConsent: { type: boolean }
+                  nextStep: { type: string, example: confirm }
+        "422": { $ref: '#/components/responses/Validation' }
+        "429":
+          description: "Mais de 5 contas pelo mesmo IP em 24 h sem `captchaToken`."
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /auth/confirm:
+    post:
+      tags: [Autenticação]
+      summary: "Confirma e-mail ou telefone (código fixo no protótipo: 123456)"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, code]
+              properties:
+                channel: { type: string, enum: [email, phone] }
+                code: { type: string }
+      responses:
+        "200":
+          description: Canal confirmado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verified: { type: object, properties: { email: { type: boolean }, phone: { type: boolean } } }
+                  user: { $ref: '#/components/schemas/User' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /auth/resend:
+    post:
+      tags: [Autenticação]
+      summary: Reenvia o código de confirmação
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { channel: { type: string, enum: [email, phone] } } }
+      responses:
+        "200": { description: Reenviado (sempre no mock)., content: { application/json: { schema: { type: object, properties: { sent: { type: boolean }, channel: { type: string } } } } } }
+
+  /auth/age-verification:
+    post:
+      tags: [Autenticação]
+      summary: Verificação de idade por terceiro homologado
+      description: >
+        Menores de 16 anos exigem dados do responsável (`guardian.name`) antes de aprovar.
+        Retenção: apenas resultado, método, data, hash e verificador — documento é apagado em 24 h.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method: { type: string }
+                guardian: { type: object, properties: { name: { type: string }, email: { type: string }, phone: { type: string } } }
+      responses:
+        "200":
+          description: "Aprovado, ou `aguardando_responsavel` se faltar o responsável."
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [aprovado, aguardando_responsavel] }
+                  ageVerification: { type: object, additionalProperties: true }
+                  isMinor: { type: boolean }
+                  user: { $ref: '#/components/schemas/User' }
+
+  /auth/onboarding:
+    post:
+      tags: [Autenticação]
+      summary: Onboarding — contexto, matérias, tempo disponível e meta sugerida
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                context: { type: string }
+                subjects: { type: array, items: { type: string } }
+                minutesPerDay: { type: integer, default: 10 }
+                objective: { type: object, properties: { name: { type: string }, date: { type: string, format: date } } }
+      responses:
+        "200":
+          description: Meta diária calculada e objetivo opcional criado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  goal: { type: integer }
+                  objective: { $ref: '#/components/schemas/Objective' }
+                  planOfDay: { type: object, properties: { minutes: { type: integer }, cards: { type: integer } } }
+
+  /auth/password/recover:
+    post:
+      tags: [Autenticação]
+      summary: Recuperação de senha por e-mail
+      security: []
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { email: { type: string } } } } }
+      responses:
+        "200": { description: "Sempre responde `sent: true` (não revela se a conta existe)." }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /auth/logout:
+    post:
+      tags: [Autenticação]
+      summary: Encerra a sessão atual
+      responses:
+        "200": { description: OK }
+
+  # ----------------------------------------------------------------- Perfil
+  /me:
+    get:
+      tags: [Perfil]
+      summary: Dados da própria conta
+      description: "Credita +1 Neurônio de acesso diário (uma vez por dia, se verificado e não desativado)."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+                  dailyCredit: { $ref: '#/components/schemas/LedgerEntry' }
+                  notifications: { type: object, additionalProperties: true }
+                  consents: { type: object, additionalProperties: true }
+                  subscription: { type: object, additionalProperties: true }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /me/settings:
+    patch:
+      tags: [Perfil]
+      summary: Atualiza nome, idioma, fuso, meta diária, intensidade de notificação e acessibilidade
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                locale: { type: string }
+                timezone: { type: string }
+                intensity: { type: string, enum: [leve, padrao, intenso], description: "Contas de menor ficam travadas em leve." }
+                reminderTime: { type: string, example: "20:00" }
+                push: { type: boolean }
+                dailyGoal: { type: integer, minimum: 5, maximum: 200 }
+                fatigueDetection: { type: boolean }
+                accessibility: { type: object, additionalProperties: true }
+      responses:
+        "200": { description: OK }
+        "403": { description: "`intensity_locked` para contas de menor.", content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/sessions:
+    get:
+      tags: [Perfil]
+      summary: Lista dispositivos conectados
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: { type: array, items: { $ref: '#/components/schemas/Session' } }
+                  policy: { type: object, properties: { expiresAfterDays: { type: integer }, sliding: { type: boolean } } }
+    delete:
+      tags: [Perfil]
+      summary: Encerra todas as sessões, exceto a atual
+      responses: { "200": { description: OK } }
+
+  /me/sessions/{id}:
+    delete:
+      tags: [Perfil]
+      summary: Encerra uma sessão específica
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { description: "Não é possível encerrar a sessão atual por aqui." }
+
+  /me/password:
+    post:
+      tags: [Perfil]
+      summary: Troca de senha (encerra as outras sessões)
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [current, next], properties: { current: { type: string }, next: { type: string, minLength: 8 } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /me/consents:
+    get:
+      tags: [Perfil]
+      summary: Consentimentos (escola, WhatsApp por categoria)
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [Perfil]
+      summary: Atualiza consentimentos
+      description: "Menores sem liberação do responsável recebem `guardian_required` (403) em vez de aplicar."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schoolShare: { type: boolean }
+                whatsapp: { type: object, additionalProperties: { type: boolean } }
+      responses:
+        "200": { description: OK }
+        "403": { description: guardian_required, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /me/guardian-requests:
+    get:
+      tags: [Perfil]
+      summary: Lista solicitações pendentes ao responsável (só para menores)
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Perfil]
+      summary: Cria uma solicitação de liberação ao responsável
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [community, publicLink, externalMembers, schoolShare, whatsappInfo] }
+                detail: { type: string }
+      responses:
+        "201": { description: Criada }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  # ----------------------------------------------------------------- Estudo
+  /study/today:
+    get:
+      tags: [Estudo]
+      summary: Sessão de estudo do dia (fila de cards, plano, streak, sugestão da Nôa)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/StudySession' } } } }
+
+  /reviews:
+    post:
+      tags: [Estudo]
+      summary: Envia um lote de revisões (aceita fila offline, dedup por clientId)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviews:
+                  type: array
+                  items:
+                    type: object
+                    required: [clientId, cardId, rating]
+                    properties:
+                      clientId: { type: string, description: "ID gerado no cliente; garante idempotência." }
+                      cardId: { type: string }
+                      rating: { type: string, enum: [again, hard, good, easy] }
+                      reviewedAt: { type: string, format: date-time }
+                      durationMs: { type: integer }
+                      offline: { type: boolean }
+      responses:
+        "200":
+          description: >
+            Revisões aceitas atualizam o agendador FSRS de cada card e a streak (mínimo 20 h
+            entre "dias"). Revisões com desvio de horário implausível (> 24 h) entram em
+            `flagged` e na fila antifraude.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: { type: array, items: { type: string } }
+                  duplicates: { type: array, items: { type: string } }
+                  flagged: { type: array, items: { type: string } }
+                  doneToday: { type: integer }
+                  goal: { type: integer }
+                  goalHitToday: { type: boolean }
+                  streak: { type: integer }
+                  rewards: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } }
+                  balance: { type: integer }
+
+  /study/complete:
+    post:
+      tags: [Estudo]
+      summary: Fecha a sessão do dia e resume o resultado
+      responses: { "200": { description: OK } }
+
+  /study/skip:
+    post:
+      tags: [Estudo]
+      summary: '"Hoje não" — reagenda o dia (até 3 vezes por semana)'
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/StudySession' } } } }
+        "409": { description: reschedule_limit }
+
+  /study/undo-skip:
+    post:
+      tags: [Estudo]
+      summary: Desfaz o "Hoje não" do dia
+      responses: { "200": { description: OK } }
+
+  /study/pause:
+    post:
+      tags: [Estudo]
+      summary: Pausa a meta por N dias (1 a 30)
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [days], properties: { days: { type: integer, minimum: 1, maximum: 30 } } } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /study/resume:
+    post:
+      tags: [Estudo]
+      summary: Retoma após pausa — reduz o plano à metade se a pausa foi ≥ 3 dias
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { $ref: '#/components/schemas/StudySession' }
+                  summary: { type: object, nullable: true, additionalProperties: true }
+
+  /study/goal:
+    patch:
+      tags: [Estudo]
+      summary: Ajusta a meta diária de cards (5 a 200)
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [goal], properties: { goal: { type: integer, minimum: 5, maximum: 200 } } } } }
+      responses: { "200": { description: OK } }
+
+  /study/plan:
+    patch:
+      tags: [Estudo]
+      summary: Reordena decks do dia ou ajusta quantidade por deck
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order: { type: array, items: { type: string } }
+                adjustments: { type: object, additionalProperties: { type: integer } }
+                reset: { type: boolean }
+      responses: { "200": { description: OK } }
+
+  /study/fatigue:
+    post:
+      tags: [Estudo]
+      summary: Liga/desliga detecção de cansaço ou mantém a carga do dia
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { enabled: { type: boolean }, keepLoad: { type: boolean } } } } }
+      responses: { "200": { description: OK } }
+
+  /study/history:
+    get:
+      tags: [Estudo]
+      summary: Histórico de decks estudados (próprios e da comunidade) e criados
+      responses: { "200": { description: OK } }
+
+  /study/mistakes:
+    get:
+      tags: [Estudo]
+      summary: '"Onde você mais erra" — até 8 cards com mais lapsos, com sugestão de reforço da Nôa'
+      responses: { "200": { description: OK } }
+
+  /objectives:
+    get:
+      tags: [Estudo]
+      summary: Lista objetivos (provas, concursos)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { objectives: { type: array, items: { $ref: '#/components/schemas/Objective' } } } } } } }
+    post:
+      tags: [Estudo]
+      summary: Cria um objetivo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, date]
+              properties: { name: { type: string }, date: { type: string, format: date }, subjects: { type: array, items: { type: string } } }
+      responses:
+        "201": { description: Criado }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /objectives/{id}:
+    patch:
+      tags: [Estudo]
+      summary: Edita nome, data, matérias ou prioridade do objetivo
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Estudo]
+      summary: Remove um objetivo
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /objectives/{id}/outcome:
+    post:
+      tags: [Estudo]
+      summary: Registra o resultado do objetivo (paga +5 Neurônios uma vez)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [outcome], properties: { outcome: { type: string, enum: [aprovado, reprovado, aguardando, nao_fiz] } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  # ------------------------------------------------------------------ Decks
+  /decks:
+    get:
+      tags: [Decks]
+      summary: Meus decks, favoritos, pastas e limites do plano
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Decks]
+      summary: Cria um deck vazio
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string }, categoryId: { type: string }, tags: { type: array, items: { type: string } }, difficulty: { type: string }, folderId: { type: string, nullable: true } }
+      responses:
+        "201": { description: Criado, content: { application/json: { schema: { type: object, properties: { deck: { $ref: '#/components/schemas/Deck' } } } } } }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /decks/{id}:
+    get:
+      tags: [Decks]
+      summary: Detalhe do deck, cards e menu de ações disponíveis
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Decks]
+      summary: Atualiza flags (difícil/foco/complementar/fixado), nome, categoria, tags ou pasta
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: "`pin_limit` — limite de decks fixados do plano atingido." }
+    delete:
+      tags: [Decks]
+      summary: Exclui o deck (soft delete)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /decks/{id}/cards:
+    post:
+      tags: [Decks]
+      summary: Adiciona um card manualmente (até 2.000 por deck)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [front, back]
+              properties: { front: { type: string }, back: { type: string }, type: { type: string }, media: { type: object, nullable: true } }
+      responses:
+        "201": { description: Criado }
+        "409": { description: deck_limit }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /decks/{id}/cards/{cardId}:
+    patch:
+      tags: [Decks]
+      summary: Edita frente/verso do card
+      parameters: [{ $ref: '#/components/parameters/deckId' }, { $ref: '#/components/parameters/cardId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Decks]
+      summary: Remove o card (soft delete)
+      parameters: [{ $ref: '#/components/parameters/deckId' }, { $ref: '#/components/parameters/cardId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /decks/{id}/publish:
+    post:
+      tags: [Decks]
+      summary: Submete o deck para publicação na comunidade
+      description: >
+        Exige e-mail/telefone confirmados, liberação do responsável se menor (`guardian_required`),
+        e aceite da política de conteúdo na primeira vez (`policy_acceptance_required`, HTTP 428).
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { acceptPolicy: { type: boolean } } } } }
+      responses:
+        "201": { description: Enviado para triagem, content: { application/json: { schema: { type: object, properties: { publication: { $ref: '#/components/schemas/Publication' } } } } } }
+        "403": { description: "guardian_required ou verification_required ou account_deactivated" }
+        "422": { description: empty_deck }
+        "428": { description: policy_acceptance_required }
+
+  /publications/{id}/appeal:
+    post:
+      tags: [Decks]
+      summary: Contesta uma publicação rejeitada (janela de 30 dias, revisor diferente do original)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
+      responses:
+        "201": { description: Criada, content: { application/json: { schema: { type: object, properties: { appeal: { $ref: '#/components/schemas/Appeal' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: "not_rejected · appeal_window_closed · appeal_exists" }
+
+  /decks/{id}/export:
+    post:
+      tags: [Decks]
+      summary: Exporta o deck (PDF é entregue como texto no protótipo)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { format: { type: string, enum: [pdf, txt] } } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { fileName: { type: string }, format: { type: string }, url: { type: string, description: "data: URL com o conteúdo." } }
+
+  /folders:
+    post:
+      tags: [Decks]
+      summary: Cria uma pasta (até 3 níveis de profundidade)
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, parentId: { type: string, nullable: true } } } } }
+      responses:
+        "201": { description: Criada, content: { application/json: { schema: { type: object, properties: { folder: { $ref: '#/components/schemas/Folder' } } } } } }
+        "409": { description: folder_depth }
+
+  /folders/{id}:
+    patch:
+      tags: [Decks]
+      summary: Renomeia a pasta
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /folders/{id}/members:
+    post:
+      tags: [Decks]
+      summary: Adiciona um membro externo à pasta (até 50; exige liberação do responsável se menor)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [contact], properties: { name: { type: string }, contact: { type: string } } } } }
+      responses:
+        "201": { description: OK }
+        "403": { description: guardian_required }
+        "409": { description: members_limit }
+
+  /folders/{id}/members/{memberId}:
+    delete:
+      tags: [Decks]
+      summary: Remove um membro da pasta
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: memberId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------------- Geração
+  /generation/quota:
+    get:
+      tags: [Geração]
+      summary: Cota diária de gerações, orçamento de tokens e limite de páginas
+      responses: { "200": { description: OK } }
+
+  /generation/jobs:
+    get:
+      tags: [Geração]
+      summary: Lista jobs de geração do usuário
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { jobs: { type: array, items: { $ref: '#/components/schemas/GenerationJob' } } } } } } } }
+    post:
+      tags: [Geração]
+      summary: Cria um job de geração a partir de documento, foto, texto colado ou Anki
+      description: >
+        Aceita `Idempotency-Key` no header (repetir devolve o mesmo job). Bloqueia texto com
+        indício de dado pessoal de terceiro (CPF/RG/senha). Acima do orçamento de leitura
+        (200.000 tokens ≈ 750 páginas), o job para em `acima_do_orcamento` e espera
+        `POST /generation/jobs/{id}/scope`.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: { type: string, enum: [camera, file, text, anki, empty] }
+                documentName: { type: string }
+                sizeTokens: { type: integer }
+                text: { type: string }
+      responses:
+        "201": { description: "Job criado (ou devolvido, se idempotente)", content: { application/json: { schema: { type: object, properties: { job: { $ref: '#/components/schemas/GenerationJob' } } } } } }
+        "422": { description: "validation · content_filtered" }
+        "429": { description: daily_limit }
+
+  /generation/jobs/{id}:
+    get:
+      tags: [Geração]
+      summary: Consulta o status do job (para polling do cliente)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { job: { $ref: '#/components/schemas/GenerationJob' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /generation/jobs/{id}/scope:
+    post:
+      tags: [Geração]
+      summary: Escolhe páginas ou divide em várias gerações quando acima do orçamento
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { pages: { type: array, items: { type: integer }, minItems: 2, maxItems: 2 }, split: { type: boolean } } } } }
+      responses:
+        "200": { description: OK }
+        "409": { description: invalid_state }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /generation/jobs/{id}/retry:
+    post:
+      tags: [Geração]
+      summary: Tenta novamente um job que falhou (consome cota de novo)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "409": { description: invalid_state }
+        "429": { description: daily_limit }
+
+  /generation/jobs/{id}/cancel:
+    post:
+      tags: [Geração]
+      summary: Cancela o job (devolve a cota do dia)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /generation/jobs/{id}/approve:
+    post:
+      tags: [Geração]
+      summary: Aprova o resultado da geração e cria o deck definitivo
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                cards: { type: array, items: { type: object, additionalProperties: true } }
+                keepOriginal: { type: boolean, description: "Mantém o documento original após os 30 dias padrão." }
+      responses:
+        "201": { description: Deck criado, content: { application/json: { schema: { type: object, properties: { deckId: { type: string }, deck: { $ref: '#/components/schemas/Deck' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: invalid_state }
+
+  # -------------------------------------------------------------- Comunidade
+  /community/feed:
+    get:
+      tags: [Comunidade]
+      summary: Feed — destaques, seguidos, ranking da semana, criador do mês e recomendações da Nôa
+      description: "`recommendations` cruza categoria/tags dos decks próprios do aluno com decks da comunidade (motivo em `becauseDeck`)."
+      responses: { "200": { description: OK } }
+
+  /community/search:
+    get:
+      tags: [Comunidade]
+      summary: Busca de decks públicos
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: difficulty, in: query, schema: { type: string, enum: [facil, medio, dificil] } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, recent, rating] } }
+        - { name: approved, in: query, schema: { type: string, enum: ["1"] }, description: "Filtra por criadores com selo." }
+      responses: { "200": { description: OK } }
+
+  /community/decks/{id}:
+    get:
+      tags: [Comunidade]
+      summary: Detalhe do deck público, cards, tradução e versões
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/decks/{id}/favorite:
+    post:
+      tags: [Comunidade]
+      summary: Alterna favorito (com janela de desfazer de 3 s no cliente)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses: { "200": { description: OK } }
+
+  /community/decks/{id}/clone:
+    post:
+      tags: [Comunidade]
+      summary: Clona o deck para "Meus decks" (paga 5 Neurônios de bônus ao autor)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses: { "201": { description: OK } }
+
+  /community/decks/{id}/vote:
+    post:
+      tags: [Comunidade]
+      summary: Vota no deck (exige ≥ 30% dos cards ou 20 cards respondidos)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "403": { description: vote_not_allowed }
+
+  /community/decks/{id}/react:
+    post:
+      tags: [Comunidade]
+      summary: "Reage com um emoji fixo (👏🔥🧠💡❤️😂)"
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [emoji], properties: { emoji: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /community/decks/{id}/share:
+    post:
+      tags: [Comunidade]
+      summary: Gera link público de compartilhamento (exige liberação do responsável se menor)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses:
+        "200": { description: OK }
+        "403": { description: guardian_required }
+
+  /community/decks/{id}/report:
+    post:
+      tags: [Comunidade]
+      summary: Denuncia o deck
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string }, detail: { type: string } } } } } }
+      responses:
+        "201": { description: Registrada, content: { application/json: { schema: { type: object, properties: { report: { $ref: '#/components/schemas/Report' } } } } } }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /community/decks/{id}/translate:
+    post:
+      tags: [Comunidade]
+      summary: Traduz os cards do deck (cache por conteúdo+idioma; original nunca muda)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses: { "200": { description: OK } }
+
+  /community/decks/{id}/comments:
+    get:
+      tags: [Comunidade]
+      summary: Lista comentários (com respostas aninhadas)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { threads: { type: array, items: { $ref: '#/components/schemas/Comment' } } } } } } } }
+    post:
+      tags: [Comunidade]
+      summary: Comenta ou responde (exige verificação e liberação do responsável se menor)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string }, parentId: { type: string, nullable: true } } } } } }
+      responses:
+        "201": { description: Criado }
+        "403": { description: "verification_required · guardian_required" }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /community/comments/{id}/report:
+    post:
+      tags: [Comunidade]
+      summary: Denuncia um comentário (vai para análise automática)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "201": { description: OK } }
+
+  /community/authors/{id}:
+    get:
+      tags: [Comunidade]
+      summary: Perfil público de um criador e seus decks
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/authors/{id}/follow:
+    post:
+      tags: [Comunidade]
+      summary: Segue/deixa de seguir o criador (exige liberação do responsável se menor)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "403": { description: guardian_required }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/rankings:
+    get:
+      tags: [Comunidade]
+      summary: Ranking semanal e criador do mês
+      responses: { "200": { description: OK } }
+
+  /community/decks/{id}/study-start:
+    post:
+      tags: [Comunidade]
+      summary: Inicia estudo de um deck da comunidade sem clonar (progresso registrado por resposta)
+      parameters: [{ $ref: '#/components/parameters/deckId' }]
+      responses: { "200": { description: OK } }
+
+  # ---------------------------------------------------------------- Carteira
+  /wallet:
+    get:
+      tags: [Carteira]
+      summary: Saldo, extrato, elegibilidade de resgate e indicação
+      responses: { "200": { description: OK } }
+
+  /coupons:
+    get:
+      tags: [Carteira]
+      summary: Loja de cupons (ordenada por posicionamento pago)
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { coupons: { type: array, items: { $ref: '#/components/schemas/Coupon' } }, balance: { type: integer } } } } } } }
+
+  /coupons/{id}:
+    get:
+      tags: [Carteira]
+      summary: Detalhe de um cupom da loja
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /coupons/{id}/redeem:
+    post:
+      tags: [Carteira]
+      summary: Resgata um cupom (débito atômico no ledger)
+      description: >
+        Exige verificação (e-mail+telefone), 10 dias de estudo registrado e saldo suficiente.
+        Aceita `idempotencyKey` no corpo para evitar débito duplicado em reenvio.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { idempotencyKey: { type: string } } } } } }
+      responses:
+        "201": { description: OK, content: { application/json: { schema: { type: object, properties: { myCoupon: { $ref: '#/components/schemas/MyCoupon' }, balance: { type: integer } } } } } }
+        "403": { description: verification_required }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: sold_out }
+        "422": { description: "study_days_required · insufficient_balance" }
+
+  /wallet/coupons:
+    get:
+      tags: [Carteira]
+      summary: '"Meus cupons"'
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { myCoupons: { type: array, items: { $ref: '#/components/schemas/MyCoupon' } } } } } } } }
+
+  /wallet/coupons/{id}:
+    get:
+      tags: [Carteira]
+      summary: Detalhe de um cupom resgatado, com payload de QR offline
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- Assinatura
+  /subscription:
+    get:
+      tags: [Assinatura]
+      summary: Visão da assinatura, benefícios, preços e políticas
+      responses: { "200": { description: OK } }
+
+  /subscription/subscribe:
+    post:
+      tags: [Assinatura]
+      summary: Assina o Premium
+      description: "Pix Automático só no ciclo mensal; boleto só no anual. Boleto/Pix avulso ficam `aguardando_pagamento` até o webhook confirmar."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cycle: { type: string, enum: [mensal, anual] }
+                method: { type: string, enum: [cartao, pix_automatico, pix, boleto] }
+      responses:
+        "201": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /subscription/webhook:
+    post:
+      tags: [Assinatura]
+      summary: Webhook do gateway de pagamento (idempotente por eventId)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, type]
+              properties:
+                eventId: { type: string }
+                type: { type: string, enum: [payment_confirmed, payment_failed, grace_expired] }
+                userId: { type: string, default: u1 }
+      responses:
+        "200": { description: OK }
+        "404": { description: not_found }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /subscription/cancel:
+    post:
+      tags: [Assinatura]
+      summary: Cancela (mantém acesso até o fim do período pago)
+      responses:
+        "200": { description: OK }
+        "409": { description: not_premium }
+
+  /subscription/refund:
+    post:
+      tags: [Assinatura]
+      summary: Arrependimento em 7 dias (CDC art. 49) — reembolso integral
+      responses:
+        "200": { description: OK }
+        "409": { description: "not_premium · refund_window_closed" }
+
+  /subscription/invoices:
+    get:
+      tags: [Assinatura]
+      summary: Histórico de pagamentos e NFS-e
+      responses: { "200": { description: OK } }
+
+  # ------------------------------------------------------------- Privacidade
+  /privacy/export:
+    post:
+      tags: [Privacidade]
+      summary: Solicita exportação dos dados (LGPD, prazo de 15 dias, link válido por 7)
+      responses: { "201": { description: OK } }
+    get:
+      tags: [Privacidade]
+      summary: Lista solicitações de exportação
+      responses: { "200": { description: OK } }
+
+  /privacy/delete:
+    post:
+      tags: [Privacidade]
+      summary: Solicita exclusão da conta (carência de 30 dias, reativável)
+      responses: { "201": { description: OK } }
+
+  /privacy/reactivate:
+    post:
+      tags: [Privacidade]
+      summary: Reativa a conta dentro da carência
+      responses:
+        "200": { description: OK }
+        "409": { description: not_deactivated }
+
+  /privacy/decisions:
+    get:
+      tags: [Privacidade]
+      summary: Decisões automatizadas da Nôa sobre a conta (LGPD art. 20)
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { decisions: { type: array, items: { $ref: '#/components/schemas/NoaDecision' } } } } } } } }
+
+  /privacy/decisions/{id}/contest:
+    post:
+      tags: [Privacidade]
+      summary: Contesta uma decisão automatizada (resposta humana em até 15 dias)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /privacy/policy:
+    get:
+      tags: [Privacidade]
+      summary: Política de conteúdo vigente e contato do DPO
+      responses: { "200": { description: OK } }
+
+  # ---------------------------------------------------------------- Suporte
+  /support/tickets:
+    get:
+      tags: [Suporte]
+      summary: Meus chamados
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { tickets: { type: array, items: { $ref: '#/components/schemas/SupportTicket' } } } } } } } }
+    post:
+      tags: [Suporte]
+      summary: Abre um chamado
+      requestBody: { content: { application/json: { schema: { type: object, required: [subject, message], properties: { subject: { type: string }, message: { type: string }, channel: { type: string, enum: [chat, formulario] } } } } } }
+      responses:
+        "201": { description: Criado }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /support/tickets/{id}/messages:
+    post:
+      tags: [Suporte]
+      summary: Adiciona mensagem a um chamado próprio
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  # -------------------------------------------------------------------- Nôa
+  /noa/catalog:
+    get:
+      tags: [Nôa]
+      summary: Catálogo público de ações da Nôa, sinais usados e limites nunca cruzados sozinha
+      responses: { "200": { description: OK } }
+
+  /noa/suggestions/{id}/respond:
+    post:
+      tags: [Nôa]
+      summary: Aceita ou dispensa uma sugestão da Nôa (até 5 sugestões/dia; 1 ação autônoma/dia)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { accepted: { type: boolean }, feedback: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /noa/decisions/{id}/revert:
+    post:
+      tags: [Nôa]
+      summary: Reverte uma decisão autônoma reversível da Nôa
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: not_reversible }
+
+  # ------------------------------------------------------------------ Público
+  /public/decks/{publicId}:
+    get:
+      tags: [Público]
+      summary: Prévia pública de um deck (sem login; estudar exige entrar)
+      security: []
+      parameters: [{ name: publicId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /public/content-policy:
+    get:
+      tags: [Público]
+      summary: Política de conteúdo pública
+      security: []
+      responses: { "200": { description: OK } }
+
+  # ------------------------------------------------------------ Painel Parental
+  /parental/auth/login:
+    post:
+      tags: [Painel Parental]
+      summary: Login do responsável
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string }, password: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /parental/overview:
+    get:
+      tags: [Painel Parental]
+      summary: Visão do responsável — permissões, solicitações, decks e resumo semanal do menor
+      responses: { "200": { description: OK } }
+
+  /parental/permissions:
+    patch:
+      tags: [Painel Parental]
+      summary: Altera permissões (comunidade, link público, membros externos, escola, WhatsApp) e janela de notificação
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                community: { type: boolean }
+                publicLink: { type: boolean }
+                externalMembers: { type: boolean }
+                schoolShare: { type: boolean }
+                whatsappInfo: { type: boolean }
+                notificationWindow: { type: object, properties: { start: { type: string }, end: { type: string } } }
+      responses: { "200": { description: OK } }
+
+  /parental/requests/{id}/decide:
+    post:
+      tags: [Painel Parental]
+      summary: Aprova ou nega uma solicitação do aluno
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { approve: { type: boolean } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Painel B2B
+  /b2b/auth/login:
+    post:
+      tags: [Painel B2B]
+      summary: Login institucional via SSO (Google Workspace / Microsoft Entra, simulado)
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { provider: { type: string, enum: [google, microsoft] }, role: { type: string, enum: [admin, coordenador, professor, leitura] } } } } } }
+      responses: { "200": { description: OK } }
+
+  /b2b/overview:
+    get:
+      tags: [Painel B2B]
+      summary: Turmas, indicadores e convites do tenant (agregados só acima do mínimo de consentimentos)
+      responses: { "200": { description: OK } }
+
+  /b2b/classes/{id}:
+    get:
+      tags: [Painel B2B]
+      summary: Detalhe de uma turma
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /b2b/invites:
+    post:
+      tags: [Painel B2B]
+      summary: Convida um aluno para uma turma
+      requestBody: { content: { application/json: { schema: { type: object, required: [contact, classId], properties: { contact: { type: string }, classId: { type: string }, method: { type: string } } } } } }
+      responses:
+        "201": { description: OK }
+        "403": { description: forbidden }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /b2b/students/{id}/revoke:
+    post:
+      tags: [Painel B2B]
+      summary: Revoga a projeção de indicadores de um aluno (só admin/coordenador)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "403": { description: forbidden }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /b2b/export:
+    get:
+      tags: [Painel B2B]
+      summary: Exporta indicadores por turma (CSV; XLSX é entregue como CSV no protótipo)
+      parameters: [{ name: format, in: query, schema: { type: string, enum: [csv, xlsx] } }]
+      responses: { "200": { description: OK } }
+
+  /b2b/users:
+    get:
+      tags: [Painel B2B]
+      summary: Usuários do tenant (só admin)
+      responses:
+        "200": { description: OK }
+        "403": { description: forbidden }
+
+  # ------------------------------------------------------------- Back-office
+  /admin/auth/login:
+    post:
+      tags: [Back-office]
+      summary: "Login por papel (moderador, suporte N1/N2, comercial, financeiro, compliance, engenharia)"
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { role: { type: string } } } } } }
+      responses: { "200": { description: OK } }
+
+  /admin/me:
+    get:
+      tags: [Back-office]
+      summary: Conta e papel do operador logado
+      responses: { "200": { description: OK } }
+
+  /admin/moderation/queue:
+    get:
+      tags: [Back-office]
+      summary: Fila de moderação de publicações (SLA por plano, ordenada por risco e urgência)
+      responses: { "200": { description: OK } }
+
+  /admin/moderation/reports:
+    get:
+      tags: [Back-office]
+      summary: Fila de denúncias (decks, comentários, contato suspeito sinalizado pela Nôa — SLA 4 h)
+      responses: { "200": { description: OK } }
+
+  /admin/moderation/appeals:
+    get:
+      tags: [Back-office]
+      summary: Fila de contestações de publicações rejeitadas
+      responses: { "200": { description: OK } }
+
+  /admin/moderation/{id}:
+    get:
+      tags: [Back-office]
+      summary: Detalhe de uma publicação em moderação
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /admin/moderation/{id}/assign:
+    post:
+      tags: [Back-office]
+      summary: Assume a revisão de uma publicação
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /admin/moderation/{id}/decide:
+    post:
+      tags: [Back-office]
+      summary: Aprova ou rejeita — rejeição exige motivo categorizado e trecho apontado
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [aprovado, rejeitado] }
+                reasonCategory: { type: string, enum: [veracidade, material_protegido, conteudo_improprio, dados_pessoais, duplicidade, incompleto, idioma] }
+                excerpt: { type: string }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: already_decided }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/moderation/reports/{id}/resolve:
+    post:
+      tags: [Back-office]
+      summary: Resolve uma denúncia (manter, remover, silenciar ou banir — punição exige motivo)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [action], properties: { action: { type: string, enum: [manter, remover, silenciar, banir] }, reason: { type: string }, durationDays: { type: integer } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/moderation/appeals/{id}/decide:
+    post:
+      tags: [Back-office]
+      summary: Decide uma contestação (precisa ser um moderador diferente do original)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [decision], properties: { decision: { type: string, enum: [aceita, mantida] }, note: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "403": { description: same_reviewer }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /admin/support/search:
+    get:
+      tags: [Back-office]
+      summary: Busca alunos por nome/e-mail (e-mail mascarado)
+      parameters: [{ name: q, in: query, schema: { type: string } }]
+      responses: { "200": { description: OK } }
+
+  /admin/support/users/{id}/view-as:
+    post:
+      tags: [Back-office]
+      summary: '"Ver como" — leitura mascarada da conta, com finalidade e referência de consentimento obrigatórias (log de acesso)'
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [purpose, consentReference], properties: { purpose: { type: string }, consentReference: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/support/tickets:
+    get:
+      tags: [Back-office]
+      summary: Todos os chamados (SLA 24 h; suspeita com menor em 4 h)
+      responses: { "200": { description: OK } }
+
+  /admin/support/tickets/{id}/reply:
+    post:
+      tags: [Back-office]
+      summary: Responde e opcionalmente fecha um chamado
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string }, close: { type: boolean } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/commercial/overview:
+    get:
+      tags: [Back-office]
+      summary: Parceiros, campanhas, alertas comerciais e indicadores de resgate
+      responses: { "200": { description: OK } }
+
+  /admin/commercial/partners/{id}/approve-stage:
+    post:
+      tags: [Back-office]
+      summary: Avança o parceiro no funil de aprovação (documentação → aprovação comercial)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /admin/finance/overview:
+    get:
+      tags: [Back-office]
+      summary: Pagamentos, MRR, reembolsos, dunning e política de retenção fiscal
+      responses: { "200": { description: OK } }
+
+  /admin/compliance/overview:
+    get:
+      tags: [Back-office]
+      summary: Log de auditoria (com verificação de integridade da cadeia de hash), incidentes, DPO e política
+      responses: { "200": { description: OK } }
+
+  /admin/compliance/incidents:
+    post:
+      tags: [Back-office]
+      summary: Abre um incidente de segurança/privacidade (prazos de 72 h para ANPD e titulares)
+      requestBody: { content: { application/json: { schema: { type: object, required: [title], properties: { title: { type: string }, affectedUserIds: { type: array, items: { type: string } } } } } } }
+      responses:
+        "201": { description: Criado }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/compliance/incidents/{id}/affected:
+    get:
+      tags: [Back-office]
+      summary: Lista titulares afetados por um incidente
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /admin/compliance/incidents/{id}/notify:
+    post:
+      tags: [Back-office]
+      summary: Marca notificação à ANPD ou aos titulares
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [target], properties: { target: { type: string, enum: [anpd, titulares] } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /admin/engineering/overview:
+    get:
+      tags: [Back-office]
+      summary: Feature flags, custo de IA, qualidade da Nôa, templates de notificação e SLOs
+      responses: { "200": { description: OK } }
+
+  /admin/engineering/flags/{key}:
+    patch:
+      tags: [Back-office]
+      summary: Liga/desliga uma feature flag ou aciona o kill switch
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { on: { type: boolean }, kill: { type: boolean } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------- Painel do Parceiro
+  /partner/auth/login:
+    post:
+      tags: [Painel do Parceiro]
+      summary: Login do parceiro (CNPJ + senha)
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, required: [cnpj, password], properties: { cnpj: { type: string }, password: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /partner/overview:
+    get:
+      tags: [Painel do Parceiro]
+      summary: Campanhas, resgates, conversão (com supressão de células pequenas) e faturamento
+      responses: { "200": { description: OK } }
+
+  /partner/campaigns:
+    post:
+      tags: [Painel do Parceiro]
+      summary: Cria uma campanha de cupom
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, costNeurons, stock]
+              properties: { title: { type: string }, description: { type: string }, costNeurons: { type: integer, minimum: 1 }, stock: { type: integer, minimum: 1 }, validityDays: { type: integer, default: 30 } }
+      responses:
+        "201": { description: Criada }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /partner/campaigns/{id}:
+    patch:
+      tags: [Painel do Parceiro]
+      summary: Atualiza estoque ou pausa a campanha
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /partner/redemptions/validate:
+    post:
+      tags: [Painel do Parceiro]
+      summary: Dá baixa em um código de resgate (uma única vez)
+      requestBody: { content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "404": { description: not_found }
+        "409": { description: already_used }
+        "410": { description: expired }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /partner/contract/accept:
+    post:
+      tags: [Painel do Parceiro]
+      summary: Aceite digital do contrato do parceiro
+      responses: { "200": { description: OK } }
+
+  # ------------------------------------------------------------------- Proto
+  /_proto/state:
+    get:
+      tags: [Sistema]
+      summary: Estado atual do protótipo (perfil, saldo, cota) — sem autenticação
+      security: []
+      responses: { "200": { description: OK } }
+
+  /_proto/reset:
+    post:
+      tags: [Sistema]
+      summary: Reseta todo o estado em memória para um perfil semeado
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { profile: { type: string, enum: [adult-free, adult-premium, minor] } } } } } }
+      responses: { "200": { description: OK } }
+
+  /_proto/profile:
+    post:
+      tags: [Sistema]
+      summary: Troca o perfil ativo sem resetar o restante do estado
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, required: [profile], properties: { profile: { type: string } } } } } }
+      responses:
+        "200": { description: OK }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /_proto/coupon-available:
+    post:
+      tags: [Sistema]
+      summary: Ajusta o saldo para simular "cupom resgatável" ligado/desligado
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { available: { type: boolean } } } } } }
+      responses: { "200": { description: OK } }
+
+  /_proto/notification:
+    post:
+      tags: [Sistema]
+      summary: Simula o disparo de uma notificação push/WhatsApp (respeita opt-in, janela de silêncio e deduplicação)
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { channel: { type: string, enum: [push, whatsapp] }, force: { type: boolean } } } } } }
+      responses: { "200": { description: "`delivered: false` com o motivo, ou `delivered: true` com o conteúdo da notificação." } }

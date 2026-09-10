@@ -1,0 +1,272 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--size-title);
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.publicCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.identityBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--size-heading);
+}
+
+.meta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.statsPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.balanceStat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.shortcuts {
+  display: flex;
+  flex-direction: column;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  font-size: var(--size-heading);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitle {
+  font-weight: 500;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.priceGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.priceCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+  border: 2px solid var(--color-border-soft);
+}
+
+.priceCard[aria-checked="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-surface-brand);
+}
+
+.priceLabel {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.price {
+  font-family: var(--font-display);
+  font-size: var(--size-heading);
+  font-weight: 700;
+}
+
+.methodGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.methodGroup [role="radio"][aria-checked="true"] {
+  background: var(--color-accent);
+  color: var(--color-text-on-brand);
+  border-color: var(--color-accent);
+}
+
+.terms {
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: var(--space-3);
+}
+
+.termsSummary {
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  font-size: var(--size-small);
+  font-weight: 600;
+  color: var(--color-text-brand);
+  cursor: pointer;
+}
+
+.terms[open] .termsSummary {
+  margin-bottom: var(--space-2);
+}
+
+.terms p + p {
+  margin-top: var(--space-2);
+}
+
+.benefits li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-1) 0;
+  font-size: var(--size-small);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.effects li {
+  padding: 4px 0 4px 18px;
+  position: relative;
+  font-size: var(--size-small);
+  color: var(--color-text-secondary);
+}
+
+.effects li::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+}
+
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.decision:last-child {
+  border-bottom: none;
+}
+
+.mistake {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: var(--size-small);
+}
+
+.mistake:last-of-type {
+  border-bottom: none;
+}
+
+.mistakeText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ticket {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bubble {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-sunken);
+  font-size: var(--size-small);
+  max-width: 90%;
+}
+
+.bubbleMine {
+  align-self: flex-end;
+  background: var(--color-surface-brand);
+}
+
+@media (min-width: 700px) {
+  .priceGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

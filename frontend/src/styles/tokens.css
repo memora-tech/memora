@@ -1,0 +1,130 @@
+:root {
+  color-scheme: light;
+
+  --brand-500: #00A1E0;
+  --brand-600: #0086BC;
+  --brand-700: #036B95;
+  --brand-900: #073B5C;
+  --brand-050: #E8F6FC;
+  --brand-100: #CDEBF8;
+  --brand-200: #A3DBF2;
+
+  --pearl: #FAFAF7;
+  --white: #FFFFFF;
+  --gray-900: #181818;
+  --gray-700: #3D3D3B;
+  --gray-600: #5C5C5A;
+  --gray-400: #9A9A96;
+  --gray-300: #D6D6D0;
+  --gray-200: #E8E8E3;
+  --gray-100: #F1F1EC;
+
+  --orange-500: #FF9E2C;
+  --orange-100: #FFE9CF;
+  --orange-700: #8C4B02;
+  --green-600: #2E844A;
+  --green-100: #DFF3E5;
+  --amber-700: #B26B00;
+  --amber-100: #FFF0D1;
+  --red-600: #D8001C;
+  --red-100: #FDE2E5;
+  --violet-600: #6B4EFF;
+  --violet-100: #ECE8FF;
+
+  --color-surface: var(--pearl);
+  --color-surface-raised: var(--white);
+  --color-surface-sunken: var(--gray-100);
+  --color-surface-brand: var(--brand-050);
+  --color-surface-brand-strong: var(--brand-100);
+  --color-text: var(--gray-900);
+  --color-text-secondary: var(--gray-600);
+  --color-text-muted: var(--gray-400);
+  --color-text-on-brand: var(--brand-900);
+  --color-text-brand: var(--brand-700);
+  --color-accent: var(--brand-500);
+  --color-accent-pressed: var(--brand-600);
+  --color-border: var(--gray-300);
+  --color-border-soft: var(--gray-200);
+  --color-hairline: #ECECE6;
+  --color-focus: var(--brand-600);
+  --color-focus-halo: rgba(0, 161, 224, 0.22);
+  --color-reward: var(--orange-500);
+  --color-reward-soft: var(--orange-100);
+  --color-reward-ink: var(--orange-700);
+  --color-success: var(--green-600);
+  --color-success-soft: var(--green-100);
+  --color-warning: var(--amber-700);
+  --color-warning-soft: var(--amber-100);
+  --color-danger: var(--red-600);
+  --color-danger-soft: var(--red-100);
+  --color-noa: var(--brand-500);
+  --color-noa-soft: var(--brand-050);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-bubble: 999px;
+  --radius-panel: 28px;
+  --radius-card: 20px;
+  --radius-field: 14px;
+  --radius-small: 8px;
+
+  --field-height: 52px;
+  --tap-min: 44px;
+  --tap-small: 40px;
+  --topline-height: 48px;
+  --tabbar-height: 64px;
+  --header-height: 56px;
+  --fab-size: 56px;
+  --rail-width: 88px;
+  --content-max: 720px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --floating-bottom: calc(var(--tabbar-height) + var(--space-4) + var(--safe-bottom));
+  --toast-bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-6) + var(--safe-bottom));
+
+  --font-display: "Outfit", "Trebuchet MS", system-ui, sans-serif;
+  --font-text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --size-display: 30px;
+  --size-title: 23px;
+  --size-heading: 19px;
+  --size-lead: 17px;
+  --size-body: 16px;
+  --size-small: 14px;
+  --size-meta: 13px;
+  --size-micro: 12px;
+  --tracking-display: -0.018em;
+  --tracking-tight: -0.01em;
+  --tracking-caps: 0.06em;
+
+  --shadow-xs: 0 1px 2px rgba(16, 40, 56, 0.05);
+  --shadow-card: 0 1px 2px rgba(16, 40, 56, 0.05), 0 4px 12px -6px rgba(16, 40, 56, 0.10);
+  --shadow-raised: 0 2px 4px rgba(16, 40, 56, 0.06), 0 10px 24px -10px rgba(16, 40, 56, 0.16);
+  --shadow-soft: 0 4px 10px rgba(16, 40, 56, 0.08), 0 18px 40px -18px rgba(16, 40, 56, 0.22);
+  --shadow-sheet: 0 -2px 8px rgba(16, 40, 56, 0.06), 0 -20px 48px -16px rgba(16, 40, 56, 0.26);
+  --shadow-brand: 0 2px 6px rgba(0, 122, 173, 0.24), 0 12px 24px -10px rgba(0, 122, 173, 0.34);
+
+  --t-fast: 160ms;
+  --t-base: 220ms;
+  --t-screen: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-in: cubic-bezier(0.6, 0, 0.8, 0.3);
+  --ease-both: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --z-topline: 30;
+  --z-tabbar: 30;
+  --z-fab: 25;
+  --z-banner: 35;
+  --z-sheet: 50;
+  --z-dialog: 60;
+  --z-toast: 70;
+  --z-proto: 28;
+}

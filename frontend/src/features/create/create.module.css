@@ -1,0 +1,259 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.title {
+  font-size: var(--size-title);
+}
+
+.origins {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.origin {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: left;
+  padding: var(--space-4) var(--space-5);
+}
+
+.originIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-field);
+  background: var(--color-surface-brand);
+  color: var(--color-text-brand);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.originBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.originTitle {
+  font-weight: 600;
+  font-size: var(--size-lead);
+  font-family: var(--font-display);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.originHelp {
+  font-size: var(--size-small);
+  color: var(--color-text-secondary);
+}
+
+.hidden {
+  display: none;
+}
+
+.meta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+}
+
+.stepDot {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-bubble);
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  flex: none;
+}
+
+.stepDot[data-state="active"] {
+  background: var(--color-accent);
+  color: var(--color-text-on-brand);
+}
+
+.stepDot[data-state="done"] {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.stepLabel {
+  font-weight: 500;
+}
+
+.stepLabel[data-state="active"] {
+  color: var(--color-text-brand);
+}
+
+.pulse {
+  animation: pulse 1.4s var(--ease-both) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+.rangeRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cardRow {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+}
+
+.cardRowDelete {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: var(--space-5);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-weight: 600;
+  border-radius: var(--radius-card);
+}
+
+.cardItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+  width: 100%;
+  transition: transform var(--t-fast) var(--ease-out);
+  touch-action: pan-y;
+}
+
+.cardItemDragging {
+  transition: none;
+}
+
+.cardFront {
+  font-weight: 600;
+}
+
+.cardBack {
+  color: var(--color-text-secondary);
+  font-size: var(--size-small);
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--size-meta);
+  color: var(--color-text-muted);
+}
+
+.suggestionGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.summaryChips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sheetDestructive {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.approveBar {
+  position: sticky;
+  bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border-soft);
+  margin: 0 calc(var(--space-4) * -1);
+  padding: var(--space-3) var(--space-4);
+  z-index: 2;
+}
+
+.how {
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: var(--space-2);
+}
+
+.howSummary {
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  font-size: var(--size-small);
+  font-weight: 600;
+  color: var(--color-text-brand);
+  cursor: pointer;
+}
+
+.how[open] .howSummary {
+  margin-bottom: var(--space-2);
+}
+
+.how p + p {
+  margin-top: var(--space-2);
+}
+
+@media (min-width: 700px) {
+  .origins {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .suggestionGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1024px) {
+  .approveBar {
+    bottom: 0;
+  }
+}

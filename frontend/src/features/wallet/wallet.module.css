@@ -1,0 +1,297 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--size-title);
+}
+
+.balanceCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+  padding: var(--space-5);
+  background: linear-gradient(160deg, var(--color-reward-soft), var(--color-surface-raised) 70%);
+}
+
+.balanceLabel {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.balanceValue {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 12vw, 52px);
+  font-weight: 700;
+  color: var(--color-reward-ink);
+  line-height: 1.05;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.balanceNext {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.progressWrap {
+  width: 100%;
+  max-width: 320px;
+}
+
+.sectionTitle {
+  font-size: var(--size-heading);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.couponCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: left;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.couponCard[data-disabled="true"] {
+  opacity: 0.6;
+}
+
+.couponIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-field);
+  background: var(--color-reward-soft);
+  color: var(--color-reward-ink);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.couponBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.couponTitle {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.couponName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.couponDesc {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.couponMeta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.couponCode {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  letter-spacing: 0.06em;
+}
+
+.couponCost {
+  font-weight: 700;
+  color: var(--color-reward-ink);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ledgerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 52px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+
+.ledgerRow:last-child {
+  border-bottom: none;
+}
+
+.ledgerDay + .ledgerDay {
+  margin-top: var(--space-4);
+}
+
+.ledgerDayTitle {
+  font-size: var(--size-meta);
+  font-family: var(--font-text);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: var(--space-1);
+}
+
+.group {
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: var(--space-2);
+}
+
+.groupSummary {
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  font-size: var(--size-small);
+  font-weight: 600;
+  color: var(--color-text-brand);
+  cursor: pointer;
+}
+
+.group[open] .groupSummary {
+  margin-bottom: var(--space-3);
+}
+
+.referralRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.referralCode {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: var(--size-lead);
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.ledgerText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ledgerLabel {
+  font-size: var(--size-small);
+}
+
+.ledgerMeta {
+  font-size: var(--size-meta);
+  color: var(--color-text-muted);
+}
+
+.ledgerAmount {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ledgerAmount[data-positive="true"] {
+  color: var(--color-success);
+}
+
+.ledgerAmount[data-positive="false"] {
+  color: var(--color-text-secondary);
+}
+
+.meta {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.earnList li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-1) 0;
+  font-size: var(--size-small);
+}
+
+.earn[open] .earnList {
+  margin: var(--space-2) 0;
+}
+
+.qrCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.qr {
+  width: min(280px, 70vw);
+  height: auto;
+  background: var(--white);
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border-soft);
+}
+
+.code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: var(--size-title);
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+.detailHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (min-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
