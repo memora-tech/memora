@@ -47,6 +47,15 @@ Memora.
   - **Perfil › Conexões** (`/app/perfil/conexoes`): configuração de tokens, ferramentas e atividade. O acesso é pelo card do usuário na barra lateral, no estilo do Claude.
   - **Criar deck**, como a origem "Vindos de outros sistemas".
   - **Nunca na Comunidade.** A Nôa (`/app/noa`) é a área de IA da casa e não mistura MCP.
+- **Solicitações via MCP** (revisado em 2026-10-07):
+  - Tudo o que uma IA salva chega com `mcpReview: 'pendente'` e aparece só em **Recebidos (MCP)** (`/app/recebidos`). Não aparece em Meu blog, Meus decks nem na comunidade.
+  - O aluno **aprova**, escolhendo o destino:
+    - comunidade, com aceite da política e moderação;
+    - só seguidores;
+    - só Meu blog.
+    Decks aprovados entram no estudo.
+  - Ou o aluno **recusa**, e o conteúdo é excluído.
+  - A IA não tem mais como publicar diretamente: o argumento `publicar` foi removido das ferramentas.
 - **Decks programados.** Cada deck tem `scheduled`. O plano do dia (`todaySession`) usa só os decks programados, e o aluno escolhe quais são na aba Decks. Decks sem o campo contam como programados.
 
 ## Consequências

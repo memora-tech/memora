@@ -2,7 +2,6 @@ import { id, nowIso } from './ids.js'
 import { appendAudit } from './audit.js'
 import { categoryName, communityDeckPublic } from './helpers.js'
 import { KINDS, KIND_LABELS, MATERIAL_LIMITS, MaterialInputError, createMaterial, materialPublic, normalizeMaterialInput, publishedMaterials, countNodes } from './materials.js'
-import { submitDeckPublication, submitMaterialPublication } from './publishing.js'
 
 export const MCP_LIMITS = { writesPerDay: 50, cardsPerCall: 200, cardChars: 1000, activeConnections: 5 }
 
@@ -14,8 +13,7 @@ const commonProps = {
   titulo: { type: 'string', description: 'Título curto e específico.', maxLength: MATERIAL_LIMITS.titleChars },
   categoria: { type: 'string', description: CATEGORY_HINT },
   tags: { type: 'array', items: { type: 'string' }, maxItems: MATERIAL_LIMITS.tags, description: 'Até 8 palavras-chave em minúsculas.' },
-  idioma: { type: 'string', enum: ['pt-BR', 'en'], description: 'Idioma do conteúdo. Padrão pt-BR.' },
-  publicar: { type: 'boolean', description: 'true envia para a moderação da comunidade; false (padrão) guarda só na conta do aluno. Só use true se o aluno pedir para compartilhar.' }
+  idioma: { type: 'string', enum: ['pt-BR', 'en'], description: 'Idioma do conteúdo. Padrão pt-BR.' }
 }
 
 const sourcesProp = {
@@ -174,14 +172,7 @@ function sourceOf(connection) {
   return { channel: 'mcp', client: connection.name, clientId: connection.client || null, connectionId: connection.id }
 }
 
-function publishOutcome(result, kindLabel) {
-  if (!result) return { status: 'privado', message: `${kindLabel} guardado só na conta do aluno. Ele pode publicar depois pelo app.` }
-  if (result.error) {
-    const why = result.error.code === 'policy_acceptance_required' ? 'o aluno ainda não aceitou a política de conteúdo (é só uma vez, pelo app)' : result.error.message
-    return { status: 'privado', message: `Guardado, mas não enviado à comunidade: ${why}`, blockedBy: result.error.code }
-  }
-  return { status: 'em_triagem', message: `Enviado para a moderação da comunidade. Prazo de revisão: até ${result.sla.hours} h.`, publicationId: result.publication.id }
-}
+const PENDING_MESSAGE = 'Recebido como solicitação pendente. O aluno revisa em Recebidos (MCP) e decide se aprova, onde publica ou se recusa.'
 
 function saveFlashcards(ctx, args) {
   const { state, user, connection } = ctx
@@ -213,6 +204,7 @@ function saveFlashcards(ctx, args) {
     folderId: null,
     source: { type: 'mcp', document: `Conversa em ${connection.name}`, pages: null, connectionId: connection.id },
     scheduled: false,
+    mcpReview: 'pendente',
     createdAt: nowIso(),
     lastStudiedAt: null,
     publication: { status: 'nao_publicado' }
@@ -222,12 +214,11 @@ function saveFlashcards(ctx, args) {
     state.cards.push({ id: id('c'), deckId: deck.id, type: 'text', front: c.front, back: c.back, media: null, lang, origin: { document: `Conversa em ${connection.name}`, page: null, excerpt: null, model: connection.client || null, promptVersion: null }, uncertain: false, sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 }, order: i })
   })
   user.publicProfile.cardsGenerated = (user.publicProfile.cardsGenerated || 0) + clean.length
-  const outcome = publishOutcome(args.publicar ? submitDeckPublication(state, user, deck, {}) : null, 'Deck')
-  const link = `${appUrl()}/app/decks/${deck.id}`
+  const link = `${appUrl()}/app/recebidos`
   return {
     target: { type: 'deck', id: deck.id, title },
-    text: `Deck "${title}" salvo no Memora com ${clean.length} cards em ${categoryName(state, deck.categoryId)}. ${outcome.message}\nAbrir: ${link}`,
-    structured: { id: deck.id, tipo: 'flashcards', titulo: title, cards: clean.length, status: outcome.status, link, ...(outcome.blockedBy ? { bloqueio: outcome.blockedBy } : {}) }
+    text: `Deck "${title}" enviado ao Memora com ${clean.length} cards em ${categoryName(state, deck.categoryId)}. ${PENDING_MESSAGE}\nRevisar: ${link}`,
+    structured: { id: deck.id, tipo: 'flashcards', titulo: title, cards: clean.length, status: 'pendente', link }
   }
 }
 
@@ -254,14 +245,14 @@ function saveMaterial(kind) {
       throw err
     }
     const material = createMaterial(state, { ownerId: user.id, kind, data, source: sourceOf(connection) })
+    material.mcpReview = 'pendente'
     const label = KIND_LABELS[kind]
-    const outcome = publishOutcome(args.publicar ? submitMaterialPublication(state, user, material, {}) : null, label)
-    const link = `${appUrl()}/app/comunidade/conteudo/${material.id}`
+    const link = `${appUrl()}/app/recebidos`
     const size = kind === 'mapa' ? `${countNodes(material.body.root)} nós` : `${String(material.body.markdown).split(/\s+/).filter(Boolean).length} palavras`
     return {
       target: { type: 'material', id: material.id, title: material.title },
-      text: `${label} "${material.title}" salvo no Memora (${size}). ${outcome.message}\nAbrir: ${link}`,
-      structured: { id: material.id, tipo: kind, titulo: material.title, status: outcome.status, link, ...(outcome.blockedBy ? { bloqueio: outcome.blockedBy } : {}) }
+      text: `${label} "${material.title}" enviado ao Memora (${size}). ${PENDING_MESSAGE}\nRevisar: ${link}`,
+      structured: { id: material.id, tipo: kind, titulo: material.title, status: 'pendente', link }
     }
   }
 }

@@ -59,6 +59,7 @@ export const profile = {
   plan: 'Plano {plan}',
   minor: 'Conta vinculada ao responsável. Algumas ações dependem da liberação dele.',
   shortcuts: {
+    requests: 'Recebidos via MCP',
     connections: 'Conexões (MCP)',
     wallet: 'Carteira',
     objectives: 'Objetivos',

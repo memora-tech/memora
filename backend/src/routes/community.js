@@ -42,8 +42,8 @@ export function communityRoutes() {
     const latest = [...decks, ...materials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))).slice(0, 8)
     const trending = [...decks, ...materials].sort((a, b) => engagement(b) - engagement(a)).slice(0, 6)
     const followingMaterials = materials.filter((m) => followed.includes(m.authorId))
-    const mine = state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt)
-    const counts = { flashcards: decks.length, ...Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])), mine: mine.length + own.length }
+    const mine = state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt && m.mcpReview !== 'pendente')
+    const counts = { flashcards: decks.length, ...Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])), mine: mine.length + own.filter((d) => d.mcpReview !== 'pendente').length }
     const sourceCounts = {}
     materials.forEach((m) => {
       const client = m.source?.client || 'IA'

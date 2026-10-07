@@ -22,6 +22,7 @@ const material = (id, kind, authorId, title, categoryId, extra) => ({
   aiGenerated: true,
   source: { channel: 'mcp', client: extra.client || 'Claude', connectionId: null },
   status: extra.status || 'aprovado',
+  ...(extra.mcpReview ? { mcpReview: extra.mcpReview } : {}),
   publicationId: null,
   publishedAt: extra.status === 'privado' ? null : extra.publishedAt,
   createdAt: extra.createdAt || extra.publishedAt,
@@ -207,6 +208,7 @@ export function seedMaterials() {
       source: { channel: 'app', client: null, connectionId: null }
     },
     material('m7', 'mapa', 'u1', 'Como funciona a repetição espaçada', 'outros', {
+      mcpReview: 'pendente',
       tags: ['estudo'],
       description: 'Mapa que montei conversando com o Claude.',
       status: 'privado',

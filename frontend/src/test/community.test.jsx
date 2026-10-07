@@ -60,17 +60,17 @@ describe('comunidade com vários tipos de conteúdo', () => {
     expect(screen.getByText('aceptor final').tagName).toBe('STRONG')
   })
 
-  it('Minhas publicações reúne blog, decks e conteúdos e compartilha escolhendo o público', async () => {
+  it('Minhas publicações reúne blog e decks, sem o que ainda está pendente no MCP', async () => {
     renderAt('/app/comunidade?tipo=mine')
-    const title = await screen.findByText('Como funciona a repetição espaçada', {}, { timeout: 4000 })
-    expect(screen.getByText('Como montei meu cronograma para a OAB')).toBeInTheDocument()
+    const title = await screen.findByText('Como montei meu cronograma para a OAB', {}, { timeout: 4000 })
     expect(screen.getByText('Direito Constitucional')).toBeInTheDocument()
+    expect(screen.queryByText('Como funciona a repetição espaçada')).not.toBeInTheDocument()
     const row = title.closest('li')
     await userEvent.click(within(row).getByRole('button', { name: 'Compartilhar' }))
     const dialog = await screen.findByRole('dialog', { name: 'Compartilhar' })
     expect(within(dialog).getByRole('radio', { name: /Toda a comunidade/ })).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Enviar para moderação' }))
-    await waitFor(() => expect(live.store.state.materials.find((m) => m.id === 'm7').status).toBe('em_triagem'))
+    await waitFor(() => expect(live.store.state.materials.find((m) => m.id === 'm8').status).toBe('em_triagem'))
   })
 
   it('aba Blog mostra a lista editorial com botão de escrever', async () => {
@@ -116,7 +116,7 @@ describe('estrutura do app', () => {
   it('a comunidade não mostra nada de MCP', async () => {
     renderAt('/app/comunidade')
     expect(await screen.findByRole('heading', { name: 'Linha do tempo' }, { timeout: 4000 })).toBeInTheDocument()
-    expect(screen.queryByText(/MCP/)).not.toBeInTheDocument()
+    expect(within(screen.getByRole('main')).queryByText(/MCP/)).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Conectar IA/ })).not.toBeInTheDocument()
   })
 
@@ -183,6 +183,32 @@ describe('deck e objetivos', () => {
     const next = await screen.findByRole('region', { name: /ENEM/ }, { timeout: 4000 })
     expect(within(next).getByText('23')).toBeInTheDocument()
     expect(within(next).getByText(/Faltam 23 dias/)).toBeInTheDocument()
+  })
+})
+
+describe('recebidos via MCP', () => {
+  it('pendente aparece em Recebidos, com contador no menu, e aprovar para o meu blog tira da fila', async () => {
+    renderAt('/app/recebidos')
+    expect(await screen.findByRole('heading', { name: 'Recebidos via MCP', level: 1 }, { timeout: 4000 })).toBeInTheDocument()
+    const [nav] = screen.getAllByRole('navigation', { name: 'Navegação principal' })
+    expect(await within(nav).findByRole('link', { name: /Recebidos \(MCP\).*1/ }, { timeout: 4000 })).toBeInTheDocument()
+    const card = (await screen.findByRole('heading', { name: 'Como funciona a repetição espaçada' })).closest('article')
+    await userEvent.click(within(card).getByRole('button', { name: 'Aprovar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Aprovar solicitação' })
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Só no meu blog/ }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aprovar e guardar no meu blog' }))
+    await waitFor(() => expect(live.store.state.materials.find((m) => m.id === 'm7')).toMatchObject({ mcpReview: 'aprovado', status: 'privado' }))
+    expect(await screen.findByText('Nenhuma solicitação esperando')).toBeInTheDocument()
+  })
+
+  it('recusar exclui o conteúdo enviado pela IA', async () => {
+    renderAt('/app/recebidos')
+    const card = (await screen.findByRole('heading', { name: 'Como funciona a repetição espaçada' }, { timeout: 4000 })).closest('article')
+    await userEvent.click(within(card).getByRole('button', { name: 'Recusar' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Recusar' }))
+    await waitFor(() => expect(live.store.state.materials.find((m) => m.id === 'm7')).toMatchObject({ mcpReview: 'recusado' }))
+    expect(live.store.state.materials.find((m) => m.id === 'm7').deletedAt).toBeTruthy()
   })
 })
 

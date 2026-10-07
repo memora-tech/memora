@@ -12,6 +12,7 @@ import { NoaCard } from '../study/NoaCard.jsx'
 import { MyBlogPanel } from './MyBlogPanel.jsx'
 
 const SHORTCUTS = [
+  { key: 'requests', icon: 'archive', to: '/app/recebidos' },
   { key: 'connections', icon: 'plug', to: '/app/perfil/conexoes' },
   { key: 'wallet', icon: 'wallet', to: '/app/carteira' },
   { key: 'objectives', icon: 'target', to: '/app/perfil/objetivos' },

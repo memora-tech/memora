@@ -115,7 +115,7 @@ export function materialRoutes() {
 
   r.get('/me/materials', requireStudent, (req, res) => {
     const state = req.store.state
-    const items = state.materials.filter((m) => m.ownerId === req.user.id && !m.deletedAt).map((m) => materialPublic(state, m, req.user.id))
+    const items = state.materials.filter((m) => m.ownerId === req.user.id && !m.deletedAt && m.mcpReview !== 'pendente').map((m) => materialPublic(state, m, req.user.id))
     res.json({ items, total: items.length })
   })
 
@@ -195,9 +195,9 @@ export function materialRoutes() {
 
   r.get('/me/publications', requireStudent, (req, res) => {
     const state = req.store.state
-    const materials = state.materials.filter((m) => m.ownerId === req.user.id && !m.deletedAt).map((m) => materialPublic(state, m, req.user.id))
+    const materials = state.materials.filter((m) => m.ownerId === req.user.id && !m.deletedAt && m.mcpReview !== 'pendente').map((m) => materialPublic(state, m, req.user.id))
     const communityDeckFor = (deck) => state.community.decks.find((c) => c.publicId && c.publicId === deck.publication?.publicId)
-    const decks = ownDecksOf(state, req.user.id).map((d) => {
+    const decks = ownDecksOf(state, req.user.id).filter((d) => d.mcpReview !== 'pendente').map((d) => {
       const community = communityDeckFor(d)
       return {
         kind: 'flashcards',

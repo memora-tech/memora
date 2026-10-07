@@ -4,9 +4,8 @@ import styles from './mcp.module.css'
 import { Button, Icon, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useStudy } from '../../state/StudyContext.jsx'
-import { studentApi } from '../../lib/api.js'
 import { fmtRelative } from '../../lib/format.js'
-import { useMcpInbox } from './arrivals.js'
+import { decideRequest, useMcpInbox } from './arrivals.js'
 
 const JOURNEY = ['arrived', 'review', 'share', 'moderation', 'community']
 
@@ -59,11 +58,8 @@ function MaterialArrival({ item, more, onDismiss }) {
       </ol>
 
       <div className={styles.alertActions}>
-        <Button icon="send" onClick={() => go(`/app/comunidade/conteudo/${m.id}`)}>
+        <Button icon="eye" onClick={() => go('/app/recebidos')}>
           {t('mcp.arrival.reviewShare')}
-        </Button>
-        <Button variant="ghost" icon="news" onClick={() => go('/app/perfil#meu-blog')}>
-          {t('mcp.arrival.openBlog')}
         </Button>
         <span className={styles.alertHint}>{t('mcp.arrival.postHint')}</span>
       </div>
@@ -85,7 +81,7 @@ export function McpArrivalAlert() {
   const addToStudy = async () => {
     setBusy(true)
     try {
-      await studentApi.patch(`/decks/${item.deck.id}`, { scheduled: true })
+      await decideRequest(item.id, 'approve', { schedule: true })
       toast.show({ message: t('mcp.arrival.added', { name: item.deck.name }), icon: 'check' })
       await dismiss(item.id)
       study.loadToday()
@@ -98,7 +94,7 @@ export function McpArrivalAlert() {
 
   const open = async () => {
     await dismiss(item.id)
-    navigate(`/app/decks/${item.deck.id}`)
+    navigate('/app/recebidos')
   }
 
   return (
@@ -140,7 +136,7 @@ export function McpArrivalAlert() {
         <Button icon="calendar" onClick={addToStudy} loading={busy}>
           {t('mcp.arrival.addToStudy')}
         </Button>
-        <Button variant="ghost" icon="eye" onClick={open}>
+        <Button variant="ghost" icon="eye" onClick={open} className={styles.alertGhost}>
           {t('mcp.arrival.review')}
         </Button>
         <span className={styles.alertHint}>{t('mcp.arrival.hint')}</span>

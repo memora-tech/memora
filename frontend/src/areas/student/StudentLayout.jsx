@@ -14,6 +14,7 @@ import { PauseSheet } from '../../features/study/PauseSheet.jsx'
 import { LayoutBanners } from './LayoutBanners.jsx'
 import { UserMenu } from './UserMenu.jsx'
 import { McpArrivalWatcher } from '../../features/mcp/McpArrivalAlert.jsx'
+import { useMcpRequests } from '../../features/mcp/arrivals.js'
 import { NotificationCard } from '../../features/notifications/NotificationCard.jsx'
 
 const NAV_GROUPS = [
@@ -26,11 +27,17 @@ const NAV_GROUPS = [
     ]
   },
   { key: 'community', items: [{ to: '/app/comunidade', key: 'community', icon: 'users' }] },
-  { key: 'ai', items: [{ to: '/app/noa', key: 'noa', icon: 'sparkle', badge: 'IA' }] }
+  {
+    key: 'ai',
+    items: [
+      { to: '/app/noa', key: 'noa', icon: 'sparkle', badge: 'IA' },
+      { to: '/app/recebidos', key: 'requests', icon: 'plug', counter: true }
+    ]
+  }
 ]
 
 const WIDE_EXACT = ['/app', '/app/decks', '/app/criar', '/app/perfil', '/app/carteira', '/app/perfil/conexoes']
-const WIDE_PREFIX = ['/app/comunidade', '/app/noa', '/app/decks/', '/app/pastas', '/app/perfil/objetivos', '/app/perfil/blog']
+const WIDE_PREFIX = ['/app/comunidade', '/app/noa', '/app/recebidos', '/app/decks/', '/app/pastas', '/app/perfil/objetivos', '/app/perfil/blog']
 const FILL = ['/app/comunidade']
 
 const TABS = [
@@ -92,6 +99,7 @@ export function StudentLayout() {
   const path = location.pathname.replace(/\/$/, '') || '/app'
   const wide = WIDE_EXACT.includes(path) || WIDE_PREFIX.some((p) => path.startsWith(p))
   const fill = FILL.includes(path)
+  const requests = useMcpRequests()
   const [peek, setPeek] = useState(false)
 
   useEffect(() => {
@@ -164,6 +172,12 @@ export function StudentLayout() {
                   <Icon name={item.icon} size={20} />
                   <span className={styles.railLabel}>{tabLabel(item.key)}</span>
                   {item.badge ? <span className={styles.railBadge}>{item.badge}</span> : null}
+                  {item.counter && requests.pending ? (
+                    <span className={styles.railCount}>
+                      {requests.pending}
+                      <span className="sr-only"> {t('common.nav.pendingRequests', { count: requests.pending })}</span>
+                    </span>
+                  ) : null}
                 </NavLink>
               ))}
             </div>

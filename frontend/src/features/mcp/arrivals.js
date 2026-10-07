@@ -10,6 +10,42 @@ export async function simulateMcpArrival(kind = 'flashcards') {
   return res
 }
 
+export const REQUESTS_EVENT = 'memora:mcp-requests-changed'
+
+export function useMcpRequests() {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const load = useCallback(async () => {
+    try {
+      setData(await studentApi.get('/mcp/requests'))
+      setError(null)
+    } catch (err) {
+      setError(err)
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+    const timer = setInterval(load, POLL_MS)
+    window.addEventListener(ARRIVAL_EVENT, load)
+    window.addEventListener(REQUESTS_EVENT, load)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener(ARRIVAL_EVENT, load)
+      window.removeEventListener(REQUESTS_EVENT, load)
+    }
+  }, [load])
+
+  return { data, error, reload: load, pending: data?.counts?.pendente ?? 0 }
+}
+
+export async function decideRequest(id, action, body = {}) {
+  const res = await studentApi.post(`/mcp/requests/${id}/${action}`, body)
+  window.dispatchEvent(new CustomEvent(REQUESTS_EVENT))
+  window.dispatchEvent(new CustomEvent(ARRIVAL_EVENT))
+  return res
+}
+
 export function useMcpInbox() {
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)

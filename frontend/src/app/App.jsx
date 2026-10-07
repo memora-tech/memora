@@ -29,6 +29,7 @@ import { MaterialView } from '../features/community/MaterialView.jsx'
 import { McpConnect } from '../features/profile/McpConnect.jsx'
 import { NoaHub } from '../features/noa/NoaHub.jsx'
 import { BlogEditor } from '../features/profile/BlogEditor.jsx'
+import { McpRequests } from '../features/mcp/McpRequests.jsx'
 import { ProfileHome } from '../features/profile/ProfileHome.jsx'
 import { SubscriptionPage } from '../features/profile/SubscriptionPage.jsx'
 import { PrivacyPage } from '../features/profile/PrivacyPage.jsx'
@@ -105,6 +106,7 @@ export function AppRoutes() {
         <Route path="perfil/blog/novo" element={<BlogEditor />} />
         <Route path="perfil/blog/:postId" element={<BlogEditor />} />
         <Route path="noa" element={<NoaHub />} />
+        <Route path="recebidos" element={<McpRequests />} />
         <Route path="perfil" element={<ProfileHome />} />
         <Route path="perfil/assinatura" element={<SubscriptionPage />} />
         <Route path="perfil/privacidade" element={<PrivacyPage />} />

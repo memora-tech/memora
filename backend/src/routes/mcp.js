@@ -6,6 +6,7 @@ import { MCP_BLOG_SAMPLES, MCP_SAMPLES } from '../seed/mcpSamples.js'
 import { id, nowIso, sha256 } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 import { MCP_LIMITS, appUrl, callTool, hasTool, toolCatalog, toolList } from '../lib/mcpTools.js'
+import { shareMaterialWithFollowers, submitMaterialPublication } from '../lib/publishing.js'
 
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05']
 
@@ -15,7 +16,7 @@ const INSTRUCTIONS = [
   'Memora é uma comunidade de estudos. Use estas ferramentas para guardar no Memora o que foi criado nesta conversa:',
   'salvar_flashcards (decks para repetição espaçada), salvar_resumo, salvar_mapa_mental e salvar_noticia (posts de blog e notícias de educação, sempre com link e veículo originais).',
   'Antes de gerar algo do zero, use buscar_comunidade para ver se já existe material publicado; ler_conteudo traz o conteúdo completo.',
-  'Só envie à comunidade (publicar: true) quando o aluno pedir explicitamente; por padrão tudo fica privado na conta dele.'
+  'Tudo o que você salvar chega ao aluno como solicitação pendente: ele revisa no Memora, em Recebidos (MCP), e decide se aprova, onde publica ou se recusa. Você não publica nada diretamente.'
 ].join(' ')
 
 const rpcError = (idValue, code, message, data) => ({ jsonrpc: '2.0', id: idValue ?? null, error: { code, message, ...(data ? { data } : {}) } })
@@ -113,11 +114,11 @@ export function mcpRoutes() {
         const base = { id: a.id, at: a.at, source: connection?.name || 'IA', client: connection?.client || null }
         if (a.targetType === 'material') {
           const m = state.materials.find((x) => x.id === a.targetId && !x.deletedAt)
-          if (!m) return null
+          if (!m || m.mcpReview !== 'pendente') return null
           return { ...base, kind: m.kind, material: { id: m.id, title: m.title, description: m.description, kind: m.kind, status: m.status, categoryName: categoryName(state, m.categoryId), readingMinutes: Math.max(1, Math.round(String(m.body.markdown || '').split(/\s+/).length / 200)) } }
         }
         const deck = state.decks.find((d) => d.id === a.targetId && !d.deletedAt)
-        if (!deck) return null
+        if (!deck || deck.mcpReview !== 'pendente') return null
         const cards = state.cards.filter((c) => c.deckId === deck.id && !c.deletedAt)
         return {
           ...base,
@@ -128,6 +129,80 @@ export function mcpRoutes() {
       })
       .filter(Boolean)
     res.json({ items })
+  })
+
+  const requestTarget = (state, entry) => (entry.targetType === 'deck' ? state.decks.find((d) => d.id === entry.targetId) : state.materials.find((m) => m.id === entry.targetId))
+
+  const requestView = (state, entry) => {
+    const target = requestTarget(state, entry)
+    if (!target) return null
+    const connection = state.mcp.connections.find((c) => c.id === entry.connectionId)
+    const base = { id: entry.id, at: entry.at, source: connection?.name || 'IA', status: target.mcpReview || 'aprovado', decidedAt: target.mcpDecidedAt || null }
+    if (entry.targetType === 'deck') {
+      const cards = state.cards.filter((c) => c.deckId === target.id)
+      return { ...base, kind: 'flashcards', target: { id: target.id, title: target.name, categoryName: categoryName(state, target.categoryId), scheduled: target.scheduled !== false, deleted: Boolean(target.deletedAt) }, cards: cards.map((c) => ({ front: c.front, back: c.back })) }
+    }
+    return {
+      ...base,
+      kind: target.kind,
+      target: { id: target.id, title: target.title, description: target.description, categoryName: categoryName(state, target.categoryId), status: target.status, audience: target.audience || 'comunidade', deleted: Boolean(target.deletedAt) },
+      body: target.body
+    }
+  }
+
+  r.get('/mcp/requests', requireStudent, (req, res) => {
+    const state = req.store.state
+    const all = state.mcp.activity
+      .filter((a) => a.userId === req.user.id && a.ok && a.write && (a.targetType === 'deck' || a.targetType === 'material'))
+      .map((a) => requestView(state, a))
+      .filter(Boolean)
+    const counts = { pendente: 0, aprovado: 0, recusado: 0 }
+    all.forEach((r) => {
+      counts[r.status] = (counts[r.status] || 0) + 1
+    })
+    const status = ['pendente', 'aprovado', 'recusado'].includes(req.query.status) ? req.query.status : null
+    res.json({ items: status ? all.filter((r) => r.status === status) : all, counts })
+  })
+
+  r.post('/mcp/requests/:id/approve', requireStudent, (req, res) => {
+    const state = req.store.state
+    const entry = state.mcp.activity.find((a) => a.id === req.params.id && a.userId === req.user.id)
+    const target = entry ? requestTarget(state, entry) : null
+    if (!target || target.deletedAt) return fail(res, 404, 'not_found', 'Solicitação não encontrada.')
+    if (target.mcpReview !== 'pendente') return fail(res, 409, 'already_decided', 'Esta solicitação já foi decidida.')
+    if (entry.targetType === 'deck') {
+      target.mcpReview = 'aprovado'
+      target.mcpDecidedAt = nowIso()
+      target.scheduled = req.body?.schedule !== false
+      entry.seenAt = entry.seenAt || nowIso()
+      appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'mcp_request_approved', target: target.id, details: { kind: 'flashcards' } })
+      return res.json({ request: requestView(state, entry) })
+    }
+    const audience = ['comunidade', 'seguidores', 'privado'].includes(req.body?.audience) ? req.body.audience : 'comunidade'
+    if (audience !== 'privado') {
+      const result = audience === 'seguidores' ? shareMaterialWithFollowers(state, req.user, target, { acceptPolicy: req.body?.acceptPolicy }) : submitMaterialPublication(state, req.user, target, { acceptPolicy: req.body?.acceptPolicy })
+      if (result.error) return fail(res, result.error.status, result.error.code, result.error.message, result.error.extra)
+      if (audience === 'comunidade') target.audience = 'comunidade'
+    }
+    target.mcpReview = 'aprovado'
+    target.mcpDecidedAt = nowIso()
+    entry.seenAt = entry.seenAt || nowIso()
+    appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'mcp_request_approved', target: target.id, details: { kind: target.kind, audience } })
+    res.json({ request: requestView(state, entry), audience })
+  })
+
+  r.post('/mcp/requests/:id/reject', requireStudent, (req, res) => {
+    const state = req.store.state
+    const entry = state.mcp.activity.find((a) => a.id === req.params.id && a.userId === req.user.id)
+    const target = entry ? requestTarget(state, entry) : null
+    if (!target || target.deletedAt) return fail(res, 404, 'not_found', 'Solicitação não encontrada.')
+    if (target.mcpReview !== 'pendente') return fail(res, 409, 'already_decided', 'Esta solicitação já foi decidida.')
+    target.mcpReview = 'recusado'
+    target.mcpDecidedAt = nowIso()
+    target.deletedAt = nowIso()
+    entry.seenAt = entry.seenAt || nowIso()
+    appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'mcp_request_rejected', target: target.id, details: { kind: entry.targetType } })
+    res.json({ request: requestView(state, entry) })
   })
 
   r.post('/mcp/inbox/:id/seen', requireStudent, (req, res) => {

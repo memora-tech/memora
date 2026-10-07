@@ -26,7 +26,7 @@ export function deckRoutes() {
 
   r.get('/decks', requireStudent, (req, res) => {
     const state = req.store.state
-    const decks = ownDecksOf(state, req.user.id).map((d) => deckSummary(state, d))
+    const decks = ownDecksOf(state, req.user.id).filter((d) => d.mcpReview !== 'pendente').map((d) => deckSummary(state, d))
     const favorites = state.community.favorites
       .filter((f) => f.userId === req.user.id)
       .map((f) => {

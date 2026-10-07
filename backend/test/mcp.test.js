@@ -78,14 +78,21 @@ describe('servidor MCP', () => {
     expect(revoked.status).toBe(401)
   })
 
-  it('salvar_flashcards cria o deck na biblioteca do aluno', async () => {
+  it('salvar_flashcards chega como solicitação pendente e só entra na biblioteca depois de aprovado', async () => {
     const student = await studentToken()
     const token = await connect(student)
     const res = await call(token, 'salvar_flashcards', { titulo: 'Verbos irregulares', categoria: 'idiomas', cards: [{ frente: 'go', verso: 'went / gone' }, { frente: 'see', verso: 'saw / seen' }] })
     expect(res.body.result.isError).toBe(false)
-    expect(res.body.result.structuredContent.cards).toBe(2)
-    const decks = await request(app).get('/v1/decks').set(auth(student))
-    expect(JSON.stringify(decks.body)).toContain('Verbos irregulares')
+    expect(res.body.result.structuredContent).toMatchObject({ cards: 2, status: 'pendente' })
+    const before = await request(app).get('/v1/decks').set(auth(student))
+    expect(JSON.stringify(before.body)).not.toContain('Verbos irregulares')
+    const requests = await request(app).get('/v1/mcp/requests?status=pendente').set(auth(student))
+    const req = requests.body.items.find((r) => r.target.title === 'Verbos irregulares')
+    expect(req.cards).toHaveLength(2)
+    const approved = await request(app).post(`/v1/mcp/requests/${req.id}/approve`).set(auth(student)).send({ schedule: true })
+    expect(approved.body.request.status).toBe('aprovado')
+    const after = await request(app).get('/v1/decks').set(auth(student))
+    expect(after.body.decks.find((d) => d.name === 'Verbos irregulares').scheduled).toBe(true)
   })
 
   it('erro de entrada volta como isError sem derrubar a conexão', async () => {
@@ -98,22 +105,23 @@ describe('servidor MCP', () => {
     expect(bad.body.error.code).toBe(-32602)
   })
 
-  it('mapa mental com publicar=true fica privado até o aceite da política e depois passa pela moderação', async () => {
+  it('mapa mental pendente: aprovar para a comunidade passa pelo aceite da política e pela moderação', async () => {
     const student = await studentToken()
     const token = await connect(student)
-    const saved = await call(token, 'salvar_mapa_mental', { ...MAPA, publicar: true })
+    const saved = await call(token, 'salvar_mapa_mental', MAPA)
     const out = saved.body.result.structuredContent
-    expect(out.status).toBe('privado')
-    expect(out.bloqueio).toBe('policy_acceptance_required')
+    expect(out.status).toBe('pendente')
 
-    const feedBefore = await request(app).get('/v1/community/feed').set(auth(student))
-    expect(feedBefore.body.materials.mapa.some((m) => m.id === out.id)).toBe(false)
     const mine = await request(app).get('/v1/me/materials').set(auth(student))
-    expect(mine.body.items.find((m) => m.id === out.id).status).toBe('privado')
+    expect(mine.body.items.some((m) => m.id === out.id)).toBe(false)
+    const requests = await request(app).get('/v1/mcp/requests?status=pendente').set(auth(student))
+    const req = requests.body.items.find((r) => r.target.id === out.id)
+    expect(req.body.root.label).toBe('Revolução Francesa')
 
-    const pub = await request(app).post(`/v1/me/materials/${out.id}/publish`).set(auth(student)).send({ acceptPolicy: true })
-    expect(pub.status).toBe(201)
-    expect(pub.body.material.status).toBe('em_triagem')
+    const noPolicy = await request(app).post(`/v1/mcp/requests/${req.id}/approve`).set(auth(student)).send({ audience: 'comunidade' })
+    expect(noPolicy.status).toBe(428)
+    const ok = await request(app).post(`/v1/mcp/requests/${req.id}/approve`).set(auth(student)).send({ audience: 'comunidade', acceptPolicy: true })
+    expect(ok.body.request).toMatchObject({ status: 'aprovado', target: { status: 'em_triagem' } })
 
     const mod = (await request(app).post('/v1/admin/auth/login').send({ role: 'moderador' })).body.token
     const queue = await request(app).get('/v1/admin/moderation/queue').set(auth(mod))
@@ -126,20 +134,28 @@ describe('servidor MCP', () => {
 
     const feed = await request(app).get('/v1/community/feed').set(auth(student))
     expect(feed.body.materials.mapa[0].id).toBe(out.id)
-    expect(feed.body.latest.some((x) => x.id === out.id)).toBe(true)
     const search = await request(app).get('/v1/community/search?q=revolução&kind=mapa').set(auth(student))
     expect(search.body.results.map((r) => r.id)).toEqual([out.id])
   })
 
-  it('com a política aceita, publicar=true envia direto para a fila', async () => {
+  it('recusar uma solicitação exclui o conteúdo e ele nunca aparece', async () => {
     const student = await studentToken()
-    store.state.consents.u1.contentPolicyAcceptedVersion = store.state.admin.policy.version
     const token = await connect(student)
-    const res = await call(token, 'salvar_noticia', { titulo: 'Inscrições do ENEM abertas', descricao: 'Prazo vai até o fim do mês e a taxa pode ser isenta.', texto: 'As inscrições podem ser feitas pela página do participante. Quem é de escola pública tem isenção automática.', url_original: 'https://www.exemplo.gov.br/enem', publicar: true })
-    expect(res.body.result.structuredContent.status).toBe('em_triagem')
-    const material = store.state.materials.find((m) => m.id === res.body.result.structuredContent.id)
+    const res = await call(token, 'salvar_noticia', { titulo: 'Inscrições do ENEM abertas', descricao: 'Prazo vai até o fim do mês e a taxa pode ser isenta.', texto: 'As inscrições podem ser feitas pela página do participante. Quem é de escola pública tem isenção automática.', url_original: 'https://www.exemplo.gov.br/enem' })
+    const id = res.body.result.structuredContent.id
+    const material = store.state.materials.find((m) => m.id === id)
     expect(material.body.outlet).toBe('exemplo.gov.br')
     expect(material.source.client).toBe('Claude Desktop')
+    const list = await request(app).get('/v1/mcp/requests?status=pendente').set(auth(student))
+    const req = list.body.items.find((r) => r.target.id === id)
+    const rejected = await request(app).post(`/v1/mcp/requests/${req.id}/reject`).set(auth(student))
+    expect(rejected.body.request.status).toBe('recusado')
+    const again = await request(app).post(`/v1/mcp/requests/${req.id}/approve`).set(auth(student)).send({ audience: 'privado' })
+    expect(again.status).toBe(404)
+    const page = await request(app).get(`/v1/community/materials/${id}`).set(auth(student))
+    expect(page.status).toBe(404)
+    const counts = await request(app).get('/v1/mcp/requests').set(auth(student))
+    expect(counts.body.counts.recusado).toBe(1)
   })
 
   it('buscar_comunidade e ler_conteudo trazem material publicado para a conversa', async () => {
@@ -170,7 +186,7 @@ describe('comunidade com vários tipos de conteúdo', () => {
   it('feed traz contagem por tipo, novidades misturadas e estado da conexão de IA', async () => {
     const student = await studentToken()
     const feed = await request(app).get('/v1/community/feed').set(auth(student))
-    expect(feed.body.counts).toMatchObject({ flashcards: 7, resumo: 2, mapa: 2, noticia: 2, mine: 8 })
+    expect(feed.body.counts).toMatchObject({ flashcards: 7, resumo: 2, mapa: 2, noticia: 2, mine: 7 })
     expect(new Set(feed.body.latest.map((x) => x.kind)).size).toBeGreaterThan(1)
     expect(feed.body.mcp).toBeUndefined()
     expect(feed.body.sources.map((s) => s.client)).toContain('Claude')
@@ -284,21 +300,25 @@ describe('blog, público e comentários', () => {
 })
 
 describe('post de blog vindo de outra IA até a comunidade', () => {
-  it('chega pelo MCP privado, o aluno compartilha, a moderação aprova e aparece no Blog', async () => {
+  it('chega pelo MCP como pendente, o aluno aprova para a comunidade, a moderação aprova e aparece no Blog', async () => {
     const student = await studentToken()
     const sim = await request(app).post('/v1/mcp/simulate').set(auth(student)).send({ kind: 'noticia' })
     expect(sim.status).toBe(201)
-    expect(sim.body.result).toMatchObject({ tipo: 'noticia', status: 'privado', titulo: 'Pomodoro funciona para estudar para o ENEM?' })
+    expect(sim.body.result).toMatchObject({ tipo: 'noticia', status: 'pendente', titulo: 'Pomodoro funciona para estudar para o ENEM?' })
     const id = sim.body.result.id
 
     const inbox = await request(app).get('/v1/mcp/inbox').set(auth(student))
-    expect(inbox.body.items[0]).toMatchObject({ kind: 'noticia', source: 'Claude Desktop', material: { id, status: 'privado' } })
+    expect(inbox.body.items[0]).toMatchObject({ kind: 'noticia', source: 'Claude Desktop', material: { id } })
+    const blog = await request(app).get('/v1/me/materials').set(auth(student))
+    expect(blog.body.items.some((m) => m.id === id)).toBe(false)
 
     const before = await request(app).get('/v1/community/feed').set(auth(student))
     expect(before.body.materials.noticia.some((m) => m.id === id)).toBe(false)
 
-    const shared = await request(app).post(`/v1/me/materials/${id}/publish`).set(auth(student)).send({ audience: 'comunidade', acceptPolicy: true })
-    expect(shared.body.material.status).toBe('em_triagem')
+    const requests = await request(app).get('/v1/mcp/requests?status=pendente').set(auth(student))
+    const req = requests.body.items.find((r) => r.target.id === id)
+    const approved = await request(app).post(`/v1/mcp/requests/${req.id}/approve`).set(auth(student)).send({ audience: 'comunidade', acceptPolicy: true })
+    expect(approved.body.request.target.status).toBe('em_triagem')
 
     const mod = (await request(app).post('/v1/admin/auth/login').send({ role: 'moderador' })).body.token
     const queue = await request(app).get('/v1/admin/moderation/queue').set(auth(mod))
@@ -309,5 +329,7 @@ describe('post de blog vindo de outra IA até a comunidade', () => {
     const after = await request(app).get('/v1/community/feed').set(auth(student))
     const post = after.body.materials.noticia.find((m) => m.id === id)
     expect(post).toMatchObject({ status: 'aprovado', audience: 'comunidade', aiGenerated: true, source: { client: 'Claude Desktop' } })
+    const blogAfter = await request(app).get('/v1/me/materials').set(auth(student))
+    expect(blogAfter.body.items.some((m) => m.id === id)).toBe(true)
   })
 })

@@ -7,6 +7,8 @@ export const common = {
     profile: 'Perfil',
     create: 'Criar deck',
     noa: 'Nôa',
+    requests: 'Recebidos (MCP)',
+    pendingRequests: { one: 'solicitação pendente', other: 'solicitações pendentes' },
     wallet: 'Carteira',
     groups: { study: 'Estudo', community: 'Comunidade', ai: 'Inteligência' },
     plan: { free: 'Plano gratuito', premium: 'Plano Premium' },

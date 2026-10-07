@@ -143,6 +143,8 @@ export const community = {
     related: 'Relacionados',
     favorite: 'Salvar',
     favorited: 'Salvo',
+    editPost: 'Editar post',
+    writtenBy: 'Escrito pelo autor',
     favoriteToast: 'Salvo nos seus favoritos',
     unfavoriteToast: 'Removido dos favoritos',
     reportTitle: 'Denunciar conteúdo',
