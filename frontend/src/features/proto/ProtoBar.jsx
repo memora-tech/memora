@@ -88,7 +88,10 @@ export function ProtoBar() {
 
         <div className={styles.block}>
           <span className={styles.label}>{t('proto.mcp')}</span>
-          <SimulateButton size="small" onDone={() => proto.setBarOpen(false)} />
+          <div className={styles.row}>
+            <SimulateButton size="small" onDone={() => proto.setBarOpen(false)} />
+            <SimulateButton size="small" kind="noticia" onDone={() => proto.setBarOpen(false)} />
+          </div>
           <span className={styles.meta}>{t('mcp.arrival.simulateHint')}</span>
         </div>
 

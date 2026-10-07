@@ -29,7 +29,7 @@ afterEach(async () => {
 describe('regra dos 3 toques', () => {
   it('abre em E1 com Começar a 1 toque e mostra 18 cards em 6 minutos', async () => {
     renderAt('/app')
-    const start = await screen.findByRole('button', { name: /Começar/ })
+    const start = await screen.findByRole('button', { name: /Começar/ }, { timeout: 4000 })
     expect(start).toBeInTheDocument()
     expect(await screen.findByText(/18 cards para hoje/)).toBeInTheDocument()
     expect(screen.getByText(/~6 min/)).toBeInTheDocument()

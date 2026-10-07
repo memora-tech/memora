@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { randomBytes } from 'node:crypto'
 import { requireStudent } from '../lib/auth.js'
 import { fail, categoryName } from '../lib/helpers.js'
-import { MCP_SAMPLES } from '../seed/mcpSamples.js'
+import { MCP_BLOG_SAMPLES, MCP_SAMPLES } from '../seed/mcpSamples.js'
 import { id, nowIso, sha256 } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 import { MCP_LIMITS, appUrl, callTool, hasTool, toolCatalog, toolList } from '../lib/mcpTools.js'
@@ -107,17 +107,21 @@ export function mcpRoutes() {
   r.get('/mcp/inbox', requireStudent, (req, res) => {
     const state = req.store.state
     const items = state.mcp.activity
-      .filter((a) => a.userId === req.user.id && a.ok && a.write && a.targetType === 'deck' && !a.seenAt)
+      .filter((a) => a.userId === req.user.id && a.ok && a.write && (a.targetType === 'deck' || a.targetType === 'material') && !a.seenAt)
       .map((a) => {
+        const connection = state.mcp.connections.find((c) => c.id === a.connectionId)
+        const base = { id: a.id, at: a.at, source: connection?.name || 'IA', client: connection?.client || null }
+        if (a.targetType === 'material') {
+          const m = state.materials.find((x) => x.id === a.targetId && !x.deletedAt)
+          if (!m) return null
+          return { ...base, kind: m.kind, material: { id: m.id, title: m.title, description: m.description, kind: m.kind, status: m.status, categoryName: categoryName(state, m.categoryId), readingMinutes: Math.max(1, Math.round(String(m.body.markdown || '').split(/\s+/).length / 200)) } }
+        }
         const deck = state.decks.find((d) => d.id === a.targetId && !d.deletedAt)
         if (!deck) return null
         const cards = state.cards.filter((c) => c.deckId === deck.id && !c.deletedAt)
-        const connection = state.mcp.connections.find((c) => c.id === a.connectionId)
         return {
-          id: a.id,
-          at: a.at,
-          source: connection?.name || 'IA',
-          client: connection?.client || null,
+          ...base,
+          kind: 'flashcards',
           deck: { id: deck.id, name: deck.name, scheduled: deck.scheduled !== false, categoryName: categoryName(state, deck.categoryId), cardCount: cards.length },
           preview: cards.slice(0, 2).map((c) => ({ front: c.front, back: c.back }))
         }
@@ -140,10 +144,12 @@ export function mcpRoutes() {
       connection = { id: id('mcp'), userId: req.user.id, name: 'Claude Desktop', tokenHash: null, tokenHint: 'demo', client: 'claude-ai', createdAt: nowIso(), lastUsedAt: null, revokedAt: null, demo: true }
       state.mcp.connections.push(connection)
     }
-    const sent = state.mcp.activity.filter((a) => a.userId === req.user.id && a.simulated).length
-    const sample = MCP_SAMPLES[sent % MCP_SAMPLES.length]
+    const blog = req.body?.kind === 'noticia'
+    const sent = state.mcp.activity.filter((a) => a.userId === req.user.id && a.simulated && a.tool === (blog ? 'salvar_noticia' : 'salvar_flashcards')).length
+    const pool = blog ? MCP_BLOG_SAMPLES : MCP_SAMPLES
+    const sample = pool[sent % pool.length]
     connection.lastUsedAt = nowIso()
-    const result = callTool({ state, user: req.user, connection }, 'salvar_flashcards', sample)
+    const result = callTool({ state, user: req.user, connection }, blog ? 'salvar_noticia' : 'salvar_flashcards', sample)
     if (result.isError) return fail(res, 422, 'simulation_failed', result.content[0].text)
     state.mcp.activity[0].simulated = true
     res.status(201).json({ result: result.structuredContent, connection: { id: connection.id, name: connection.name }, activityId: state.mcp.activity[0].id })

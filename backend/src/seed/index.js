@@ -175,7 +175,7 @@ export function seed(profileKey = 'adult-free') {
     materials: seedMaterials(),
     mcp: {
       connections: [{ id: 'mcp_seed1', userId: 'u1', name: 'Claude Desktop', token: null, tokenHint: 'a91f', client: 'claude-ai', createdAt: daysFromNow(-6), lastUsedAt: hoursFromNow(-3), revokedAt: null }],
-      activity: [{ id: 'act_seed1', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_mapa_mental', write: true, ok: true, targetType: 'material', targetId: 'm7', title: 'Como funciona a repetição espaçada', at: hoursFromNow(-3) }]
+      activity: [{ id: 'act_seed1', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_mapa_mental', write: true, ok: true, targetType: 'material', targetId: 'm7', title: 'Como funciona a repetição espaçada', at: hoursFromNow(-3), seenAt: hoursFromNow(-2) }]
     },
     publications: [
       { id: 'pub1', deckId: 'd6', authorId: 'u1', authorName: 'Manoel', deckName: 'Direito Administrativo', version: 1, status: 'aprovado', plan: 'free', submittedAt: daysFromNow(-17), decidedAt: daysFromNow(-15), slaHours: 72, risk: { score: 12, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', 'Completude 100%'] }, reviewType: 'integral', reviewReason: 'Primeiros 5 decks do autor', assignedTo: 'adm8', decision: { by: 'adm8', decision: 'aprovado', reasonCategory: null, excerpt: null }, publicId: 'p-adm-2026', categoryId: 'concursos', difficulty: 'medio', cardCount: 5 },

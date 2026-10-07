@@ -1,3 +1,32 @@
+export const MCP_BLOG_SAMPLES = [
+  {
+    titulo: 'Pomodoro funciona para estudar para o ENEM?',
+    categoria: 'vestibular',
+    tags: ['técnicas de estudo', 'enem', 'foco'],
+    descricao: 'Blocos curtos com pausas ajudam a manter o foco, mas o segredo está em combinar com revisão espaçada. Veja como montar uma sessão.',
+    veiculo: 'Gerado com Claude',
+    texto: [
+      'A técnica Pomodoro divide o estudo em blocos de **25 minutos** de foco com **5 minutos** de pausa. Depois de quatro blocos, a pausa é maior.',
+      '',
+      '## Por que ajuda',
+      '- O bloco curto reduz a vontade de adiar o começo',
+      '- A pausa marcada evita o cansaço que derruba o rendimento no fim do dia',
+      '- Contar blocos dá uma medida simples de quanto você estudou',
+      '',
+      '## Onde ela falha',
+      'Pomodoro organiza o **tempo**, não o **conteúdo**. Sem revisar o que já estudou, você esquece boa parte em poucos dias.',
+      '',
+      '## Uma sessão que combina os dois',
+      '1. Primeiro bloco: revise os flashcards vencidos do dia.',
+      '2. Dois blocos de conteúdo novo, com anotações curtas.',
+      '3. Último bloco: transforme as anotações em flashcards.',
+      '',
+      'Ajuste o tamanho do bloco ao seu ritmo. Há quem renda melhor com 40 ou 50 minutos.'
+    ].join('\n'),
+    fontes: [{ titulo: 'Cirillo, F. The Pomodoro Technique (2006)' }]
+  }
+]
+
 export const MCP_SAMPLES = [
   {
     titulo: 'Revolução Francesa: causas e fases',

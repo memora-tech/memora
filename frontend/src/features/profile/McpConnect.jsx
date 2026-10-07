@@ -79,7 +79,7 @@ export function McpConnect() {
 
   return (
     <div className={[styles.page, styles.pageWide].join(' ')}>
-      <PageHeader title={t('mcp.title')} backTo="/app/perfil" backLabel={t('profile.title')} actions={<SimulateButton size="small" onDone={() => info.run().catch(() => {})} />}>
+      <PageHeader title={t('mcp.title')} backTo="/app/perfil" backLabel={t('profile.title')} actions={<><SimulateButton size="small" onDone={() => info.run().catch(() => {})} /><SimulateButton size="small" kind="noticia" onDone={() => info.run().catch(() => {})} /></>}>
         {t('mcp.lead')}
       </PageHeader>
 

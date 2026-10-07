@@ -117,7 +117,7 @@ export function MaterialView() {
         </Banner>
       ) : null}
 
-      {m.isMine ? (
+      {m.isMine && m.status !== 'em_triagem' ? (
         <div className={styles.ownerBar}>
           {m.status === 'privado' || m.status === 'rejeitado' ? (
             <Button icon="send" onClick={() => publish.ask(m)}>

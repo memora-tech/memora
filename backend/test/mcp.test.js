@@ -282,3 +282,32 @@ describe('blog, público e comentários', () => {
     expect(deckComments.body.threads.every((c) => c.deckId === 'c1')).toBe(true)
   })
 })
+
+describe('post de blog vindo de outra IA até a comunidade', () => {
+  it('chega pelo MCP privado, o aluno compartilha, a moderação aprova e aparece no Blog', async () => {
+    const student = await studentToken()
+    const sim = await request(app).post('/v1/mcp/simulate').set(auth(student)).send({ kind: 'noticia' })
+    expect(sim.status).toBe(201)
+    expect(sim.body.result).toMatchObject({ tipo: 'noticia', status: 'privado', titulo: 'Pomodoro funciona para estudar para o ENEM?' })
+    const id = sim.body.result.id
+
+    const inbox = await request(app).get('/v1/mcp/inbox').set(auth(student))
+    expect(inbox.body.items[0]).toMatchObject({ kind: 'noticia', source: 'Claude Desktop', material: { id, status: 'privado' } })
+
+    const before = await request(app).get('/v1/community/feed').set(auth(student))
+    expect(before.body.materials.noticia.some((m) => m.id === id)).toBe(false)
+
+    const shared = await request(app).post(`/v1/me/materials/${id}/publish`).set(auth(student)).send({ audience: 'comunidade', acceptPolicy: true })
+    expect(shared.body.material.status).toBe('em_triagem')
+
+    const mod = (await request(app).post('/v1/admin/auth/login').send({ role: 'moderador' })).body.token
+    const queue = await request(app).get('/v1/admin/moderation/queue').set(auth(mod))
+    const pub = queue.body.queue.find((p) => p.materialId === id)
+    expect(pub.materialKind).toBe('noticia')
+    await request(app).post(`/v1/admin/moderation/${pub.id}/decide`).set(auth(mod)).send({ decision: 'aprovado' })
+
+    const after = await request(app).get('/v1/community/feed').set(auth(student))
+    const post = after.body.materials.noticia.find((m) => m.id === id)
+    expect(post).toMatchObject({ status: 'aprovado', audience: 'comunidade', aiGenerated: true, source: { client: 'Claude Desktop' } })
+  })
+})

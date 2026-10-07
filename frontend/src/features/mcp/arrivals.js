@@ -4,8 +4,8 @@ import { studentApi } from '../../lib/api.js'
 export const ARRIVAL_EVENT = 'memora:mcp-arrival'
 const POLL_MS = 8000
 
-export async function simulateMcpArrival() {
-  const res = await studentApi.post('/mcp/simulate')
+export async function simulateMcpArrival(kind = 'flashcards') {
+  const res = await studentApi.post('/mcp/simulate', { kind })
   window.dispatchEvent(new CustomEvent(ARRIVAL_EVENT, { detail: res }))
   return res
 }
