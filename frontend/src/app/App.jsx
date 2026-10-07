@@ -25,6 +25,10 @@ import { CommunityHome } from '../features/community/CommunityHome.jsx'
 import { SearchResults } from '../features/community/SearchResults.jsx'
 import { CommunityDeck } from '../features/community/CommunityDeck.jsx'
 import { AuthorProfile } from '../features/community/AuthorProfile.jsx'
+import { MaterialView } from '../features/community/MaterialView.jsx'
+import { McpConnect } from '../features/profile/McpConnect.jsx'
+import { NoaHub } from '../features/noa/NoaHub.jsx'
+import { BlogEditor } from '../features/profile/BlogEditor.jsx'
 import { ProfileHome } from '../features/profile/ProfileHome.jsx'
 import { SubscriptionPage } from '../features/profile/SubscriptionPage.jsx'
 import { PrivacyPage } from '../features/profile/PrivacyPage.jsx'
@@ -95,6 +99,12 @@ export function AppRoutes() {
         <Route path="comunidade/busca" element={<SearchResults />} />
         <Route path="comunidade/deck/:deckId" element={<CommunityDeck />} />
         <Route path="comunidade/autor/:authorId" element={<AuthorProfile />} />
+        <Route path="comunidade/conteudo/:materialId" element={<MaterialView />} />
+        <Route path="comunidade/conectar" element={<Navigate to="/app/perfil/conexoes" replace />} />
+        <Route path="perfil/conexoes" element={<McpConnect />} />
+        <Route path="perfil/blog/novo" element={<BlogEditor />} />
+        <Route path="perfil/blog/:postId" element={<BlogEditor />} />
+        <Route path="noa" element={<NoaHub />} />
         <Route path="perfil" element={<ProfileHome />} />
         <Route path="perfil/assinatura" element={<SubscriptionPage />} />
         <Route path="perfil/privacidade" element={<PrivacyPage />} />

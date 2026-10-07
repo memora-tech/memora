@@ -50,7 +50,7 @@ export function SupportPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('profile.support.title')} backTo="/app/perfil" actions={<Button size="small" icon="message" label={t('profile.support.new')} onClick={() => setOpen(true)} />}>
+      <PageHeader title={t('profile.support.title')} backTo="/app/perfil" backLabel={t('profile.title')} actions={<Button size="small" icon="message" label={t('profile.support.new')} onClick={() => setOpen(true)} />}>
         {tickets.data?.sla || t('profile.support.intro')}
       </PageHeader>
 

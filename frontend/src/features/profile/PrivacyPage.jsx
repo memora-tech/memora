@@ -98,7 +98,7 @@ export function PrivacyPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('profile.privacy.title')} backTo="/app/perfil" />
+      <PageHeader title={t('profile.privacy.title')} backTo="/app/perfil" backLabel={t('profile.title')} />
 
       {deletion ? (
         <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={reactivate}>{t('profile.privacy.reactivate')}</Button>}>

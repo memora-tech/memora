@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import styles from './wallet.module.css'
-import { Badge, Banner, Button, Chip, Icon, NeuronCounter, ProgressBar, Sheet, Skeleton, Surface, useToast } from '../../design-system/index.js'
+import { Badge, Banner, Button, Chip, Icon, NeuronCounter, ProgressBar, Screen, ScreenHeader, Sheet, Skeleton, Surface, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -154,8 +154,8 @@ export function WalletPage() {
   const archived = w.myCoupons.filter((m) => m.status !== 'emitido')
 
   return (
-    <div className={styles.page}>
-      <h1 className={styles.title}>{t('wallet.title')}</h1>
+    <Screen>
+      <ScreenHeader eyebrow={t('wallet.eyebrow')} title={t('wallet.title')} lead={t('wallet.lead')} />
 
       <Surface className={styles.balanceCard}>
         <span className={styles.balanceLabel}>{t('wallet.balanceUnit')}</span>
@@ -301,6 +301,6 @@ export function WalletPage() {
       <Sheet open={ledgerOpen} onClose={() => setLedgerOpen(false)} title={t('wallet.ledger')}>
         <LedgerList entries={w.ledger} grouped />
       </Sheet>
-    </div>
+    </Screen>
   )
 }

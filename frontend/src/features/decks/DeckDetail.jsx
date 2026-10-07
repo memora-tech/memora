@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import styles from './decks.module.css'
-import { Badge, Banner, Button, Chip, OverflowMenu, PageHeader, ProgressBar, Sheet, Skeleton, Stat, Surface, Textarea, Toggle, useToast } from '../../design-system/index.js'
+import { Badge, Banner, Button, Chip, Icon, OverflowMenu, Panel, ProgressBar, QACard, Screen, ScreenHeader, Segmented, Sheet, Skeleton, Textarea, Toggle, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -24,6 +24,9 @@ export function DeckDetail() {
   const [appealOpen, setAppealOpen] = useState(false)
   const [appealText, setAppealText] = useState('')
   const [showAllCards, setShowAllCards] = useState(false)
+  const [params] = useSearchParams()
+  const [studyMode, setStudyMode] = useState(params.get('modo') === 'fracos' ? 'weak' : null)
+  const [cardFilter, setCardFilter] = useState('all')
   const detail = useAsync(() => studentApi.get(`/decks/${deckId}`), [deckId])
   const library = useAsync(() => studentApi.get('/decks'), [deckId])
   const data = detail.data
@@ -42,9 +45,8 @@ export function DeckDetail() {
     }
   }
 
-  const startStudy = () => {
-    const due = data.cards.filter((c) => !c.sched?.due || new Date(c.sched.due).getTime() <= Date.now())
-    const cards = (due.length ? due : data.cards).map((c) => ({ ...c, deckName: deck.name }))
+  const startStudy = (selected) => {
+    const cards = selected.map((c) => ({ ...c, deckName: deck.name }))
     if (study.start({ mode: 'deck', deckId: deck.id, deckName: deck.name, cards })) navigate('/app/estudar')
   }
 
@@ -130,64 +132,178 @@ export function DeckDetail() {
   const pub = data.publication
   const pubStatus = deck.publication?.status || 'nao_publicado'
   const limits = library.data?.limits
+  const isDue = (c) => !c.sched?.due || new Date(c.sched.due).getTime() <= Date.now()
+  const groups = {
+    due: data.cards.filter(isDue),
+    all: data.cards,
+    weak: data.cards.filter((c) => (c.sched?.lapses || 0) > 0)
+  }
+  const mode = studyMode && groups[studyMode].length ? studyMode : groups.due.length ? 'due' : 'all'
+  const publishing = ['em_triagem', 'em_revisao'].includes(pubStatus) || Boolean(deck.publication?.pendingVersion)
+  const scheduled = deck.scheduled !== false
+  const listed = groups[cardFilter] || data.cards
+  const visible = showAllCards ? listed : listed.slice(0, 6)
   const menuItems = [
     { key: 'difficult', icon: 'zap', label: deck.difficult ? t('decks.detail.menu.undifficult') : t('decks.detail.menu.difficult'), active: deck.difficult, onSelect: () => patch({ difficult: !deck.difficult }) },
     { key: 'focus', icon: 'target', label: deck.focus ? t('decks.detail.menu.unfocus') : t('decks.detail.menu.focus'), active: deck.focus, onSelect: () => patch({ focus: !deck.focus }) },
     { key: 'complementary', icon: 'layers', label: deck.complementary ? t('decks.detail.menu.uncomplementary') : t('decks.detail.menu.complementary'), active: deck.complementary, onSelect: () => patch({ complementary: !deck.complementary }) },
     { key: 'share', icon: 'users', label: t('decks.detail.menu.shareFolder'), onSelect: shareFolder },
-    { key: 'export', icon: 'download', label: t('decks.detail.menu.export'), onSelect: () => doExport('pdf') },
-    { key: 'publish', icon: 'globe', label: pubStatus === 'aprovado' ? t('decks.detail.menu.publishVersion') : t('decks.detail.menu.publish'), disabled: ['em_triagem', 'em_revisao'].includes(pubStatus) || Boolean(deck.publication?.pendingVersion), onSelect: () => setPublishOpen(true) }
+    { key: 'export', icon: 'download', label: t('decks.detail.menu.export'), onSelect: () => doExport('pdf') }
   ]
+  const crumbs = [{ label: t('decks.title'), to: '/app/decks' }, ...(data.folder ? [{ label: data.folder.name, to: `/app/pastas/${data.folder.id}` }] : []), { label: deck.name }]
 
   return (
-    <div className={styles.page}>
-      <PageHeader title={deck.name} actions={<OverflowMenu items={menuItems} label={t('common.actions.more')} />} />
+    <Screen>
+      <ScreenHeader
+        crumbs={crumbs}
+        eyebrow={t('decks.detail.eyebrow')}
+        title={deck.name}
+        lead={deck.source?.document ? t('decks.detail.source', { document: deck.source.document }) : null}
+        actions={
+          <>
+            {pubStatus === 'nao_publicado' || pubStatus === 'rejeitado' ? (
+              <Button variant="soft" icon="globe" onClick={() => setPublishOpen(true)}>
+                {t('decks.detail.publishCta')}
+              </Button>
+            ) : null}
+            <OverflowMenu items={menuItems} label={t('common.actions.more')} />
+          </>
+        }
+      />
 
-      <div className={styles.header}>
-        <div className={styles.chips}>
-          <Chip tone="brand">{deck.categoryName}</Chip>
-          <Chip tone="neutral">{t(`common.difficulty.${deck.difficulty}`)}</Chip>
-          {deck.tags?.slice(0, 2).map((tag) => (
-            <Chip key={tag} tone="neutral" icon="tag">
-              {tag}
-            </Chip>
-          ))}
-          {deck.tags?.length > 2 ? <Chip tone="neutral">{t('decks.detail.moreTags', { count: deck.tags.length - 2 })}</Chip> : null}
-          {deck.difficult ? <Chip tone="warning" icon="zap">{t('decks.detail.difficultOn')}</Chip> : null}
-          {deck.focus ? <Chip tone="brand" icon="target">{t('decks.detail.focusOn')}</Chip> : null}
-          {deck.complementary ? <Chip tone="neutral">{t('decks.detail.complementaryOn')}</Chip> : null}
-        </div>
+      <div className={styles.chips}>
+        <Chip tone="brand">{deck.categoryName}</Chip>
+        <Chip tone="neutral">{t(`common.difficulty.${deck.difficulty}`)}</Chip>
+        {deck.tags?.slice(0, 3).map((tag) => (
+          <Chip key={tag} tone="neutral" icon="tag">
+            {tag}
+          </Chip>
+        ))}
+        {deck.tags?.length > 3 ? <Chip tone="neutral">{t('decks.detail.moreTags', { count: deck.tags.length - 3 })}</Chip> : null}
+        {deck.difficult ? <Chip tone="warning" icon="zap">{t('decks.detail.difficultOn')}</Chip> : null}
+        {deck.focus ? <Chip tone="brand" icon="target">{t('decks.detail.focusOn')}</Chip> : null}
+        {deck.complementary ? <Chip tone="neutral">{t('decks.detail.complementaryOn')}</Chip> : null}
       </div>
-
-      <Surface className={styles.stack}>
-        <div className={styles.progressStats}>
-          <Stat value={p.due} label={t('decks.detail.statDue')} />
-          <Stat value={p.mastered} label={t('decks.detail.statMastered')} />
-          <Stat value={p.total} label={t('decks.detail.statTotal')} />
-        </div>
-        <ProgressBar value={p.mastered} max={p.total || 1} label={t('decks.detail.progress', { due: p.due, mastered: p.mastered, total: p.total })} />
-        <Button size="large" block icon="play" onClick={startStudy} disabled={!data.cards.length}>
-          {p.due ? t('decks.detail.study') : t('decks.detail.studyAll')}
-        </Button>
-        {!p.due ? <span className={styles.meta}>{t('decks.detail.nothingDue')}</span> : null}
-        <div className={styles.divider} />
-        <Toggle
-          checked={deck.pinned}
-          onChange={(v) => patch({ pinned: v })}
-          label={t('decks.detail.pinLabel')}
-          help={limits ? t('decks.detail.pinCount', { pinned: limits.pinned, limit: limits.pinLimit }) : undefined}
-        />
-      </Surface>
 
       {exportResult ? (
         <Banner tone="success" icon="download" action={<Button size="small" href={exportResult.url} download={exportResult.fileName}>{t('common.actions.open')}</Button>}>
           {t('decks.export.ready', { file: exportResult.fileName })}
         </Banner>
       ) : null}
+      {deck.clonedFrom ? (
+        <Banner tone="neutral" icon="copy">
+          {t('decks.detail.clonedFrom', { author: deck.clonedFrom.authorName, version: deck.clonedFrom.version })}
+        </Banner>
+      ) : null}
 
-      {pubStatus !== 'nao_publicado' || deck.publication?.lastRejection ? (
-        <Surface tone={pubStatus === 'aprovado' ? 'brand' : undefined}>
-          <div className={styles.stack}>
+      <div className={styles.detailLayout}>
+        <div className={styles.detailMain}>
+          <Panel title={t('decks.detail.studyTitle')} icon="play" labelledBy="como-estudar">
+            <div className={styles.modes} role="radiogroup" aria-label={t('decks.detail.studyTitle')}>
+              {['due', 'all', 'weak'].map((key) => {
+                const count = groups[key].length
+                return (
+                  <button key={key} type="button" role="radio" aria-checked={mode === key ? 'true' : 'false'} className={styles.mode} disabled={!count} onClick={() => setStudyMode(key)}>
+                    <span className={styles.modeHead}>
+                      <Icon name={{ due: 'refresh', all: 'layers', weak: 'zap' }[key]} size={18} />
+                      <span className={styles.modeTitle}>{t(`decks.detail.modes.${key}.title`)}</span>
+                      <span className={styles.modeCount}>{count}</span>
+                    </span>
+                    <span className={styles.modeHelp}>{t(`decks.detail.modes.${key}.help`)}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className={styles.startRow}>
+              <Button size="large" icon="play" onClick={() => startStudy(groups[mode])} disabled={!groups[mode].length}>
+                {t('decks.detail.start', { count: groups[mode].length })}
+              </Button>
+              <div className={styles.startProgress}>
+                <ProgressBar value={p.mastered} max={p.total || 1} label={t('decks.detail.progress', { due: p.due, mastered: p.mastered, total: p.total })} />
+                <span className={styles.meta}>{t('decks.detail.progress', { due: p.due, mastered: p.mastered, total: p.total })}</span>
+              </div>
+            </div>
+          </Panel>
+
+          <section className={styles.section} aria-labelledby="perguntas">
+            <div className={styles.cardsHead}>
+              <h2 id="perguntas" className={styles.sectionTitle}>
+                {t('decks.detail.cardsTitle', { count: data.cards.length })}
+              </h2>
+              <div className={styles.cardsTools}>
+                <Segmented
+                  label={t('decks.detail.filterLabel')}
+                  value={cardFilter}
+                  onChange={(v) => {
+                    setCardFilter(v)
+                    setShowAllCards(false)
+                  }}
+                  options={[
+                    { value: 'all', label: t('decks.detail.filters.all', { count: groups.all.length }) },
+                    { value: 'due', label: t('decks.detail.filters.due', { count: groups.due.length }) },
+                    { value: 'weak', label: t('decks.detail.filters.weak', { count: groups.weak.length }) }
+                  ]}
+                />
+                <Button size="small" variant="ghost" icon="plus" onClick={() => setEditing({ isNew: true, front: '', back: '' })}>
+                  {t('decks.detail.addCard')}
+                </Button>
+              </div>
+            </div>
+            {visible.length ? (
+              <ol className={styles.qaList}>
+                {visible.map((card) => (
+                  <li key={card.id}>
+                    <QACard
+                      as="div"
+                      index={data.cards.indexOf(card) + 1}
+                      question={card.front}
+                      answer={card.back}
+                      meta={
+                        <>
+                          {card.type !== 'text' ? <Badge tone="brand" icon={card.type === 'image' ? 'image' : 'volume'}>{t(`decks.detail.cardTypes.${card.type}`)}</Badge> : null}
+                          {card.uncertain ? <Badge tone="warning" icon="alert">{t('create.review.uncertain')}</Badge> : null}
+                          {(card.sched?.stability || 0) >= 21 ? <Badge tone="success">{t('decks.detail.mastered')}</Badge> : null}
+                          {card.sched?.lapses ? <Badge tone="warning">{t('decks.detail.lapses', { count: card.sched.lapses })}</Badge> : null}
+                          {card.sched?.due ? <span>{isDue(card) ? t('decks.detail.dueNow') : t('decks.detail.schedule', { when: fmtRelative(card.sched.due) })}</span> : null}
+                        </>
+                      }
+                      action={
+                        <Button size="small" variant="text" icon="edit" onClick={() => setEditing({ ...card })} label={`${t('decks.detail.editCard')}: ${card.front}`}>
+                          {t('common.actions.edit')}
+                        </Button>
+                      }
+                    />
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className={styles.meta}>{t('decks.detail.filterEmpty')}</p>
+            )}
+            {listed.length > 6 ? (
+              <div className={styles.sectionFooter}>
+                <Button variant="ghost" size="small" iconRight={showAllCards ? 'chevronUp' : 'chevronDown'} onClick={() => setShowAllCards((v) => !v)}>
+                  {showAllCards ? t('decks.detail.showLessCards') : t('decks.detail.showAllCardsCount', { count: listed.length })}
+                </Button>
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        <aside className={styles.detailAside} aria-label={t('decks.detail.asideLabel')}>
+          <Panel title={t('decks.detail.publishTitle')} icon="globe" labelledBy="publicacao" className={styles.publishPanel}>
+            {pubStatus === 'nao_publicado' && !deck.publication?.lastRejection ? (
+              <>
+                <p className={styles.panelText}>{t('decks.detail.publishText')}</p>
+                <ul className={styles.publishSteps}>
+                  <li>{t('decks.detail.publishSteps.review')}</li>
+                  <li>{t('decks.detail.publishSteps.credit')}</li>
+                  <li>{t('decks.detail.publishSteps.neurons')}</li>
+                </ul>
+                <Button block icon="globe" onClick={() => setPublishOpen(true)} disabled={!data.cards.length}>
+                  {t('decks.detail.publishCta')}
+                </Button>
+              </>
+            ) : null}
             {pubStatus === 'aprovado' ? (
               <>
                 <div className={styles.titleRow}>
@@ -195,16 +311,20 @@ export function DeckDetail() {
                   <Badge tone="success" icon="globe">{t('decks.publication.aprovado')}</Badge>
                 </div>
                 {deck.publication.pendingVersion ? <Chip tone="neutral" icon="clock">{t('decks.publish.pendingVersion', { version: deck.publication.pendingVersion })}</Chip> : null}
+                <code className={styles.publicLink}>{`${window.location.origin}/d/${deck.publication.publicId}`}</code>
                 <div className={styles.actions}>
-                  <span className={`${styles.meta} tabnum`}>{`${window.location.origin}/d/${deck.publication.publicId}`}</span>
                   <Button size="small" variant="soft" icon="copy" onClick={copyLink}>
                     {t('decks.publish.copyLink')}
+                  </Button>
+                  <Button size="small" variant="ghost" icon="upload" onClick={() => setPublishOpen(true)} disabled={publishing}>
+                    {t('decks.detail.menu.publishVersion')}
                   </Button>
                 </div>
               </>
             ) : null}
             {pub && ['em_triagem', 'em_revisao'].includes(pub.status) ? (
               <>
+                <Badge tone="warning" icon="clock">{t(`decks.publication.${pub.status}`)}</Badge>
                 <strong>{pub.status === 'em_triagem' ? t('decks.publish.statusQueue', { hours: pub.slaHours, when: fmtRelative(pub.submittedAt) }) : t('decks.publish.statusReview', { hours: pub.slaHours })}</strong>
                 <span className={styles.meta}>{t('decks.publish.queued', { hours: pub.slaHours })}</span>
               </>
@@ -223,51 +343,30 @@ export function DeckDetail() {
                 )}
               </>
             ) : null}
-          </div>
-        </Surface>
-      ) : null}
+          </Panel>
 
-      <p className={styles.meta}>
-        {deck.source?.document ? t('decks.detail.source', { document: deck.source.document }) : null}
-        {deck.source?.deleteOriginalAt ? ` · ${deck.source.keepOriginal ? t('decks.detail.keepOriginal') : t('decks.detail.deleteOriginal', { date: fmtDate(deck.source.deleteOriginalAt) })}` : ''}
-      </p>
-      {deck.clonedFrom ? (
-        <Banner tone="neutral" icon="copy">
-          {t('decks.detail.clonedFrom', { author: deck.clonedFrom.authorName, version: deck.clonedFrom.version })}
-        </Banner>
-      ) : null}
-      {data.folder ? <p className={styles.meta}>{t('decks.folder.inFolder', { name: data.folder.name })}</p> : null}
-
-      <div className={styles.titleRow}>
-        <h2 style={{ fontSize: 'var(--size-heading)' }}>
-          {t('decks.detail.cards')} · {data.cards.length}
-        </h2>
-        <Button size="small" variant="text" icon="plus" onClick={() => setEditing({ isNew: true, front: '', back: '' })}>
-          {t('decks.detail.addCard')}
-        </Button>
+          <Panel title={t('decks.detail.organizeTitle')} icon="settings" labelledBy="organizacao">
+            <Toggle checked={scheduled} onChange={(v) => patch({ scheduled: v }, v ? t('decks.schedule.added', { name: deck.name }) : t('decks.schedule.removed', { name: deck.name }))} label={t('decks.detail.scheduledLabel')} help={t('decks.detail.scheduledHelp')} />
+            <Toggle checked={deck.pinned} onChange={(v) => patch({ pinned: v })} label={t('decks.detail.pinLabel')} help={limits ? t('decks.detail.pinCount', { pinned: limits.pinned, limit: limits.pinLimit }) : undefined} />
+            <dl className={styles.facts}>
+              <div>
+                <dt>{t('decks.detail.facts.folder')}</dt>
+                <dd>{data.folder ? <Link to={`/app/pastas/${data.folder.id}`}>{data.folder.name}</Link> : t('decks.detail.facts.noFolder')}</dd>
+              </div>
+              <div>
+                <dt>{t('decks.detail.facts.origin')}</dt>
+                <dd>{deck.source?.document || t('decks.detail.cardOriginManual')}</dd>
+              </div>
+              {deck.source?.deleteOriginalAt ? (
+                <div>
+                  <dt>{t('decks.detail.facts.original')}</dt>
+                  <dd>{deck.source.keepOriginal ? t('decks.detail.keepOriginal') : t('decks.detail.deleteOriginal', { date: fmtDate(deck.source.deleteOriginalAt) })}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </Panel>
+        </aside>
       </div>
-      <div className={styles.cardList}>
-        {(showAllCards ? data.cards : data.cards.slice(0, 5)).map((card) => (
-          <Surface key={card.id} interactive onClick={() => setEditing({ ...card })} className={styles.cardItem} aria-label={`${card.front}. ${t('decks.detail.editCard')}`}>
-            <span className={styles.cardFront}>{card.front}</span>
-            <span className={styles.cardBack}>{card.back}</span>
-            <span className={styles.cardMeta}>
-              {card.type !== 'text' ? <Badge tone="brand" icon={card.type === 'image' ? 'image' : 'volume'}>{t(`decks.detail.cardTypes.${card.type}`)}</Badge> : null}
-              {card.uncertain ? <Badge tone="warning" icon="alert">{t('create.review.uncertain')}</Badge> : null}
-              {(card.sched?.stability || 0) >= 21 ? <Badge tone="success">{t('decks.detail.mastered')}</Badge> : null}
-              {card.sched?.lapses ? <span>{t('decks.detail.lapses', { count: card.sched.lapses })}</span> : null}
-              {card.sched?.due ? <span>{t('decks.detail.schedule', { when: fmtRelative(card.sched.due) })}</span> : null}
-            </span>
-          </Surface>
-        ))}
-      </div>
-      {data.cards.length > 5 ? (
-        <div className={styles.sectionFooter}>
-          <Button variant="ghost" size="small" iconRight={showAllCards ? 'chevronUp' : 'chevronDown'} onClick={() => setShowAllCards((v) => !v)}>
-            {showAllCards ? t('decks.detail.showLessCards') : t('decks.detail.showAllCards')}
-          </Button>
-        </div>
-      ) : null}
 
       <Sheet
         open={Boolean(editing)}
@@ -351,6 +450,6 @@ export function DeckDetail() {
           library.run()
         }}
       />
-    </div>
+    </Screen>
   )
 }

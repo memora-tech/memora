@@ -80,7 +80,10 @@ const PATHS = {
   receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6m-6 4h4',
   archive: 'M4 4h16v4H4V4Zm1 4h14v12H5V8Zm5 4h4',
   route: 'M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12-10a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 15V9a3 3 0 0 1 3-3h4m5 3v6a3 3 0 0 1-3 3h-4',
-  school: 'M3 10 12 5l9 5-9 5-9-5Zm3 2v5c2 2 10 2 12 0v-5m3-2v6'
+  school: 'M3 10 12 5l9 5-9 5-9-5Zm3 2v5c2 2 10 2 12 0v-5m3-2v6',
+  mindmap: 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-6-7a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM7.4 6.4l3.2 4.2m6-4.2-3.2 4.2m-6 6.2 3.2-3.2m6 3.2-3.2-3.2',
+  news: 'M4 5h13v14H6a2 2 0 0 1-2-2V5Zm13 4h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7M7 16h4',
+  plug: 'M9 3v5m6-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4'
 }
 
 export function Icon({ name, size = 22, strokeWidth = 1.8, className, label, ...rest }) {

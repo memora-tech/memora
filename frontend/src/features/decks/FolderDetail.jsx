@@ -54,7 +54,7 @@ export function FolderDetail() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={folder.name} backTo="/app/decks" actions={folder.shared ? <Badge tone="brand" icon="users">{t('decks.folder.shared')}</Badge> : <Badge>{t('decks.folder.notShared')}</Badge>}>
+      <PageHeader title={folder.name} backTo="/app/decks" backLabel={t('decks.title')} actions={folder.shared ? <Badge tone="brand" icon="users">{t('decks.folder.shared')}</Badge> : <Badge>{t('decks.folder.notShared')}</Badge>}>
         {t('decks.folder.decksIn', { count: decks.length })}
       </PageHeader>
 

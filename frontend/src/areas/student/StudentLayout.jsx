@@ -12,12 +12,32 @@ import { GoalMenuSheet } from '../../features/study/GoalMenuSheet.jsx'
 import { ObjectiveSheet } from '../../features/study/ObjectiveSheet.jsx'
 import { PauseSheet } from '../../features/study/PauseSheet.jsx'
 import { LayoutBanners } from './LayoutBanners.jsx'
+import { UserMenu } from './UserMenu.jsx'
+import { McpArrivalWatcher } from '../../features/mcp/McpArrivalAlert.jsx'
 import { NotificationCard } from '../../features/notifications/NotificationCard.jsx'
+
+const NAV_GROUPS = [
+  {
+    key: 'study',
+    items: [
+      { to: '/app', key: 'study', icon: 'book', end: true },
+      { to: '/app/decks', key: 'decks', icon: 'folder' },
+      { to: '/app/criar', key: 'create', icon: 'plus' }
+    ]
+  },
+  { key: 'community', items: [{ to: '/app/comunidade', key: 'community', icon: 'users' }] },
+  { key: 'ai', items: [{ to: '/app/noa', key: 'noa', icon: 'sparkle', badge: 'IA' }] }
+]
+
+const WIDE_EXACT = ['/app', '/app/decks', '/app/criar', '/app/perfil', '/app/carteira', '/app/perfil/conexoes']
+const WIDE_PREFIX = ['/app/comunidade', '/app/noa', '/app/decks/', '/app/pastas', '/app/perfil/objetivos', '/app/perfil/blog']
+const FILL = ['/app/comunidade']
 
 const TABS = [
   { to: '/app', key: 'study', icon: 'book', end: true },
   { to: '/app/decks', key: 'decks', icon: 'folder' },
   { to: '/app/comunidade', key: 'community', icon: 'users' },
+  { to: '/app/noa', key: 'noa', icon: 'sparkle' },
   { to: '/app/perfil', key: 'profile', icon: 'user' }
 ]
 
@@ -69,6 +89,9 @@ export function StudentLayout() {
   const wallet = useWalletPeek(session.isAuthed)
   const focus = study.focus && location.pathname === '/app/estudar'
   const chromeHidden = focus && !study.chromeVisible
+  const path = location.pathname.replace(/\/$/, '') || '/app'
+  const wide = WIDE_EXACT.includes(path) || WIDE_PREFIX.some((p) => path.startsWith(p))
+  const fill = FILL.includes(path)
   const [peek, setPeek] = useState(false)
 
   useEffect(() => {
@@ -132,22 +155,26 @@ export function StudentLayout() {
       </a>
       {!focus && (
         <nav className={styles.rail} aria-label={t('common.nav.main')}>
-          <Wordmark size={22} to="/app" className={styles.railBrand} />
-          {TABS.map((tab) => (
-            <NavLink key={tab.key} to={tab.to} end={tab.end} className={styles.railTab}>
-              <Icon name={tab.icon} size={22} />
-              {tabLabel(tab.key)}
-            </NavLink>
+          <Wordmark size={26} to="/app" className={styles.railBrand} />
+          {NAV_GROUPS.map((group) => (
+            <div key={group.key} className={styles.railGroup}>
+              <span className={styles.railGroupLabel}>{t(`common.nav.groups.${group.key}`)}</span>
+              {group.items.map((item) => (
+                <NavLink key={item.key} to={item.to} end={item.end} className={styles.railTab}>
+                  <Icon name={item.icon} size={20} />
+                  <span className={styles.railLabel}>{tabLabel(item.key)}</span>
+                  {item.badge ? <span className={styles.railBadge}>{item.badge}</span> : null}
+                </NavLink>
+              ))}
+            </div>
           ))}
-          <NavLink to="/app/criar" className={styles.railCreate} aria-label={t('common.nav.create')}>
-            <Icon name="plus" size={26} />
-          </NavLink>
           <span className={styles.railSpacer} />
+          <UserMenu />
         </nav>
       )}
       <div className={styles.body}>
         <header className={[styles.topline, chromeHidden && styles.toplineHidden, focus && styles.toplineFloating].filter(Boolean).join(' ')} aria-hidden={chromeHidden || undefined}>
-          <div className={styles.toplineInner}>
+          <div className={[styles.toplineInner, styles.toplineWide].join(' ')}>
             <button type="button" className={[styles.metric, styles.metricStreak].join(' ')} onClick={() => setSheet('goal')} aria-label={`${t('common.topline.streak', { count: streak })}. ${t('common.topline.goalMenu')}`}>
               <Icon name="flame" size={18} />
               <span className="tabnum">{streak}</span>
@@ -180,10 +207,11 @@ export function StudentLayout() {
           </div>
         )}
         {proto.notification && !focus && <NotificationCard />}
-        <main id="conteudo" className={[styles.main, focus && styles.mainFocus].filter(Boolean).join(' ')} tabIndex={-1}>
+        <main id="conteudo" className={[styles.main, focus && styles.mainFocus, wide ? styles.mainWide : styles.mainReadable, fill && styles.mainFill].filter(Boolean).join(' ')} tabIndex={-1}>
           {!focus && (
             <div className={styles.banners}>
               <LayoutBanners />
+              <McpArrivalWatcher />
             </div>
           )}
           <Outlet context={outletContext} />

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import styles from './community.module.css'
-import { Avatar, Badge, Banner, Button, Chip, ConfirmDialog, Icon, OverflowMenu, PageHeader, Segmented, Sheet, Skeleton, Surface, Textarea, useToast } from '../../design-system/index.js'
+import { Avatar, Badge, Banner, Button, Chip, ConfirmDialog, Icon, OverflowMenu, QACard, ScreenHeader, Segmented, Sheet, Skeleton, Surface, Textarea, useToast } from '../../design-system/index.js'
 import { useT, SUPPORTED_LOCALES } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -162,8 +162,11 @@ export function CommunityDeck() {
 
   return (
     <div className={styles.page}>
-      <PageHeader
+      <ScreenHeader
+        crumbs={[{ label: t('community.title'), to: '/app/comunidade' }, { label: deck.name }]}
+        eyebrow={t('community.kinds.flashcards')}
         title={deck.name}
+        lead={deck.description || null}
         actions={
           <OverflowMenu
             label={t('common.actions.more')}
@@ -173,9 +176,7 @@ export function CommunityDeck() {
             ]}
           />
         }
-      >
-        {deck.description || null}
-      </PageHeader>
+      />
 
       <div className={styles.deckMeta}>
         <Chip tone="brand">{deck.categoryName}</Chip>
@@ -281,12 +282,7 @@ export function CommunityDeck() {
         <div className={styles.cardList}>
           {cards.map((c) => {
             const tr = translation.on ? translation.cards?.[c.id] : null
-            return (
-              <Surface key={c.id} className={styles.cardItem}>
-                <span className={styles.cardFront}>{tr?.front || c.front}</span>
-                <span className={styles.cardBack}>{tr?.back || c.back}</span>
-              </Surface>
-            )
+            return <QACard key={c.id} index={data.cards.indexOf(c) + 1} question={tr?.front || c.front} answer={tr?.back || c.back} />
           })}
         </div>
         {data.cards.length > 3 ? (

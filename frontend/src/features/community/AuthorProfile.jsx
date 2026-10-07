@@ -37,7 +37,7 @@ export function AuthorProfile() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={author.name}>{author.bio || null}</PageHeader>
+      <PageHeader title={author.name} backTo="/app/comunidade" backLabel={t('community.title')}>{author.bio || null}</PageHeader>
       <Surface>
         <div className={styles.profileHead}>
           <Avatar name={author.name} large />

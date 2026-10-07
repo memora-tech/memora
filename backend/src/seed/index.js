@@ -3,6 +3,7 @@ import { appendEntry } from '../lib/ledger.js'
 import { appendAudit } from '../lib/audit.js'
 import { CATEGORIES, REACTIONS, ownDecks, communityContent } from './content.js'
 import { seedPanels } from './panels.js'
+import { seedMaterials } from './materials.js'
 
 const birthDateYearsAgo = (years) => {
   const d = new Date()
@@ -114,6 +115,9 @@ export function applyProfile(state, key) {
 
 export function seed(profileKey = 'adult-free') {
   const { decks, cards, folders } = ownDecks()
+  decks.forEach((d) => {
+    d.scheduled = ['d1', 'd2', 'd3', 'd5'].includes(d.id)
+  })
   const community = communityContent()
   const panels = seedPanels()
 
@@ -164,7 +168,14 @@ export function seed(profileKey = 'adult-free') {
       votes: [],
       myReactions: [{ userId: 'u1', deckId: 'c1', emoji: '🧠' }],
       answered: { u1: { c1: 4 } },
-      shares: []
+      shares: [],
+      materialFavorites: [{ userId: 'u1', materialId: 'm2', at: daysFromNow(-1) }],
+      materialReactions: []
+    },
+    materials: seedMaterials(),
+    mcp: {
+      connections: [{ id: 'mcp_seed1', userId: 'u1', name: 'Claude Desktop', token: null, tokenHint: 'a91f', client: 'claude-ai', createdAt: daysFromNow(-6), lastUsedAt: hoursFromNow(-3), revokedAt: null }],
+      activity: [{ id: 'act_seed1', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_mapa_mental', write: true, ok: true, targetType: 'material', targetId: 'm7', title: 'Como funciona a repetição espaçada', at: hoursFromNow(-3) }]
     },
     publications: [
       { id: 'pub1', deckId: 'd6', authorId: 'u1', authorName: 'Manoel', deckName: 'Direito Administrativo', version: 1, status: 'aprovado', plan: 'free', submittedAt: daysFromNow(-17), decidedAt: daysFromNow(-15), slaHours: 72, risk: { score: 12, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', 'Completude 100%'] }, reviewType: 'integral', reviewReason: 'Primeiros 5 decks do autor', assignedTo: 'adm8', decision: { by: 'adm8', decision: 'aprovado', reasonCategory: null, excerpt: null }, publicId: 'p-adm-2026', categoryId: 'concursos', difficulty: 'medio', cardCount: 5 },

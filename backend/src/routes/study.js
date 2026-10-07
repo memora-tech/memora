@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { requireStudent } from '../lib/auth.js'
-import { fail, ensureDay, ownDecksOf, cardsOfDeck, deckProgress, PLAN_LIMITS, userTimezone } from '../lib/helpers.js'
+import { fail, ensureDay, ownDecksOf, cardsOfDeck, deckProgress, PLAN_LIMITS, userTimezone, categoryName } from '../lib/helpers.js'
 import { isDue, schedule } from '../lib/fsrs.js'
 import { credit, balanceOf } from '../lib/ledger.js'
 import { dayKey, daysFromNow, nowIso, id } from '../lib/ids.js'
@@ -24,7 +24,8 @@ export function todaySession(state, userId) {
   const user = state.users.find((u) => u.id === userId)
   const tz = userTimezone(state, userId)
   const today = dayKey(nowIso(), tz)
-  const decks = ownDecksOf(state, userId)
+  const allDecks = ownDecksOf(state, userId)
+  const decks = allDecks.filter((d) => d.scheduled !== false)
   const dueCards = state.cards
     .filter((c) => !c.deletedAt && decks.some((d) => d.id === c.deckId) && isDue(c.sched))
     .map((c) => ({ ...c, deckName: decks.find((d) => d.id === c.deckId)?.name }))
@@ -73,6 +74,14 @@ export function todaySession(state, userId) {
     cardsDue: total,
     estimatedMinutes: minutes,
     plan: focusFirst.map(({ cards: _c, ...g }) => g),
+    scheduledDecks: decks.map((d) => {
+      const deckCards = cardsOfDeck(state, d.id)
+      const progress = deckProgress(state, d)
+      const upcoming = deckCards.filter((c) => !isDue(c.sched)).map((c) => c.sched.due).sort()[0] || null
+      const planned = grouped.find((g) => g.deckId === d.id)
+      return { id: d.id, name: d.name, categoryName: categoryName(state, d.categoryId), difficulty: d.difficulty, difficult: d.difficult, focus: d.focus, total: progress.total, mastered: progress.mastered, dueNow: progress.due, today: planned ? planned.count : 0, nextDue: upcoming, lastStudiedAt: d.lastStudiedAt }
+    }),
+    unscheduledCount: allDecks.length - decks.length,
     cards,
     streak: s.streak,
     reschedules: s.reschedules,

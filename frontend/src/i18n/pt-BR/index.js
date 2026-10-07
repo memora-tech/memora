@@ -11,5 +11,7 @@ import { parental } from './parental.js'
 import { partner } from './partner.js'
 import { b2b } from './b2b.js'
 import { admin } from './admin.js'
+import { mcp } from './mcp.js'
+import { noa } from './noa.js'
 
-export const ptBR = { common, auth, study, create, decks, community, wallet, profile, proto, parental, partner, b2b, admin }
+export const ptBR = { common, auth, study, create, decks, community, wallet, profile, proto, parental, partner, b2b, admin, mcp, noa }

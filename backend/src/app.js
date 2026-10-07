@@ -6,6 +6,8 @@ import { studyRoutes } from './routes/study.js'
 import { deckRoutes } from './routes/decks.js'
 import { generationRoutes } from './routes/generation.js'
 import { communityRoutes } from './routes/community.js'
+import { materialRoutes } from './routes/materials.js'
+import { mcpRoutes } from './routes/mcp.js'
 import { walletRoutes } from './routes/wallet.js'
 import { subscriptionRoutes } from './routes/subscription.js'
 import { privacyRoutes } from './routes/privacy.js'
@@ -36,6 +38,8 @@ export function createApp(store) {
   v1.use(deckRoutes())
   v1.use(generationRoutes())
   v1.use(communityRoutes())
+  v1.use(materialRoutes())
+  v1.use(mcpRoutes())
   v1.use(walletRoutes())
   v1.use(subscriptionRoutes())
   v1.use(privacyRoutes())

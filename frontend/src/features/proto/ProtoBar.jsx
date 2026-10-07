@@ -5,6 +5,7 @@ import { Button, ConfirmDialog, Icon, Segmented, Sheet, Toggle, useToast } from 
 import { useT } from '../../i18n/index.js'
 import { useProto } from '../../state/ProtoContext.jsx'
 import { useStudy } from '../../state/StudyContext.jsx'
+import { SimulateButton } from '../mcp/SimulateButton.jsx'
 
 export function ProtoBar() {
   const t = useT()
@@ -83,6 +84,12 @@ export function ProtoBar() {
         <div className={styles.block}>
           <span className={styles.label}>{t('proto.nextGeneration')}</span>
           <Segmented label={t('proto.nextGeneration')} value={proto.nextGeneration} onChange={proto.setNextGeneration} options={['normal', 'fail', 'big'].map((g) => ({ value: g, label: t(`proto.generations.${g}`) }))} />
+        </div>
+
+        <div className={styles.block}>
+          <span className={styles.label}>{t('proto.mcp')}</span>
+          <SimulateButton size="small" onDone={() => proto.setBarOpen(false)} />
+          <span className={styles.meta}>{t('mcp.arrival.simulateHint')}</span>
         </div>
 
         <div className={styles.block}>

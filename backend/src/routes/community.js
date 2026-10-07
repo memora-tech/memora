@@ -4,10 +4,14 @@ import { fail, communityDeckPublic, authorPublic, materializedAt, guardianGate, 
 import { id, nowIso } from '../lib/ids.js'
 import { credit } from '../lib/ledger.js'
 import { appendAudit } from '../lib/audit.js'
+import { KINDS, materialPublic, publishedMaterials } from '../lib/materials.js'
 
 function withAuthor(state, deck, viewerId) {
-  return communityDeckPublic(state, deck, viewerId)
+  return { kind: 'flashcards', ...communityDeckPublic(state, deck, viewerId) }
 }
+
+const engagement = (item) => (item.kind === 'flashcards' ? item.stats.studiedWeek + item.stats.votes * 2 : item.stats.views / 2 + item.stats.favorites * 2)
+const dateOf = (item) => item.publishedAt || item.createdAt
 
 export function communityRoutes() {
   const r = Router()
@@ -33,7 +37,20 @@ export function communityRoutes() {
       })
       .filter(Boolean)
       .slice(0, 4)
-    res.json({ highlights, following, rankingWeek, creatorOfMonth, recommendations, materializedAt: materializedAt(), rules: { maxSessionsPerPersonPerDeckPerDay: 1, ignoresAuthorAndClones: true, refreshMinutes: 15 } })
+    const materials = publishedMaterials(state, viewer).map((m) => materialPublic(state, m, viewer))
+    const byKind = Object.fromEntries(KINDS.map((k) => [k, materials.filter((m) => m.kind === k).sort((a, b) => dateOf(b).localeCompare(dateOf(a)))]))
+    const latest = [...decks, ...materials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))).slice(0, 8)
+    const trending = [...decks, ...materials].sort((a, b) => engagement(b) - engagement(a)).slice(0, 6)
+    const followingMaterials = materials.filter((m) => followed.includes(m.authorId))
+    const mine = state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt)
+    const counts = { flashcards: decks.length, ...Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])), mine: mine.length + own.length }
+    const sourceCounts = {}
+    materials.forEach((m) => {
+      const client = m.source?.client || 'IA'
+      sourceCounts[client] = (sourceCounts[client] || 0) + 1
+    })
+    const sources = Object.entries(sourceCounts).map(([client, count]) => ({ client, count })).sort((a, b) => b.count - a.count)
+    res.json({ highlights, following: [...following, ...followingMaterials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))), rankingWeek, creatorOfMonth, recommendations, latest, trending, materials: byKind, counts, sources, categories: state.categories, materializedAt: materializedAt(), rules: { maxSessionsPerPersonPerDeckPerDay: 1, ignoresAuthorAndClones: true, refreshMinutes: 15 } })
   })
 
   r.get('/community/search', requireStudent, (req, res) => {
@@ -42,23 +59,29 @@ export function communityRoutes() {
     const category = req.query.category ? String(req.query.category) : null
     const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
     const sort = String(req.query.sort || 'relevance')
-    let results = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
+    const kind = ['flashcards', ...KINDS].includes(req.query.kind) ? String(req.query.kind) : null
+    const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
+    const materials = publishedMaterials(state, req.user.id).map((m) => materialPublic(state, m, req.user.id))
+    let results = [...decks, ...materials]
+    if (kind) results = results.filter((d) => d.kind === kind)
     if (q) {
       results = results
         .map((d) => {
-          const hay = `${d.name} ${d.description} ${d.tags.join(' ')} ${d.author?.name || ''} ${d.categoryName}`.toLowerCase()
-          const score = d.name.toLowerCase().includes(q) ? 3 : hay.includes(q) ? 1 : 0
+          const name = d.name || d.title
+          const hay = `${name} ${d.description} ${d.tags.join(' ')} ${d.author?.name || ''} ${d.categoryName} ${d.kind === 'flashcards' ? '' : d.kindLabel}`.toLowerCase()
+          const score = name.toLowerCase().includes(q) ? 3 : hay.includes(q) ? 1 : 0
           return { ...d, score }
         })
         .filter((d) => d.score > 0)
     }
     if (category) results = results.filter((d) => d.categoryId === category)
-    if (difficulty) results = results.filter((d) => d.difficulty === difficulty)
+    if (difficulty) results = results.filter((d) => d.kind === 'flashcards' && d.difficulty === difficulty)
     if (String(req.query.approved || '') === '1') results = results.filter((d) => (d.author?.badges || []).length > 0)
-    if (sort === 'recent') results.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
-    else if (sort === 'rating') results.sort((a, b) => b.stats.votes - a.stats.votes)
-    else results.sort((a, b) => (b.score || 0) - (a.score || 0) || b.stats.studiedWeek - a.stats.studiedWeek)
-    res.json({ results, total: results.length, q, filters: { categories: state.categories, difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
+    const rating = (d) => (d.kind === 'flashcards' ? d.stats.votes : d.stats.favorites)
+    if (sort === 'recent') results.sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+    else if (sort === 'rating') results.sort((a, b) => rating(b) - rating(a))
+    else results.sort((a, b) => (b.score || 0) - (a.score || 0) || engagement(b) - engagement(a))
+    res.json({ results, total: results.length, q, filters: { categories: state.categories, kinds: ['flashcards', ...KINDS], difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
   })
 
   r.get('/community/decks/:id', requireStudent, (req, res) => {

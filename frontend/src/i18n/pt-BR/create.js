@@ -1,5 +1,16 @@
 export const create = {
   title: 'Criar deck',
+  eyebrow: 'Estudo',
+  lead: 'Escolha de onde vêm os cards. A IA gera, você revisa e aprova antes de estudar.',
+  mcp: {
+    title: 'Vindos de outros sistemas',
+    connect: 'Configurar conexão',
+    manage: 'Gerenciar conexões',
+    none: 'Conecte o Claude, o ChatGPT ou uma plataforma de ensino por MCP: os decks gerados lá chegam aqui, prontos para revisar.',
+    connected: { one: '{count} conexão ativa: {names}. Peça lá "salva esses flashcards no Memora".', other: '{count} conexões ativas: {names}. Peça lá "salva esses flashcards no Memora".' },
+    received: 'Recebido {when}',
+    empty: 'Nenhum deck recebido ainda.'
+  },
   quota: '{used} de {limit} decks hoje',
   quotaPremium: 'Premium: até {limit} por dia, com prioridade na fila',
   origin: {
@@ -74,7 +85,7 @@ export const create = {
   },
   review: {
     title: 'Revisar deck',
-    suggested: 'Sugerido por Nôa',
+    suggested: 'Sugerido pela Nôa',
     confirmSuggestion: 'Confirmar sugestão',
     suggestionConfirmed: 'Sugestão confirmada',
     editSuggestion: 'Editar',

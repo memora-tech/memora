@@ -1,4 +1,4 @@
-import { daysFromNow, minutesFromNow } from '../lib/ids.js'
+import { daysFromNow, hoursFromNow, minutesFromNow } from '../lib/ids.js'
 
 export const CATEGORIES = [
   { id: 'vestibular', name: 'Vestibular/ENEM', provisional: true },
@@ -315,7 +315,9 @@ export function communityContent() {
     { id: 'cm1', deckId: 'c1', authorName: 'Juliana M.', authorId: 'x1', text: 'O card 4 me salvou na prova de bioquímica, obrigada!', createdAt: daysFromNow(-4), replies: [{ id: 'cm1r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Que bom, Juliana! Publiquei a versão 3 com mais detalhes das coenzimas.', createdAt: daysFromNow(-3) }] },
     { id: 'cm2', deckId: 'c1', authorName: 'Pedro H.', authorId: 'x2', text: 'Acho que falta o card sobre a regulação do ciclo (isocitrato desidrogenase).', createdAt: daysFromNow(-2), replies: [{ id: 'cm2r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Concordo, entra na próxima versão.', createdAt: daysFromNow(-2) }] },
     { id: 'cm3', deckId: 'c1', authorName: 'Ana Beatriz', authorId: 'x3', text: 'Tem tradução para inglês? Estudo com um colega de fora.', createdAt: daysFromNow(-1), replies: [] },
-    { id: 'cm4', deckId: 'c2', authorName: 'Thiago L.', authorId: 'x4', text: 'Excelente para revisão de véspera.', createdAt: daysFromNow(-8), replies: [] }
+    { id: 'cm4', deckId: 'c2', authorName: 'Thiago L.', authorId: 'x4', text: 'Excelente para revisão de véspera.', createdAt: daysFromNow(-8), replies: [] },
+    { id: 'cm5', deckId: null, materialId: 'm3', authorName: 'Camila Prado', authorId: 'x5', text: 'Não sabia que errar questão fácil pesava tanto. Vou mudar minha estratégia no simulado.', createdAt: hoursFromNow(-6), replies: [{ id: 'cm5r1', authorName: 'Rafael Nogueira', authorId: 'a2', text: 'Isso! Começa pelas que você domina e deixa as difíceis para o fim.', createdAt: hoursFromNow(-4) }] },
+    { id: 'cm6', deckId: null, materialId: 'm1', authorName: 'Pedro H.', authorId: 'x2', text: 'Resumo perfeito para a véspera. Faltou só a fermentação.', createdAt: daysFromNow(-1), replies: [] }
   ]
 
   return { authors, decks, cards, comments }

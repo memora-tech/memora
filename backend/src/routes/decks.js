@@ -1,8 +1,9 @@
 import { Router } from 'express'
 import { requireStudent } from '../lib/auth.js'
-import { fail, ownDecksOf, cardsOfDeck, deckProgress, categoryName, PLAN_LIMITS, guardianGate, requireVerified, communityDeckPublic } from '../lib/helpers.js'
+import { fail, ownDecksOf, cardsOfDeck, deckProgress, categoryName, PLAN_LIMITS, guardianGate, communityDeckPublic } from '../lib/helpers.js'
 import { id, nowIso, hoursFromNow } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
+import { submitDeckPublication } from '../lib/publishing.js'
 
 export const LIMITS = { cardsPerDeck: 2000, folderDepth: 3, decksPerFolder: 500, membersPerFolder: 50, imageKB: 2048, audioSeconds: 60 }
 
@@ -17,7 +18,7 @@ function folderDepth(state, folderId) {
 }
 
 export function deckSummary(state, deck) {
-  return { ...deck, categoryName: categoryName(state, deck.categoryId), progress: deckProgress(state, deck), cardCount: cardsOfDeck(state, deck.id).length }
+  return { ...deck, scheduled: deck.scheduled !== false, categoryName: categoryName(state, deck.categoryId), progress: deckProgress(state, deck), cardCount: cardsOfDeck(state, deck.id).length }
 }
 
 export function deckRoutes() {
@@ -70,7 +71,7 @@ export function deckRoutes() {
       const pinned = ownDecksOf(state, req.user.id).filter((d) => d.pinned).length
       if (pinned >= limit) return fail(res, 409, 'pin_limit', `Você pode fixar até ${limit} decks extras para offline.`, { limit, plan: req.user.plan })
     }
-    for (const key of ['difficult', 'focus', 'complementary', 'pinned']) if (typeof body[key] === 'boolean') deck[key] = body[key]
+    for (const key of ['difficult', 'focus', 'complementary', 'pinned', 'scheduled']) if (typeof body[key] === 'boolean') deck[key] = body[key]
     if (body.name?.trim()) deck.name = body.name.trim()
     if (body.categoryId) deck.categoryId = body.categoryId
     if (Array.isArray(body.tags)) deck.tags = body.tags
@@ -126,50 +127,9 @@ export function deckRoutes() {
     const state = req.store.state
     const deck = state.decks.find((d) => d.id === req.params.id && d.ownerId === req.user.id && !d.deletedAt)
     if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    if (req.user.deactivatedAt) return fail(res, 403, 'account_deactivated', 'Conta desativada: reative para publicar.')
-    const unverified = requireVerified(req.user)
-    if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone antes de publicar.', unverified)
-    const gate = guardianGate(state, req.user, 'community', `O aluno quer publicar o deck "${deck.name}" na comunidade.`)
-    if (gate) return fail(res, 403, gate.code, 'Publicar na comunidade depende da liberação do seu responsável.', gate)
-    const consents = state.consents[req.user.id]
-    const policyVersion = state.admin.policy.version
-    if (consents.contentPolicyAcceptedVersion !== policyVersion) {
-      if (!req.body?.acceptPolicy) return fail(res, 428, 'policy_acceptance_required', 'Aceite a política de conteúdo para publicar (só na primeira vez).', { policyVersion, policy: state.admin.policy })
-      consents.contentPolicyAcceptedVersion = policyVersion
-    }
-    const cards = cardsOfDeck(state, deck.id)
-    if (cards.length === 0) return fail(res, 422, 'empty_deck', 'Um deck vazio não pode ser publicado.')
-    const priorCount = state.publications.filter((p) => p.authorId === req.user.id).length
-    const version = deck.publication?.status === 'aprovado' ? (deck.publication.version || 1) + 1 : 1
-    const limits = PLAN_LIMITS[req.user.plan]
-    const risk = { score: 14 + (cards.some((c) => c.type === 'image' && !c.media?.alt) ? 6 : 0), level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', `Completude ${Math.round((cards.filter((c) => c.front && c.back).length / cards.length) * 100)}%`] }
-    const publication = {
-      id: id('pub'),
-      deckId: deck.id,
-      authorId: req.user.id,
-      authorName: req.user.name,
-      deckName: deck.name,
-      version,
-      status: 'em_triagem',
-      plan: req.user.plan,
-      submittedAt: nowIso(),
-      decidedAt: null,
-      slaHours: limits.slaHours,
-      risk,
-      reviewType: priorCount < 5 || risk.level === 'alto' ? 'integral' : 'amostral',
-      reviewReason: risk.level === 'alto' ? 'Risco alto' : priorCount < 5 ? 'Primeiros 5 decks do autor' : 'Autor com histórico limpo',
-      assignedTo: null,
-      decision: null,
-      publicId: deck.publication?.publicId || null,
-      categoryId: deck.categoryId,
-      difficulty: deck.difficulty,
-      cardCount: cards.length,
-      snapshot: cards.map(({ sched: _s, ...c }) => c)
-    }
-    state.publications.unshift(publication)
-    deck.publication = { ...(deck.publication || {}), status: version > 1 ? 'aprovado' : 'em_triagem', pendingVersion: version > 1 ? version : null, publicationId: publication.id, version: deck.publication?.version || null }
-    appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'publication_submitted', target: publication.id, details: { deckId: deck.id, version } })
-    res.status(201).json({ publication, deck: deckSummary(state, deck), sla: { hours: limits.slaHours, dueAt: hoursFromNow(limits.slaHours) } })
+    const result = submitDeckPublication(state, req.user, deck, { acceptPolicy: req.body?.acceptPolicy })
+    if (result.error) return fail(res, result.error.status, result.error.code, result.error.message, result.error.extra)
+    res.status(201).json({ publication: result.publication, deck: deckSummary(state, deck), sla: result.sla })
   })
 
   r.post('/publications/:id/appeal', requireStudent, (req, res) => {

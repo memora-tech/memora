@@ -103,10 +103,10 @@ export function Moderation() {
                       <th scope="row">
                         <div className={styles.cellStack}>
                           <span>
-                            {p.deckName} <span className={styles.cellMeta}>{t('admin.moderation.version', { version: p.version })}</span>
+                            {p.kind === 'material' ? <Badge tone="brand">{t(`admin.moderation.kind.${p.materialKind}`)}</Badge> : null} {p.deckName} <span className={styles.cellMeta}>{t('admin.moderation.version', { version: p.version })}</span>
                           </span>
                           <span className={styles.cellMeta}>
-                            {p.authorName} · {t('admin.moderation.cards', { count: p.cardCount })} · {t('admin.moderation.submitted', { when: fmtRelative(p.submittedAt) })}
+                            {p.authorName} · {t(p.kind === 'material' ? 'admin.moderation.blocks' : 'admin.moderation.cards', { count: p.cardCount })} · {t('admin.moderation.submitted', { when: fmtRelative(p.submittedAt) })}
                           </span>
                         </div>
                       </th>
