@@ -38,6 +38,7 @@ Memora/
     src/routes/             um módulo de rota por domínio, montado em backend/src/app.js
     src/lib/                fsrs, ledger, auditoria, auth, helpers — motor de regras de negócio
     test/api.test.js        testes de regra de negócio (supertest, sem HTTP real)
+    test/mcp.test.js        servidor MCP, conteúdos, blog, Recebidos e decks programados
   frontend/                 Vite 8 + React 18 + PWA — ver docs/ARCHITECTURE.md §3
     src/design-system/       componentes base compartilhados (um CSS module para todos)
     src/state/               3 contexts: Session, Study, Proto
