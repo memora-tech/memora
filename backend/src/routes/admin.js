@@ -4,6 +4,7 @@ import { fail, categoryName } from '../lib/helpers.js'
 import { id, nowIso, hoursFromNow, daysFromNow } from '../lib/ids.js'
 import { appendAudit, verifyChain, recordAccess } from '../lib/audit.js'
 import { balanceOf } from '../lib/ledger.js'
+import { ensureCommunityAuthor } from '../lib/publishing.js'
 
 const ROLES = ['moderador', 'suporte_n1', 'suporte_n2', 'comercial', 'financeiro', 'compliance', 'engenharia']
 const any = requireRole(...ROLES.map((x) => `admin_${x}`))
@@ -81,16 +82,26 @@ export function adminRoutes() {
     pub.status = decision
     pub.decidedAt = nowIso()
     pub.decision = { by: req.user.id, byName: req.user.name, decision, reasonCategory: reasonCategory || null, excerpt: excerpt || null, appealDeadline: decision === 'rejeitado' ? daysFromNow(30) : null }
+    if (pub.kind === 'material') {
+      const material = state.materials.find((m) => m.id === pub.materialId)
+      if (material) {
+        material.status = decision
+        material.updatedAt = nowIso()
+        if (decision === 'aprovado') {
+          material.publishedAt = nowIso()
+          ensureCommunityAuthor(state, pub)
+        } else {
+          material.lastRejection = { reasonCategory, excerpt, appealDeadline: pub.decision.appealDeadline }
+        }
+      }
+      appendAudit(state, { actor: req.user.id, actorRole: req.session.role, action: `publication_${decision}`, target: pub.id, details: { reasonCategory: reasonCategory || null, materialId: pub.materialId } })
+      return res.json({ publication: { ...pub, snapshot: undefined, sla: slaInfo(pub) } })
+    }
     const deck = state.decks.find((d) => d.id === pub.deckId)
     if (decision === 'aprovado') {
       pub.publicId = pub.publicId || `p-${pub.deckId}-${pub.version}`
       if (deck) deck.publication = { status: 'aprovado', publicationId: pub.id, publicId: pub.publicId, version: pub.version, pendingVersion: null }
-      const authorUser = state.users.find((u) => u.id === pub.authorId)
-      let author = state.community.authors.find((a) => a.id === pub.authorId)
-      if (!author) {
-        author = { id: pub.authorId, name: pub.authorName, handle: pub.authorName.toLowerCase().replace(/\s+/g, '.'), topic: categoryName(state, pub.categoryId), level: authorUser?.publicProfile?.level || 1, points: authorUser?.publicProfile?.points || 0, badges: [], neuronsTotal: authorUser ? balanceOf(state, authorUser.id) : 0, decksCount: 0, followers: 0, bio: '', lang: 'pt-BR' }
-        state.community.authors.push(author)
-      }
+      const author = ensureCommunityAuthor(state, pub)
       author.decksCount += 1
       const existing = state.community.decks.find((d) => d.publicId === pub.publicId)
       const snapshot = pub.snapshot || state.cards.filter((c) => c.deckId === pub.deckId).map(({ sched: _s, ...c }) => c)

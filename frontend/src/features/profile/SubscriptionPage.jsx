@@ -47,7 +47,7 @@ export function SubscriptionPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('profile.subscription.title')} backTo="/app/perfil" actions={<Chip tone={premium ? 'reward' : 'neutral'}>{premium ? t('profile.subscription.premium') : t('profile.subscription.free')}</Chip>} />
+      <PageHeader title={t('profile.subscription.title')} backTo="/app/perfil" backLabel={t('profile.title')} actions={<Chip tone={premium ? 'reward' : 'neutral'}>{premium ? t('profile.subscription.premium') : t('profile.subscription.free')}</Chip>} />
 
       {s.pendingActivation ? (
         <Banner tone="warning" icon="clock" action={<Button size="small" variant="soft" onClick={() => act(() => studentApi.post('/subscription/webhook', { eventId: `ev_${Date.now()}`, type: 'payment_confirmed' }), t('profile.subscription.subscribed'))}>{t('profile.subscription.simulateConfirm')}</Button>}>

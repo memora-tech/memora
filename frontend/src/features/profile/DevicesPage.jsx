@@ -57,7 +57,7 @@ export function DevicesPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('profile.devices.title')} backTo="/app/perfil" actions={<Button size="small" variant="ghost" icon="key" label={t('profile.devices.changePassword')} onClick={() => setPwOpen(true)} />}>
+      <PageHeader title={t('profile.devices.title')} backTo="/app/perfil" backLabel={t('profile.title')} actions={<Button size="small" variant="ghost" icon="key" label={t('profile.devices.changePassword')} onClick={() => setPwOpen(true)} />}>
         {t('profile.devices.policy')}
       </PageHeader>
 

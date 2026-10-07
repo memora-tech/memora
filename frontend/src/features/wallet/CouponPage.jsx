@@ -53,7 +53,7 @@ export function CouponPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={coupon.title} backTo="/app/carteira" actions={coupon.positioning ? <Badge tone="reward" icon="star">{t(`wallet.positioning.${coupon.positioning}`)}</Badge> : null} />
+      <PageHeader title={coupon.title} backTo="/app/carteira" backLabel={t('wallet.title')} actions={coupon.positioning ? <Badge tone="reward" icon="star">{t(`wallet.positioning.${coupon.positioning}`)}</Badge> : null} />
       <Surface className={styles.detailHead}>
         <span className={styles.couponIcon}>
           <Icon name="gift" size={24} />

@@ -908,11 +908,23 @@ textarea.fieldControl {
 
 .pageTitle {
   font-size: var(--size-title);
+  letter-spacing: -0.01em;
 }
 
 .pageLead {
   color: var(--color-text-secondary);
   font-size: var(--size-small);
+}
+
+@media (min-width: 1024px) {
+  .pageTitle {
+    font-size: 28px;
+  }
+
+  .pageLead {
+    font-size: 15px;
+    max-width: 68ch;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -1186,4 +1198,16 @@ textarea.fieldControl {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+.pageCrumbRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+}
+
+.pageCrumbRow nav ol {
+  margin-bottom: 0;
 }

@@ -1,6 +1,7 @@
 export const proto = {
   open: 'Protótipo',
   title: 'Controles do protótipo',
+  mcp: 'Integração MCP',
   intro: 'Alterne os estados que mudam a interface. Nada aqui existe no produto final.',
   profile: 'Perfil do aluno',
   profiles: { 'adult-free': 'Adulto gratuito', 'adult-premium': 'Adulto Premium', minor: 'Menor de 16' },

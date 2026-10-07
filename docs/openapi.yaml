@@ -37,6 +37,15 @@ tags:
     description: Pipeline de criação de decks por IA a partir de documento, foto, texto ou Anki.
   - name: Comunidade
     description: Feed, busca, votos, reações, comentários, denúncias e ranking de decks públicos.
+  - name: Conteúdos
+    description: >
+      Resumos, mapas mentais e posts de blog (materiais) — leitura e interação na comunidade,
+      e o blog do próprio aluno (criar, editar, publicar para a comunidade ou só para seguidores).
+  - name: MCP
+    description: >
+      Conexões de IAs externas via Model Context Protocol, caixa de "Recebidos" (tudo o que chega
+      de outra IA espera a aprovação do aluno) e o próprio endpoint JSON-RPC `POST /mcp` — ver
+      [ADR-0011](./adr/0011-servidor-mcp-e-conteudos-gerados-por-ia.md).
   - name: Carteira
     description: Saldo de Neurônios, loja de cupons e resgates.
   - name: Assinatura
@@ -71,6 +80,14 @@ components:
         Token de sessão retornado por qualquer rota `auth/login`. Sessões expiram em 30 dias
         sem uso (deslizante); usar em `me`, `parental`, `b2b`, `admin` e `partner` é mutuamente
         exclusivo por `role`.
+    McpToken:
+      type: http
+      scheme: bearer
+      bearerFormat: "mcp_<base64url>"
+      description: >
+        Token de conexão MCP (`mcp_...`) gerado em `POST /mcp/connections` e exibido uma única
+        vez. Só vale para `POST /mcp`; não serve como token de sessão. Revogável em
+        `DELETE /mcp/connections/{id}`. O servidor guarda apenas o hash SHA-256.
 
   parameters:
     deckId:
@@ -208,6 +225,7 @@ components:
         focus: { type: boolean }
         complementary: { type: boolean }
         pinned: { type: boolean }
+        scheduled: { type: boolean, description: "false = fora do agendamento (não entra na sessão do dia). Decks recebidos via MCP podem chegar fora." }
         folderId: { type: string, nullable: true }
         source: { type: object, additionalProperties: true }
         createdAt: { type: string, format: date-time }
@@ -461,7 +479,7 @@ components:
       type: object
       properties:
         id: { type: string }
-        targetType: { type: string, enum: [deck, comment, contato_suspeito] }
+        targetType: { type: string, enum: [deck, material, comment, contato_suspeito] }
         targetId: { type: string }
         targetName: { type: string }
         reason: { type: string }
@@ -535,6 +553,25 @@ components:
               deckName: { type: string }
               available: { type: integer }
               count: { type: integer }
+        scheduledDecks:
+          type: array
+          description: Decks no agendamento (`scheduled !== false`), com progresso e próxima revisão.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              categoryName: { type: string }
+              difficulty: { type: string }
+              difficult: { type: boolean }
+              focus: { type: boolean }
+              total: { type: integer }
+              mastered: { type: integer }
+              dueNow: { type: integer }
+              today: { type: integer, description: "Cards deste deck no plano de hoje." }
+              nextDue: { type: string, format: date-time, nullable: true }
+              lastStudiedAt: { type: string, format: date-time, nullable: true }
+        unscheduledCount: { type: integer, description: "Quantos decks próprios estão fora do agendamento." }
         cards: { type: array, items: { $ref: '#/components/schemas/Card' } }
         streak: { type: integer }
         reschedules: { type: object, properties: { used: { type: integer }, limit: { type: integer } } }
@@ -545,6 +582,178 @@ components:
         offline: { type: object, additionalProperties: true }
         balance: { type: integer }
         timezone: { type: string }
+
+    Material:
+      type: object
+      description: >
+        Resumo, mapa mental ou post de blog — retorno de `materialPublic()` em
+        `backend/src/lib/materials.js`. `body` só vem no detalhe (`full`).
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [resumo, mapa, noticia], description: "`noticia` = post de blog." }
+        kindLabel: { type: string, example: Post de blog }
+        ownerId: { type: string }
+        authorId: { type: string }
+        title: { type: string, maxLength: 140 }
+        description: { type: string, maxLength: 400 }
+        categoryId: { type: string }
+        categoryName: { type: string }
+        tags: { type: array, maxItems: 8, items: { type: string } }
+        lang: { type: string, enum: [pt-BR, en] }
+        aiGenerated: { type: boolean }
+        audience: { type: string, enum: [comunidade, seguidores] }
+        status: { type: string, enum: [privado, em_triagem, aprovado, rejeitado] }
+        source:
+          type: object
+          properties:
+            channel: { type: string, enum: [app, mcp] }
+            client: { type: string, nullable: true, description: "Nome da conexão MCP de origem." }
+            clientId: { type: string, nullable: true }
+            connectionId: { type: string }
+        mcpReview: { type: string, enum: [pendente, aprovado, recusado], description: "Só em conteúdos recebidos via MCP." }
+        publicationId: { type: string, nullable: true }
+        publishedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        stats: { type: object, properties: { views: { type: integer }, favorites: { type: integer } } }
+        reactions: { type: object, additionalProperties: { type: integer } }
+        author:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string }
+            handle: { type: string, nullable: true }
+            badges: { type: array, items: { type: string } }
+        readingMinutes: { type: integer }
+        excerpt: { type: string }
+        preview:
+          type: object
+          description: "Mapa: `{ root, branches, nodes }` · blog: `{ outlet, url }` · resumo: `{ sections }`."
+          additionalProperties: true
+        isMine: { type: boolean }
+        commentCount: { type: integer }
+        viewer:
+          type: object
+          properties:
+            favorited: { type: boolean }
+            myReactions: { type: array, items: { type: string } }
+        body: { $ref: '#/components/schemas/MaterialBody' }
+
+    MaterialBody:
+      type: object
+      description: "Resumo/blog: `markdown` (+ `url`/`outlet` no blog) e `sources`; mapa: `root`."
+      properties:
+        markdown: { type: string, maxLength: 20000 }
+        url: { type: string, nullable: true, description: "Link da publicação original (blog)." }
+        outlet: { type: string, nullable: true, description: "Veículo/blog original." }
+        sources:
+          type: array
+          maxItems: 10
+          items: { type: object, properties: { title: { type: string }, url: { type: string, nullable: true } } }
+        root: { $ref: '#/components/schemas/MindMapNode' }
+
+    MindMapNode:
+      type: object
+      description: Nó de mapa mental (até 120 nós e 5 níveis abaixo do tema central).
+      properties:
+        id: { type: string }
+        label: { type: string, maxLength: 120 }
+        note: { type: string, maxLength: 280 }
+        children: { type: array, items: { $ref: '#/components/schemas/MindMapNode' } }
+
+    BlogPostInput:
+      type: object
+      description: Campos editáveis de um post de blog (`kind = noticia`).
+      properties:
+        title: { type: string, maxLength: 140 }
+        description: { type: string, maxLength: 400, description: "Linha fina — obrigatória." }
+        text: { type: string, maxLength: 20000, description: "Corpo em Markdown, mínimo 40 caracteres." }
+        categoryId: { type: string, description: "Categoria inexistente vira `outros`." }
+        tags: { type: array, maxItems: 8, items: { type: string } }
+        lang: { type: string, enum: [pt-BR, en] }
+        url: { type: string, description: "http(s) da publicação original." }
+        outlet: { type: string, description: "Veículo; se vazio, deriva do domínio de `url`." }
+        sources:
+          type: array
+          maxItems: 10
+          items: { type: object, properties: { title: { type: string }, url: { type: string } } }
+
+    McpConnection:
+      type: object
+      description: Conexão de uma IA externa. O token nunca volta depois da criação (só `tokenHint`).
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        name: { type: string, maxLength: 40, example: Claude Desktop }
+        tokenHint: { type: string, description: "Últimos 4 caracteres do token." }
+        client: { type: string, nullable: true, description: "`clientInfo.name` informado no `initialize`." }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        active: { type: boolean }
+        demo: { type: boolean, description: "Conexão criada pela simulação (`POST /mcp/simulate`)." }
+
+    McpActivity:
+      type: object
+      description: Registro de cada chamada de ferramenta MCP (últimos 500).
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        connectionId: { type: string }
+        client: { type: string, nullable: true }
+        tool: { type: string }
+        write: { type: boolean }
+        ok: { type: boolean }
+        targetType: { type: string, nullable: true, enum: [deck, material, null] }
+        targetId: { type: string, nullable: true }
+        title: { type: string, nullable: true }
+        error: { type: string }
+        at: { type: string, format: date-time }
+        seenAt: { type: string, format: date-time }
+
+    McpRequest:
+      type: object
+      description: >
+        Solicitação vinda de uma IA (deck ou material) aguardando ou já decidida pelo aluno —
+        `requestView()` em `backend/src/routes/mcp.js`.
+      properties:
+        id: { type: string, description: "ID da atividade MCP que originou a solicitação." }
+        at: { type: string, format: date-time }
+        source: { type: string, description: "Nome da conexão MCP." }
+        status: { type: string, enum: [pendente, aprovado, recusado] }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        kind: { type: string, enum: [flashcards, resumo, mapa, noticia] }
+        target:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            description: { type: string, description: "Só materiais." }
+            categoryName: { type: string }
+            scheduled: { type: boolean, description: "Só flashcards." }
+            status: { type: string, description: "Status de publicação (só materiais)." }
+            audience: { type: string, enum: [comunidade, seguidores], description: "Só materiais." }
+            deleted: { type: boolean }
+        cards:
+          type: array
+          description: Só flashcards.
+          items: { type: object, properties: { front: { type: string }, back: { type: string } } }
+        body: { $ref: '#/components/schemas/MaterialBody' }
+
+    JsonRpcResponse:
+      type: object
+      description: Resposta JSON-RPC 2.0 — traz `result` ou `error`.
+      properties:
+        jsonrpc: { type: string, enum: ["2.0"] }
+        id: { type: string, nullable: true, description: "Ecoa o `id` da requisição (string ou número)." }
+        result: { type: object, additionalProperties: true }
+        error:
+          type: object
+          properties:
+            code: { type: integer, description: "-32600 requisição inválida · -32601 método não suportado · -32602 ferramenta desconhecida · -32001 token inválido/conta desativada · -32000 método HTTP não permitido." }
+            message: { type: string }
+            data: { type: object, additionalProperties: true }
 
 paths:
   # ---------------------------------------------------------------- Sistema
@@ -871,6 +1080,9 @@ paths:
     get:
       tags: [Estudo]
       summary: Sessão de estudo do dia (fila de cards, plano, streak, sugestão da Nôa)
+      description: >
+        Só decks no agendamento (`scheduled !== false`) entram na fila. `scheduledDecks` lista esses
+        decks com progresso e próxima revisão; `unscheduledCount` conta os que estão fora.
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/StudySession' } } } }
 
@@ -1081,10 +1293,26 @@ paths:
         "404": { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [Decks]
-      summary: Atualiza flags (difícil/foco/complementar/fixado), nome, categoria, tags ou pasta
+      summary: Atualiza flags (difícil/foco/complementar/fixado/agendado), nome, categoria, tags ou pasta
       parameters: [{ $ref: '#/components/parameters/deckId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                difficult: { type: boolean }
+                focus: { type: boolean }
+                complementary: { type: boolean }
+                pinned: { type: boolean }
+                scheduled: { type: boolean, description: "false tira o deck da sessão do dia sem excluí-lo; true devolve ao agendamento." }
+                name: { type: string }
+                categoryId: { type: string }
+                tags: { type: array, items: { type: string } }
+                difficulty: { type: string, enum: [facil, medio, dificil] }
+                folderId: { type: string, nullable: true }
       responses:
-        "200": { description: OK }
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { deck: { $ref: '#/components/schemas/Deck' } } } } } }
         "404": { $ref: '#/components/responses/NotFound' }
         "409": { description: "`pin_limit` — limite de decks fixados do plano atingido." }
     delete:
@@ -1313,20 +1541,80 @@ paths:
     get:
       tags: [Comunidade]
       summary: Feed — destaques, seguidos, ranking da semana, criador do mês e recomendações da Nôa
-      description: "`recommendations` cruza categoria/tags dos decks próprios do aluno com decks da comunidade (motivo em `becauseDeck`)."
-      responses: { "200": { description: OK } }
+      description: >
+        `recommendations` cruza categoria/tags dos decks próprios do aluno com decks da comunidade
+        (motivo em `becauseDeck`). Além dos decks, o feed traz os materiais publicados visíveis ao
+        aluno (resumos, mapas mentais e posts de blog; os com `audience: seguidores` só para quem
+        segue o autor): `latest` (linha do tempo mista, 8 itens), `trending` (6 por engajamento),
+        `materials` (agrupados por `kind`), `counts` (por tipo + `mine`) e `sources` (contagem por
+        IA de origem). `following` passa a incluir materiais dos autores seguidos.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  highlights: { type: array, items: { $ref: '#/components/schemas/CommunityDeck' } }
+                  following: { type: array, items: { type: object, additionalProperties: true }, description: "Decks e materiais de autores seguidos." }
+                  rankingWeek: { type: array, items: { type: object, additionalProperties: true } }
+                  creatorOfMonth: { type: object, nullable: true, additionalProperties: true }
+                  recommendations: { type: array, items: { $ref: '#/components/schemas/CommunityDeck' } }
+                  latest: { type: array, items: { type: object, additionalProperties: true }, description: "Decks (`kind: flashcards`) e materiais, mais recentes primeiro." }
+                  trending: { type: array, items: { type: object, additionalProperties: true } }
+                  materials:
+                    type: object
+                    properties:
+                      resumo: { type: array, items: { $ref: '#/components/schemas/Material' } }
+                      mapa: { type: array, items: { $ref: '#/components/schemas/Material' } }
+                      noticia: { type: array, items: { $ref: '#/components/schemas/Material' } }
+                  counts:
+                    type: object
+                    properties:
+                      flashcards: { type: integer }
+                      resumo: { type: integer }
+                      mapa: { type: integer }
+                      noticia: { type: integer }
+                      mine: { type: integer }
+                  sources: { type: array, items: { type: object, properties: { client: { type: string }, count: { type: integer } } } }
+                  categories: { type: array, items: { type: object, additionalProperties: true } }
+                  materializedAt: { type: string, format: date-time }
+                  rules: { type: object, additionalProperties: true }
 
   /community/search:
     get:
       tags: [Comunidade]
-      summary: Busca de decks públicos
+      summary: Busca de decks e materiais públicos
+      description: >
+        `results` mistura decks (`kind: flashcards`) e materiais (`resumo`, `mapa`, `noticia`);
+        filtre com `kind`. `difficulty` só se aplica a decks; em materiais, `sort=rating` usa
+        favoritos em vez de votos.
       parameters:
         - { name: q, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string, enum: [flashcards, resumo, mapa, noticia] } }
         - { name: category, in: query, schema: { type: string } }
         - { name: difficulty, in: query, schema: { type: string, enum: [facil, medio, dificil] } }
         - { name: sort, in: query, schema: { type: string, enum: [relevance, recent, rating] } }
         - { name: approved, in: query, schema: { type: string, enum: ["1"] }, description: "Filtra por criadores com selo." }
-      responses: { "200": { description: OK } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results: { type: array, items: { type: object, additionalProperties: true }, description: "CommunityDeck ou Material, conforme `kind`." }
+                  total: { type: integer }
+                  q: { type: string }
+                  filters:
+                    type: object
+                    properties:
+                      categories: { type: array, items: { type: object, additionalProperties: true } }
+                      kinds: { type: array, items: { type: string } }
+                      difficulties: { type: array, items: { type: string } }
+                      sorts: { type: array, items: { type: string } }
 
   /community/decks/{id}:
     get:
@@ -1450,6 +1738,470 @@ paths:
       summary: Inicia estudo de um deck da comunidade sem clonar (progresso registrado por resposta)
       parameters: [{ $ref: '#/components/parameters/deckId' }]
       responses: { "200": { description: OK } }
+
+  # --------------------------------------------------------------- Conteúdos
+  /community/materials/{id}:
+    get:
+      tags: [Conteúdos]
+      summary: Detalhe de um resumo, mapa mental ou post de blog (com corpo completo)
+      description: >
+        Visível se publicado para a comunidade, publicado para seguidores e o aluno segue o autor,
+        ou se é do próprio aluno. Conta +1 visualização quando aprovado e de outro autor.
+        `moderation` só vem para o dono com publicação submetida.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  material: { $ref: '#/components/schemas/Material' }
+                  reactionsList: { type: array, items: { type: string } }
+                  related: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/Material' } }
+                  moderation:
+                    type: object
+                    nullable: true
+                    properties:
+                      status: { type: string, enum: [em_triagem, em_revisao, aprovado, rejeitado] }
+                      decision: { type: object, nullable: true, properties: { reasonCategory: { type: string, nullable: true }, excerpt: { type: string, nullable: true } } }
+                      slaHours: { type: integer }
+                      submittedAt: { type: string, format: date-time }
+                  notice: { type: string, nullable: true, description: "Aviso exibido em conteúdo gerado por IA." }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/materials/{id}/favorite:
+    post:
+      tags: [Conteúdos]
+      summary: Alterna favorito do material
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { favorited: { type: boolean }, favorites: { type: integer } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/materials/{id}/react:
+    post:
+      tags: [Conteúdos]
+      summary: "Alterna uma reação com emoji fixo (👏🔥🧠💡❤️😂)"
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [emoji], properties: { emoji: { type: string } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { reactions: { type: object, additionalProperties: { type: integer } }, mine: { type: array, items: { type: string } } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /community/materials/{id}/report:
+    post:
+      tags: [Conteúdos]
+      summary: Denuncia o material (vai para a fila de moderação)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string }, detail: { type: string } } } } } }
+      responses:
+        "201": { description: Registrada, content: { application/json: { schema: { type: object, properties: { report: { $ref: '#/components/schemas/Report' }, message: { type: string } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /community/materials/{id}/comments:
+    get:
+      tags: [Conteúdos]
+      summary: Lista comentários do material (com respostas aninhadas)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { threads: { type: array, items: { $ref: '#/components/schemas/Comment' } }, total: { type: integer, description: "Comentários + respostas." } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Conteúdos]
+      summary: Comenta ou responde em material publicado (exige verificação e liberação do responsável se menor)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 2000 }, parentId: { type: string, nullable: true } } } } } }
+      responses:
+        "201": { description: Criado, content: { application/json: { schema: { type: object, properties: { comment: { $ref: '#/components/schemas/Comment' }, notifiedAuthor: { type: boolean } } } } } }
+        "403": { description: "verification_required · guardian_required" }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /me/materials:
+    get:
+      tags: [Conteúdos]
+      summary: Meus materiais (exceto os recebidos via MCP ainda pendentes de aprovação)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Material' } }, total: { type: integer } } } } } }
+    post:
+      tags: [Conteúdos]
+      summary: Cria um post de blog (rascunho privado)
+      description: >
+        No app só se cria `kind: noticia` (post de blog); resumos e mapas mentais chegam pela IA
+        conectada via MCP. O post nasce `privado` até `POST /me/materials/{id}/publish`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BlogPostInput'
+                - type: object
+                  required: [title, description, text]
+                  properties:
+                    kind: { type: string, enum: [noticia], default: noticia }
+      responses:
+        "201": { description: Criado, content: { application/json: { schema: { type: object, properties: { material: { $ref: '#/components/schemas/Material' } } } } } }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /me/materials/{id}:
+    patch:
+      tags: [Conteúdos]
+      summary: Edita um post de blog próprio
+      description: >
+        Campos omitidos mantêm o valor atual. Editar um post já publicado para a comunidade o
+        devolve a `privado` (precisa passar de novo pela moderação).
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/BlogPostInput' } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { material: { $ref: '#/components/schemas/Material' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: "`in_review` — o post está em moderação." }
+        "422": { description: "validation — inclui tentar editar resumo ou mapa (só posts de blog são editáveis no app)." }
+    delete:
+      tags: [Conteúdos]
+      summary: Exclui um material próprio (soft delete)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /me/materials/{id}/publish:
+    post:
+      tags: [Conteúdos]
+      summary: Publica o material para a comunidade (via moderação) ou só para seguidores
+      description: >
+        `audience: comunidade` (padrão) submete à fila de moderação e devolve `publication` e
+        `sla`. `audience: seguidores` publica na hora, visível só a quem segue o autor, sem
+        moderação. Ambos exigem e-mail/telefone confirmados, liberação do responsável se menor e
+        aceite da política de conteúdo na primeira vez (`acceptPolicy`).
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                audience: { type: string, enum: [comunidade, seguidores], default: comunidade }
+                acceptPolicy: { type: boolean }
+      responses:
+        "201":
+          description: Publicado para seguidores ou enviado para triagem.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  material: { $ref: '#/components/schemas/Material' }
+                  audience: { type: string, enum: [comunidade, seguidores] }
+                  publication: { $ref: '#/components/schemas/Publication' }
+                  sla: { type: object, nullable: true, properties: { hours: { type: integer }, dueAt: { type: string, format: date-time } } }
+        "403": { description: "guardian_required · verification_required · account_deactivated" }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: "already_submitted · already_published" }
+        "428": { description: policy_acceptance_required }
+
+  /me/materials/{id}/unpublish:
+    post:
+      tags: [Conteúdos]
+      summary: Despublica o material (volta a privado)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { material: { $ref: '#/components/schemas/Material' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: not_published }
+
+  /me/publications:
+    get:
+      tags: [Conteúdos]
+      summary: Minhas publicações — materiais e decks próprios com status de publicação
+      description: >
+        Lista unificada (mais recente primeiro) de materiais e decks, exceto os recebidos via MCP
+        ainda pendentes. Itens de deck vêm resumidos com `kind: flashcards`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/Material'
+                        - type: object
+                          properties:
+                            kind: { type: string, enum: [flashcards] }
+                            id: { type: string }
+                            title: { type: string }
+                            categoryId: { type: string }
+                            categoryName: { type: string }
+                            status: { type: string, enum: [privado, em_triagem, aprovado, rejeitado] }
+                            audience: { type: string, enum: [comunidade] }
+                            createdAt: { type: string, format: date-time }
+                            publishedAt: { type: string, format: date-time, nullable: true }
+                            cardCount: { type: integer }
+                            communityId: { type: string, nullable: true }
+                            stats: { type: object, nullable: true, properties: { studiedWeek: { type: integer }, votes: { type: integer }, favorites: { type: integer } } }
+                  followers: { type: integer }
+
+  # --------------------------------------------------------------------- MCP
+  /mcp/connections:
+    get:
+      tags: [MCP]
+      summary: Conexões MCP, atividade recente, ferramentas disponíveis e limites
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpointPath: { type: string, example: /v1/mcp }
+                  appUrl: { type: string }
+                  protocolVersions: { type: array, items: { type: string }, example: ["2025-06-18", "2025-03-26", "2024-11-05"] }
+                  connections: { type: array, items: { $ref: '#/components/schemas/McpConnection' } }
+                  activity: { type: array, maxItems: 20, items: { $ref: '#/components/schemas/McpActivity' } }
+                  tools:
+                    type: array
+                    items: { type: object, properties: { name: { type: string }, title: { type: string }, description: { type: string }, write: { type: boolean } } }
+                  limits:
+                    type: object
+                    properties:
+                      writesPerDay: { type: integer, example: 50 }
+                      cardsPerCall: { type: integer, example: 200 }
+                      cardChars: { type: integer, example: 1000 }
+                      activeConnections: { type: integer, example: 5 }
+    post:
+      tags: [MCP]
+      summary: Cria uma conexão e devolve o token MCP (exibido uma única vez)
+      requestBody: { content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 40, example: Claude Desktop } } } } } }
+      responses:
+        "201":
+          description: Criada.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection: { $ref: '#/components/schemas/McpConnection' }
+                  token: { type: string, example: "mcp_..." }
+                  notice: { type: string }
+        "409": { description: "`connection_limit` — até 5 conexões ativas." }
+        "422": { $ref: '#/components/responses/Validation' }
+
+  /mcp/connections/{id}:
+    delete:
+      tags: [MCP]
+      summary: Revoga a conexão (o token deixa de funcionar na hora; idempotente)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { connection: { $ref: '#/components/schemas/McpConnection' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /mcp/inbox:
+    get:
+      tags: [MCP]
+      summary: Avisos de chegada — itens recebidos via MCP, pendentes e ainda não vistos
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        at: { type: string, format: date-time }
+                        source: { type: string }
+                        client: { type: string, nullable: true }
+                        kind: { type: string, enum: [flashcards, resumo, mapa, noticia] }
+                        deck:
+                          type: object
+                          description: Só flashcards.
+                          properties: { id: { type: string }, name: { type: string }, scheduled: { type: boolean }, categoryName: { type: string }, cardCount: { type: integer } }
+                        preview:
+                          type: array
+                          description: Até 2 cards (só flashcards).
+                          items: { type: object, properties: { front: { type: string }, back: { type: string } } }
+                        material:
+                          type: object
+                          description: Só materiais.
+                          properties: { id: { type: string }, title: { type: string }, description: { type: string }, kind: { type: string }, status: { type: string }, categoryName: { type: string }, readingMinutes: { type: integer } }
+
+  /mcp/inbox/{id}/seen:
+    post:
+      tags: [MCP]
+      summary: Marca um aviso de chegada como visto
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /mcp/requests:
+    get:
+      tags: [MCP]
+      summary: '"Recebidos (MCP)" — solicitações de outras IAs e contagem por status'
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pendente, aprovado, recusado] }, description: "Sem filtro, devolve todas." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/McpRequest' } }
+                  counts: { type: object, properties: { pendente: { type: integer }, aprovado: { type: integer }, recusado: { type: integer } } }
+
+  /mcp/requests/{id}/approve:
+    post:
+      tags: [MCP]
+      summary: Aprova uma solicitação recebida via MCP
+      description: >
+        Deck: entra na biblioteca; `schedule: false` o deixa fora da sessão do dia (padrão: agendado).
+        Material: `audience` decide o destino — `comunidade` (padrão, vai para moderação),
+        `seguidores` (publica na hora só para seguidores) ou `privado` (fica só com o aluno). Os
+        dois primeiros seguem as mesmas pré-condições de `POST /me/materials/{id}/publish`.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule: { type: boolean, default: true, description: "Só flashcards." }
+                audience: { type: string, enum: [comunidade, seguidores, privado], default: comunidade, description: "Só materiais." }
+                acceptPolicy: { type: boolean, description: "Só materiais publicados." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request: { $ref: '#/components/schemas/McpRequest' }
+                  audience: { type: string, enum: [comunidade, seguidores, privado], description: "Só materiais." }
+        "403": { description: "guardian_required · verification_required · account_deactivated" }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: "already_decided · already_submitted · already_published" }
+        "428": { description: policy_acceptance_required }
+
+  /mcp/requests/{id}/reject:
+    post:
+      tags: [MCP]
+      summary: Recusa uma solicitação recebida via MCP (o conteúdo é descartado)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { request: { $ref: '#/components/schemas/McpRequest' } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "409": { description: already_decided }
+
+  /mcp/simulate:
+    post:
+      tags: [MCP]
+      summary: Simula uma IA enviando conteúdo via MCP (protótipo)
+      description: >
+        Usa a primeira conexão ativa do aluno (ou cria uma conexão de demonstração "Claude Desktop")
+        e chama `salvar_flashcards` ou `salvar_noticia` com uma amostra semeada, alternando entre
+        as amostras a cada chamada. O resultado vira uma solicitação pendente em Recebidos.
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { kind: { type: string, enum: [flashcards, noticia], default: flashcards } } } } }
+      responses:
+        "201":
+          description: Enviado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: object, additionalProperties: true, description: "`structuredContent` da ferramenta (id, tipo, titulo, status: pendente, link)." }
+                  connection: { type: object, properties: { id: { type: string }, name: { type: string } } }
+                  activityId: { type: string }
+        "422": { description: simulation_failed }
+
+  /mcp:
+    post:
+      tags: [MCP]
+      summary: Endpoint do servidor MCP (JSON-RPC 2.0 sobre Streamable HTTP, sem SSE)
+      description: |
+        Autenticado com o **token de conexão MCP** (`Authorization: Bearer mcp_...`), não com o token
+        de sessão. Uma mensagem por requisição (lotes → 400). Erros de autenticação e protocolo
+        também vêm no formato JSON-RPC.
+
+        Métodos:
+        - `initialize` — negocia `protocolVersion` (2025-06-18, 2025-03-26 ou 2024-11-05; padrão a
+          mais recente), registra `clientInfo.name` na conexão e devolve `capabilities.tools`,
+          `serverInfo` e `instructions`.
+        - `ping` — devolve `{}`.
+        - `tools/list` — catálogo de ferramentas com `inputSchema` e `annotations`.
+        - `tools/call` — `params: { name, arguments }`; devolve `{ content, structuredContent, isError }`.
+        - `resources/list` e `prompts/list` — listas vazias.
+        - Notificações (sem `id`, ex.: `notifications/initialized`) → **202** sem corpo.
+        - Outros métodos → erro `-32601`.
+
+        Ferramentas (`backend/src/lib/mcpTools.js`):
+        - Escrita (até 50 por dia; tudo chega como solicitação **pendente** em Recebidos):
+          `salvar_flashcards`, `salvar_resumo`, `salvar_mapa_mental`, `salvar_noticia`.
+        - Leitura: `buscar_comunidade`, `ler_conteudo`, `meus_conteudos`, `listar_categorias`.
+
+        Erro de entrada de ferramenta não é erro JSON-RPC: volta como `result` com `isError: true`
+        e a mensagem em `content[0].text`.
+      security:
+        - McpToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id: { type: string, description: "String ou número; ausente em notificações." }
+                method: { type: string, enum: [initialize, ping, tools/list, tools/call, resources/list, prompts/list, notifications/initialized] }
+                params: { type: object, additionalProperties: true }
+            example:
+              jsonrpc: "2.0"
+              id: 1
+              method: tools/call
+              params:
+                name: salvar_flashcards
+                arguments:
+                  titulo: Revolução Francesa
+                  categoria: vestibular
+                  cards: [{ frente: "Ano da Queda da Bastilha?", verso: "1789" }]
+      responses:
+        "200": { description: Resposta JSON-RPC (`result` ou `error`)., content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
+        "202": { description: Notificação aceita (sem corpo). }
+        "400": { description: "Requisição JSON-RPC inválida ou lote (`-32600`).", content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
+        "401": { description: "Token MCP ausente, inválido ou revogado (`-32001`, com `WWW-Authenticate: Bearer realm=\"memora-mcp\"`).", content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
+        "403": { description: "Conta desativada (`-32001`).", content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
+    get:
+      tags: [MCP]
+      summary: Não suportado — o servidor MCP responde só a POST
+      security: []
+      responses:
+        "405": { description: "`Allow: POST`; erro JSON-RPC `-32000`.", content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
+    delete:
+      tags: [MCP]
+      summary: Não suportado — o servidor MCP responde só a POST
+      security: []
+      responses:
+        "405": { description: "`Allow: POST`; erro JSON-RPC `-32000`.", content: { application/json: { schema: { $ref: '#/components/schemas/JsonRpcResponse' } } } }
 
   # ---------------------------------------------------------------- Carteira
   /wallet:
@@ -1649,6 +2401,40 @@ paths:
       tags: [Nôa]
       summary: Catálogo público de ações da Nôa, sinais usados e limites nunca cruzados sozinha
       responses: { "200": { description: OK } }
+
+  /noa/overview:
+    get:
+      tags: [Nôa]
+      summary: Área da Nôa — insights de estudo, sugestões pendentes, decisões recentes e resumo das IAs conectadas
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  insights:
+                    type: object
+                    properties:
+                      today: { type: object, properties: { cardsDue: { type: integer }, minutes: { type: integer }, decks: { type: integer }, status: { type: string } } }
+                      weakest:
+                        type: object
+                        nullable: true
+                        description: Deck próprio com mais lapsos.
+                        properties: { id: { type: string }, name: { type: string }, lapses: { type: integer }, weakCards: { type: integer } }
+                      objective: { type: object, nullable: true, properties: { id: { type: string }, name: { type: string }, daysLeft: { type: integer } } }
+                      accuracy: { type: object, nullable: true, description: "Acerto (good/easy) nas últimas 30 revisões.", properties: { pct: { type: integer }, sample: { type: integer } } }
+                      goal: { type: object, properties: { done: { type: integer }, goal: { type: integer }, suggested: { type: integer, nullable: true } } }
+                      streak: { type: integer }
+                  catalog: { type: array, items: { type: object, additionalProperties: true } }
+                  catalogVersion: { type: string }
+                  budget: { type: object, additionalProperties: true }
+                  suggestions: { type: array, items: { $ref: '#/components/schemas/NoaSuggestion' } }
+                  decisions: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/NoaDecision' } }
+                  mcp: { type: object, properties: { connections: { type: integer, description: "Conexões ativas." }, aiSaved: { type: integer, description: "Conteúdos salvos por IAs." } } }
+                  signals: { type: array, items: { type: string } }
+                  neverAlone: { type: array, items: { type: string } }
 
   /noa/suggestions/{id}/respond:
     post:

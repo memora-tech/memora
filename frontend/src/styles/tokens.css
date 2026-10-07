@@ -30,6 +30,17 @@
   --red-100: #FDE2E5;
   --violet-600: #6B4EFF;
   --violet-100: #ECE8FF;
+  --violet-700: #4B32C8;
+  --green-700: #236B3A;
+
+  --kind-flashcards-ink: var(--brand-700);
+  --kind-flashcards-soft: var(--brand-050);
+  --kind-resumo-ink: var(--violet-700);
+  --kind-resumo-soft: var(--violet-100);
+  --kind-mapa-ink: var(--green-700);
+  --kind-mapa-soft: var(--green-100);
+  --kind-noticia-ink: var(--orange-700);
+  --kind-noticia-soft: var(--orange-100);
 
   --color-surface: var(--pearl);
   --color-surface-raised: var(--white);

@@ -60,7 +60,7 @@ requisição.
 1. `cors()` e `express.json({ limit: '2mb' })`.
 2. Um middleware que injeta `req.store = store` — é assim que toda rota alcança o estado; não há
    camada de repositório/DAO, as rotas leem e escrevem `state` diretamente.
-3. Um `express.Router()` em `/v1` que agrega 17 módulos de rota por domínio
+3. Um `express.Router()` em `/v1` que agrega 18 módulos de rota por domínio
    (`backend/src/routes/*.js`), cada um exportando uma função `xxxRoutes()` que retorna um Router.
 4. Handler 404 uniforme e um error handler final que traduz `err.status`/`err.code` para a
    resposta JSON `{ code, message }` usada em toda a API (ver `httpError()`/`fail()` em
@@ -68,7 +68,7 @@ requisição.
 
 Quatro módulos de rota (`parentalRoutes`, `b2bRoutes`, `adminRoutes`, `partnerRoutes`) são
 montados sob um prefixo próprio (`/v1/parental`, `/v1/b2b`, `/v1/admin`, `/v1/partner`); os demais
-ficam direto em `/v1`. Um décimo oitavo módulo, `protoRoutes` (`/v1/_proto/*`), **não exige
+ficam direto em `/v1` — entre eles `materialRoutes` (conteúdos e blog) e `mcpRoutes` (servidor MCP, ver §4.7). Um décimo nono módulo, `protoRoutes` (`/v1/_proto/*`), **não exige
 autenticação** — existe só para a barra de ferramentas do protótipo trocar perfil, resetar dados e
 simular notificações; não tem equivalente em produção.
 
@@ -96,6 +96,9 @@ múltiplas contas reais.
 | `audit.js` | Log de auditoria com cadeia de hash (ver §4.3) e `recordAccess()` para o "ver como" do suporte. |
 | `helpers.js` | `fail()`/`httpError()` (formato de erro uniforme), `publicUser()` (projeção do usuário para o cliente), `ensureDay()` (vira o "dia" de estudo/cota/orçamento por fuso do usuário), `guardianGate()` (bloqueio por permissão do responsável), `PLAN_LIMITS` (limites free/premium). |
 | `ids.js` | Geração de IDs, timestamps, `dayKey()` (data no fuso do usuário), `sha256()`, código de cupom. |
+| `materials.js` | Conteúdos da comunidade além dos decks (resumo, mapa mental, post de blog): validação, visibilidade por público (`canSeeMaterial`), projeção para o cliente e comentários. |
+| `publishing.js` | Pré-condições de publicação compartilhadas (conta ativa, verificação, responsável, aceite da política) e envio à fila de moderação, para decks e conteúdos; compartilhamento só com seguidores. |
+| `mcpTools.js` | Catálogo e implementação das ferramentas do servidor MCP (ver §4.7). |
 
 ### 2.4 Autenticação e autorização
 
@@ -264,6 +267,45 @@ double-tap): `POST /generation/jobs` (header `Idempotency-Key`, válida 24 h) e
 `POST /coupons/:id/redeem` (`idempotencyKey` no corpo) — ambas devolvem o resultado já produzido
 em vez de duplicar o efeito (gerar de novo, debitar de novo).
 
+### 4.7 Servidor MCP e solicitações
+
+`POST /v1/mcp` implementa o protocolo MCP (JSON-RPC 2.0 sobre HTTP, respostas JSON, sem SSE):
+`initialize`, `ping`, `tools/list` e `tools/call`, com notificações respondidas com 202. A
+autenticação usa um token de conexão (`mcp_<random>`) criado pelo aluno em Perfil › Conexões e
+guardado só como hash. Esse token nunca autoriza a API do app.
+
+Tudo o que uma ferramenta de escrita salva (deck, resumo, mapa ou post) nasce com
+`mcpReview: 'pendente'` e fica fora de Meus decks, Meu blog e da comunidade. A tela Recebidos
+(`/app/recebidos`) usa `GET /v1/mcp/requests` e decide cada item:
+
+- `POST /mcp/requests/:id/approve`: decks entram no estudo; conteúdos vão para a comunidade
+  (pré-condições e moderação, §4.4), só para seguidores ou só para Meu blog.
+- `POST /mcp/requests/:id/reject`: o conteúdo é excluído.
+
+`GET /v1/mcp/inbox` alimenta o alerta da tela inicial com o que chegou e ainda não foi visto. A
+decisão está registrada no [ADR-0011](./adr/0011-servidor-mcp-e-conteudos-gerados-por-ia.md).
+
+```mermaid
+sequenceDiagram
+    participant IA as Cliente MCP (ex.: Claude)
+    participant MCP as POST /v1/mcp
+    participant Rec as Recebidos (aluno)
+    participant Mod as Moderação
+    participant Com as Comunidade
+
+    IA->>MCP: tools/call salvar_noticia
+    MCP-->>IA: status pendente
+    MCP->>Rec: solicitação + alerta na tela inicial
+    alt aluno recusa
+        Rec->>Rec: conteúdo excluído
+    else aluno aprova para a comunidade
+        Rec->>Mod: publicação em triagem
+        Mod->>Com: aprovado, aparece no Blog
+    else aprova só para seguidores ou só Meu blog
+        Rec->>Com: visível só para quem segue (ou fica privado)
+    end
+```
+
 ## 5. Fluxo de dados — exemplo (revisão de estudo)
 
 ```mermaid
@@ -294,6 +336,8 @@ sequenceDiagram
 
 - **Sem persistência real**: todo o estado vive em memória e é perdido a cada reinício do
   processo Node (mitigado pelo `/_proto/reset` e pelo cache client-side em `localStorage`).
+- **MCP sem OAuth**: o token de conexão vai no header `Authorization`. Conectores remotos que
+  exigem OAuth ainda não funcionam.
 - **Sem fila real**: o pipeline de geração por IA simula latência com `setTimeout`
   (`store.later()`), não com uma fila de mensageria.
 - **Autenticação simplificada**: sessão por token opaco sem rotação/refresh, aceitável para um

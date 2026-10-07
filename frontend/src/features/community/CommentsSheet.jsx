@@ -6,7 +6,8 @@ import { studentApi } from '../../lib/api.js'
 import { fmtRelative } from '../../lib/format.js'
 import { useSession } from '../../state/SessionContext.jsx'
 
-export function CommentsSheet({ open, onClose, deckId, onChanged }) {
+export function CommentsSheet({ open, onClose, deckId, basePath, onChanged }) {
+  const path = basePath || `/community/decks/${deckId}`
   const t = useT()
   const toast = useToast()
   const session = useSession()
@@ -22,7 +23,7 @@ export function CommentsSheet({ open, onClose, deckId, onChanged }) {
 
   const load = () =>
     studentApi
-      .get(`/community/decks/${deckId}/comments`)
+      .get(`${path}/comments`)
       .then((d) => setThreads(d.threads))
       .catch(() => setThreads([]))
 
@@ -33,13 +34,13 @@ export function CommentsSheet({ open, onClose, deckId, onChanged }) {
       setReplyTo(null)
       load()
     }
-  }, [open, deckId])
+  }, [open, path])
 
   const send = async () => {
     if (!text.trim()) return
     setBusy(true)
     try {
-      await studentApi.post(`/community/decks/${deckId}/comments`, { text, parentId: replyTo?.id || null })
+      await studentApi.post(`${path}/comments`, { text, parentId: replyTo?.id || null })
       toast.show({ message: t('community.deck.commentSent'), icon: 'check' })
       setText('')
       setReplyTo(null)

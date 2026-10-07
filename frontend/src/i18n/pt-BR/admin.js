@@ -100,6 +100,8 @@ export const admin = {
     open: 'Abrir',
     version: 'v{version}',
     cards: { one: '{count} card', other: '{count} cards' },
+    blocks: { one: '{count} bloco', other: '{count} blocos' },
+    kind: { resumo: 'Resumo', mapa: 'Mapa mental', noticia: 'Notícia' },
     submitted: 'Enviado {when}',
     dueAt: 'Prazo {date}',
     empty: 'Nenhuma publicação nesta fila.',

@@ -143,7 +143,7 @@ export function GenerationReview() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('create.review.title')} backTo="/app/criar" />
+      <PageHeader title={t('create.review.title')} backTo="/app/criar" backLabel={t('create.title')} />
 
       <Surface tone="noa">
         <div className={styles.titleRow}>

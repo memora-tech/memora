@@ -1,5 +1,31 @@
 export const decks = {
   title: 'Meus decks',
+  eyebrow: 'Biblioteca',
+  lead: 'Escolha quais decks entram no seu estudo. Os programados aparecem na aba Estudar com as revisões do dia.',
+  stats: {
+    decks: 'Seus decks',
+    favorites: { one: '+ {count} favorito da comunidade', other: '+ {count} favoritos da comunidade' },
+    scheduled: 'Programados',
+    scheduledNote: { one: '{count} fora do estudo', other: '{count} fora do estudo' },
+    due: 'Para revisar',
+    dueNote: 'nos decks programados',
+    folders: 'Pastas'
+  },
+  schedule: {
+    filter: 'Mostrar',
+    all: 'Todos ({count})',
+    scheduled: 'Programados ({count})',
+    unscheduled: 'Fora do estudo ({count})',
+    on: 'Programado para estudo',
+    off: 'Programar estudo',
+    added: '"{name}" entrou no seu estudo',
+    removed: '"{name}" saiu do seu estudo',
+    hint: '{count} decks programados · {due} cards para revisar. Eles aparecem na aba Estudar.',
+    goStudy: 'Ir para Estudar',
+    mastered: '{mastered} de {total} dominados',
+    emptyView: 'Nenhum deck nesta visão.',
+    noFolders: 'Nenhuma pasta ainda.'
+  },
   search: 'Buscar nos meus decks',
   searchPlaceholder: 'Citologia, Cálculo, CF/88…',
   folders: 'Pastas',
@@ -25,6 +51,33 @@ export const decks = {
     rejeitado: 'Rejeitado'
   },
   detail: {
+    eyebrow: 'Deck',
+    asideLabel: 'Publicação e organização',
+    studyTitle: 'Como estudar',
+    modes: {
+      due: { title: 'Revisar vencidos', help: 'Os cards que a repetição espaçada separou para agora.' },
+      all: { title: 'Deck inteiro', help: 'Todos os cards, na ordem do deck.' },
+      weak: { title: 'Pontos fracos', help: 'Só os cards em que você já errou.' }
+    },
+    start: { one: 'Começar · {count} card', other: 'Começar · {count} cards' },
+    cardsTitle: 'Perguntas e respostas · {count}',
+    filterLabel: 'Mostrar cards',
+    filters: { all: 'Todos ({count})', due: 'Vencidos ({count})', weak: 'Com erros ({count})' },
+    filterEmpty: 'Nenhum card neste filtro.',
+    showAllCardsCount: 'Ver todos os {count} cards',
+    dueNow: 'Vence agora',
+    publishTitle: 'Publicação na comunidade',
+    publishText: 'Compartilhe este deck com outros estudantes. Ele passa pela moderação antes de aparecer.',
+    publishSteps: {
+      review: 'Um moderador revisa o conteúdo em até 72 h.',
+      credit: 'Seu nome aparece como autor em clones e cópias.',
+      neurons: 'Você ganha Neurônios quando alguém clona o deck.'
+    },
+    publishCta: 'Publicar na comunidade',
+    organizeTitle: 'Organização',
+    scheduledLabel: 'Programado para estudo',
+    scheduledHelp: 'Entra no plano do dia, na aba Estudar.',
+    facts: { folder: 'Pasta', noFolder: 'Sem pasta', origin: 'Origem', original: 'Documento original' },
     study: 'Estudar',
     studyAll: 'Revisar mesmo assim',
     nothingDue: 'Nada vence agora neste deck',

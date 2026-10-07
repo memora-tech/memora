@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import styles from './study.module.css'
-import { Button, Chip, Sheet, Stepper, useToast } from '../../design-system/index.js'
+import { Button, Icon, Sheet, Stepper, TargetRing, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useStudy } from '../../state/StudyContext.jsx'
 import { studentApi } from '../../lib/api.js'
@@ -62,6 +62,24 @@ export function GoalMenuSheet({ open, onClose, onPause, onAddObjective }) {
 
   return (
     <Sheet open={open} onClose={onClose} title={t('study.goal.title')}>
+      <div className={styles.goalHero}>
+        <TargetRing value={today?.doneToday ?? 0} max={goal} size={120} center={`${today?.doneToday ?? 0}/${goal}`} caption={t('study.goal.ringCaption')} tone={(today?.doneToday ?? 0) >= goal ? 'success' : 'brand'} />
+        <div className={styles.goalHeroBody}>
+          <span className={styles.goalHeroLabel}>{t('study.goal.todayLabel')}</span>
+          <span className={styles.goalHeroValue}>{(today?.doneToday ?? 0) >= goal ? t('study.goal.hit') : t('study.goal.remaining', { count: Math.max(0, goal - (today?.doneToday ?? 0)) })}</span>
+          <span className={styles.objectiveMeta}>{t('study.goal.streak', { count: today?.streak ?? 0 })}</span>
+        </div>
+      </div>
+
+      <div className={styles.goalAdjust}>
+        <div>
+          <div className={styles.objectiveName}>{t('study.goal.adjust')}</div>
+          <div className={styles.objectiveMeta}>{t('study.goal.suggested', { count: today?.goalSuggested ?? goal })}</div>
+        </div>
+        <Stepper value={goal} min={5} max={200} step={5} onChange={changeGoal} label={t('study.goal.adjust')} unit={t('study.goal.unit')} />
+      </div>
+
+      <h3 className={styles.goalSection}>{t('study.goal.breakTitle')}</h3>
       <div className={styles.sheetList}>
         <div className={styles.sheetRow}>
           <div>
@@ -81,17 +99,12 @@ export function GoalMenuSheet({ open, onClose, onPause, onAddObjective }) {
             {t('study.goal.pauseConfirm')}
           </Button>
         </div>
-        <div className={styles.sheetRow}>
-          <div>
-            <div className={styles.objectiveName}>{t('study.goal.adjust')}</div>
-            <div className={styles.objectiveMeta}>{t('study.goal.suggested', { count: today?.goalSuggested ?? goal })}</div>
-          </div>
-          <Stepper value={goal} min={5} max={200} step={5} onChange={changeGoal} label={t('study.goal.adjust')} />
-        </div>
       </div>
 
       <div>
-        <h3 style={{ fontSize: 'var(--size-body)', marginBottom: 8 }}>{t('study.goal.objectives')}</h3>
+        <h3 className={styles.goalSection}>
+          <Icon name="target" size={16} /> {t('study.goal.objectives')}
+        </h3>
         {tieDate ? <p className={styles.objectiveMeta}>{t('study.goal.tie')}</p> : null}
         {upcoming.map((o) => {
           const days = daysUntil(o.date)
@@ -109,7 +122,7 @@ export function GoalMenuSheet({ open, onClose, onPause, onAddObjective }) {
                   {o.priority ? t('study.goal.prioritizedShort') : t('common.actions.confirm')}
                 </Button>
               ) : (
-                <Chip tone="neutral">{t('common.units.days', { count: Math.max(0, days) })}</Chip>
+                <TargetRing value={Math.max(0, 60 - days)} max={60} size={52} center={Math.max(0, days)} tone={days <= 7 ? 'reward' : 'brand'} />
               )}
             </div>
           )

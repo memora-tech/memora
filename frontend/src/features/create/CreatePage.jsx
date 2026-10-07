@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import styles from './create.module.css'
-import { Banner, Button, Chip, Icon, Input, Sheet, Surface, Textarea, useToast } from '../../design-system/index.js'
+import { Banner, Button, Chip, Icon, Input, Panel, Screen, ScreenHeader, Sheet, Surface, Textarea, useToast } from '../../design-system/index.js'
+import { fmtRelative } from '../../lib/format.js'
+import { SimulateButton } from '../mcp/SimulateButton.jsx'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
 import { useProto } from '../../state/ProtoContext.jsx'
@@ -21,6 +23,51 @@ function idempotencyKeyFor(fingerprint) {
   if (!map[fingerprint]) map[fingerprint] = { key: uid('idem'), expiresAt: now + IDEMPOTENCY_TTL_MS }
   storage.set('memora.idem', map)
   return map[fingerprint].key
+}
+
+function McpDecksPanel() {
+  const t = useT()
+  const info = useAsync(() => studentApi.get('/mcp/connections'), [])
+  const data = info.data
+  const active = (data?.connections || []).filter((c) => c.active)
+  const received = (data?.activity || []).filter((a) => a.ok && a.tool === 'salvar_flashcards' && a.targetType === 'deck')
+  return (
+    <Panel
+      title={t('create.mcp.title')}
+      icon="plug"
+      labelledBy="mcp-decks"
+      action={
+        <span className={styles.mcpActions}>
+          <SimulateButton size="small" onDone={() => info.run().catch(() => {})} />
+          <Button size="small" variant="ghost" to="/app/perfil/conexoes">
+            {active.length ? t('create.mcp.manage') : t('create.mcp.connect')}
+          </Button>
+        </span>
+      }
+    >
+      <p className={styles.originHelp}>{active.length ? t('create.mcp.connected', { count: active.length, names: active.map((c) => c.name).join(', ') }) : t('create.mcp.none')}</p>
+      {received.length ? (
+        <ul className={styles.mcpList}>
+          {received.map((a) => (
+            <li key={a.id}>
+              <Link to={`/app/decks/${a.targetId}`} className={styles.mcpRow}>
+                <span className={styles.originIcon}>
+                  <Icon name="layers" size={20} />
+                </span>
+                <span className={styles.originBody}>
+                  <span className={styles.originTitle}>{a.title}</span>
+                  <span className={styles.originHelp}>{t('create.mcp.received', { when: fmtRelative(a.at) })}</span>
+                </span>
+                <Icon name="chevronRight" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : data ? (
+        <p className={styles.originHelp}>{t('create.mcp.empty')}</p>
+      ) : null}
+    </Panel>
+  )
 }
 
 export function CreatePage() {
@@ -103,11 +150,8 @@ export function CreatePage() {
   const q = quota.data
 
   return (
-    <div className={styles.page}>
-      <div className={styles.titleRow}>
-        <h1 className={styles.title}>{t('create.title')}</h1>
-        {q ? <Chip tone={q.used >= q.limit ? 'warning' : 'neutral'}>{t('create.quota', { used: q.used, limit: q.limit })}</Chip> : null}
-      </div>
+    <Screen>
+      <ScreenHeader eyebrow={t('create.eyebrow')} title={t('create.title')} lead={t('create.lead')} actions={q ? <Chip tone={q.used >= q.limit ? 'warning' : 'neutral'}>{t('create.quota', { used: q.used, limit: q.limit })}</Chip> : null} />
 
       {error ? (
         <Banner tone="danger" icon="alert" action={<Button size="small" variant="text" onClick={() => setError(null)}>{t('common.actions.close')}</Button>}>
@@ -170,6 +214,8 @@ export function CreatePage() {
           <Icon name="chevronRight" />
         </Surface>
       </div>
+
+      <McpDecksPanel />
 
       <input ref={cameraRef} className={styles.hidden} type="file" accept="image/*" capture="environment" onChange={onFile('camera')} aria-label={t('create.origin.camera')} />
       <input ref={fileRef} className={styles.hidden} type="file" accept=".pdf,image/*" onChange={onFile('file')} aria-label={t('create.origin.file')} />
@@ -239,6 +285,6 @@ export function CreatePage() {
         <p>{limit?.upsell ? t('create.limitText', { premiumLimit: limit?.premiumLimit ?? 10 }) : t('create.limitTomorrow')}</p>
         {limit?.upsell ? <p className={styles.meta}>{t('create.limitTomorrow')}</p> : null}
       </Sheet>
-    </div>
+    </Screen>
   )
 }

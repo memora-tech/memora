@@ -21,3 +21,4 @@ e do próprio código-fonte. Nenhuma foi tomada nesta reconstrução; a numeraç
 | [0008](./0008-autenticacao-por-sessao-simples.md) | Autenticação por sessão simples (token opaco) |
 | [0009](./0009-tema-claro-travado.md) | Tema claro travado |
 | [0010](./0010-orcamento-de-toques.md) | Orçamento de toques (tap-count budget) como restrição de UX |
+| [0011](./0011-servidor-mcp-e-conteudos-gerados-por-ia.md) | Servidor MCP e conteúdos gerados por IA na comunidade |

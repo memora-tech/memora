@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import styles from './community.module.css'
-import { Banner, Button, ChipButton, Icon, Segmented, Sheet, Skeleton } from '../../design-system/index.js'
+import { Banner, Breadcrumbs, Button, ChipButton, Icon, Segmented, Sheet, Skeleton } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
 import { studentApi } from '../../lib/api.js'
-import { CommunityDeckCard } from './CommunityDeckCard.jsx'
+import { ContentCard } from './ContentCard.jsx'
+import { KINDS, KIND_ICON } from './kinds.jsx'
 import { SearchField } from './CommunityHome.jsx'
 
 const MIN_CHARS = 3
@@ -16,6 +17,7 @@ export function SearchResults() {
   const q = params.get('q') || ''
   const category = params.get('category') || ''
   const difficulty = params.get('difficulty') || ''
+  const kind = KINDS.includes(params.get('kind')) ? params.get('kind') : ''
   const sort = params.get('sort') || 'relevance'
   const approved = params.get('approved') === '1'
   const [input, setInput] = useState(q)
@@ -38,7 +40,7 @@ export function SearchResults() {
     setLoading(true)
     setError(null)
     const timer = setTimeout(() => {
-      const query = new URLSearchParams({ q, category, difficulty, sort })
+      const query = new URLSearchParams({ q, category, difficulty, sort, kind })
       if (approved) query.set('approved', '1')
       studentApi
         .get(`/community/search?${query.toString()}`)
@@ -50,7 +52,7 @@ export function SearchResults() {
       alive = false
       clearTimeout(timer)
     }
-  }, [q, category, difficulty, sort, approved])
+  }, [q, category, difficulty, sort, approved, kind])
 
   const update = (patch) => {
     const next = new URLSearchParams(params)
@@ -65,6 +67,7 @@ export function SearchResults() {
   const categories = data?.filters?.categories || []
   const categoryName = categories.find((c) => c.id === category)?.name || category
   const active = [
+    kind ? { key: 'kind', label: t(`community.kindsPlural.${kind}`), clear: { kind: '' } } : null,
     category ? { key: 'category', label: categoryName, clear: { category: '' } } : null,
     difficulty ? { key: 'difficulty', label: t(`common.difficulty.${difficulty}`), clear: { difficulty: '' } } : null,
     approved ? { key: 'approved', label: t('community.filters.approved'), clear: { approved: '' } } : null,
@@ -76,7 +79,8 @@ export function SearchResults() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>{t('community.title')}</h1>
+      <Breadcrumbs items={[{ label: t('community.title'), to: '/app/comunidade' }, { label: t('community.searchTitle') }]} />
+      <h1 className={styles.title}>{t('community.searchTitle')}</h1>
       <SearchField value={input} onChange={(v) => { setInput(v); update({ q: v }) }} onSubmit={(v) => update({ q: v })} autoFocus={params.get('focus') === '1'} />
 
       {q.trim().length >= MIN_CHARS ? (
@@ -119,7 +123,7 @@ export function SearchResults() {
           </p>
           <div className={styles.grid}>
             {results.map((d) => (
-              <CommunityDeckCard key={d.id} deck={d} />
+              <ContentCard key={`${d.kind}-${d.id}`} item={d} />
             ))}
           </div>
         </>
@@ -131,7 +135,7 @@ export function SearchResults() {
         title={t('community.filters.title')}
         footer={
           <>
-            <Button variant="ghost" onClick={() => { update({ category: '', difficulty: '', approved: '', sort: '' }); setFiltersOpen(false) }}>
+            <Button variant="ghost" onClick={() => { update({ kind: '', category: '', difficulty: '', approved: '', sort: '' }); setFiltersOpen(false) }}>
               {t('community.filters.clear')}
             </Button>
             <Button onClick={() => setFiltersOpen(false)}>{t('community.filters.apply')}</Button>
@@ -139,6 +143,21 @@ export function SearchResults() {
         }
       >
         <div className={styles.filterSheet}>
+          <div className={styles.filterGroup}>
+            <span className={styles.filterGroupLabel} id="f-kind">
+              {t('community.kindFilter')}
+            </span>
+            <div className={styles.filterOptions} role="group" aria-labelledby="f-kind">
+              <ChipButton pressed={!kind} onClick={() => update({ kind: '' })}>
+                {t('community.filters.all')}
+              </ChipButton>
+              {KINDS.map((k) => (
+                <ChipButton key={k} icon={KIND_ICON[k]} pressed={kind === k} onClick={() => update({ kind: kind === k ? '' : k })}>
+                  {t(`community.kindsPlural.${k}`)}
+                </ChipButton>
+              ))}
+            </div>
+          </div>
           <div className={styles.filterGroup}>
             <span className={styles.filterGroupLabel} id="f-cat">
               {t('community.filters.category')}

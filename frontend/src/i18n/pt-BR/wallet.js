@@ -1,5 +1,7 @@
 export const wallet = {
   title: 'Carteira',
+  eyebrow: 'Conta',
+  lead: 'Seus Neurônios, ganhos com constância no estudo, viram cupons de parceiros.',
   balance: 'Seu saldo',
   balanceUnit: 'Seu saldo em Neurônios',
   unit: { one: 'Neurônio', other: 'Neurônios' },

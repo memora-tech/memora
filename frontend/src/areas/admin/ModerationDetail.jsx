@@ -86,10 +86,16 @@ export function ModerationDetail() {
                   <span>
                     {t('admin.moderation.detail.category')}: {pub.categoryName}
                   </span>
-                  <span>
-                    {t('admin.moderation.detail.difficulty')}: {difficultyLabel[pub.difficulty] || pub.difficulty}
-                  </span>
-                  <span>{t('admin.moderation.cards', { count: pub.cardCount })}</span>
+                  {pub.kind === 'material' ? (
+                    <span>
+                      <Badge tone="brand">{t(`admin.moderation.kind.${pub.materialKind}`)}</Badge>
+                    </span>
+                  ) : (
+                    <span>
+                      {t('admin.moderation.detail.difficulty')}: {difficultyLabel[pub.difficulty] || pub.difficulty}
+                    </span>
+                  )}
+                  <span>{t(pub.kind === 'material' ? 'admin.moderation.blocks' : 'admin.moderation.cards', { count: pub.cardCount })}</span>
                   <span>
                     {t('admin.moderation.detail.submittedAt')} {fmtDateTime(pub.submittedAt)}
                   </span>

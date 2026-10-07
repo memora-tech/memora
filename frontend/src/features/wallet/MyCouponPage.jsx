@@ -48,7 +48,7 @@ export function MyCouponPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={mine.title} backTo="/app/carteira" actions={<Badge tone={mine.status === 'emitido' ? 'success' : mine.status === 'utilizado' ? 'neutral' : 'warning'}>{t(`wallet.mine.status.${mine.status}`, { date: fmtDate(mine.usedAt) })}</Badge>} />
+      <PageHeader title={mine.title} backTo="/app/carteira" backLabel={t('wallet.title')} actions={<Badge tone={mine.status === 'emitido' ? 'success' : mine.status === 'utilizado' ? 'neutral' : 'warning'}>{t(`wallet.mine.status.${mine.status}`, { date: fmtDate(mine.usedAt) })}</Badge>} />
       <Surface className={styles.qrCard}>
         <p className={styles.meta}>{mine.partnerName}</p>
         <svg className={styles.qr} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={t('wallet.mine.qrLabel', { code: mine.code })} shapeRendering="crispEdges">

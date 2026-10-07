@@ -117,6 +117,23 @@
   gap: var(--space-4);
 }
 
+.mainWide,
+.toplineWide {
+  max-width: none;
+}
+
+.mainReadable {
+  max-width: 1040px;
+}
+
+.toplineWide .metricObjective {
+  flex: 0 1 auto;
+}
+
+.toplineWide .metricNeuron {
+  margin-left: auto;
+}
+
 .mainFocus {
   padding: 0;
   max-width: none;
@@ -374,90 +391,138 @@
   .rail {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: var(--space-2);
-    width: var(--rail-width);
+    gap: var(--space-4);
+    width: 248px;
     position: sticky;
     top: 0;
     height: 100dvh;
-    padding: var(--space-5) var(--space-2);
-    border-right: 1px solid var(--color-hairline);
+    overflow-y: auto;
+    padding: var(--space-5) var(--space-4) var(--space-4);
+    border-right: 1px solid var(--color-border-soft);
     background: var(--color-surface-raised);
     flex: none;
   }
 
   .railBrand {
-    margin-bottom: var(--space-4);
-    writing-mode: horizontal-tb;
+    padding: var(--space-1) var(--space-3) var(--space-3);
   }
 
-  .railTab {
-    width: 72px;
-    min-height: 60px;
-    border-radius: var(--radius-card);
+  .railGroup {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: var(--size-micro);
-    font-weight: 500;
+    gap: 2px;
+  }
+
+  .railGroupLabel {
+    padding: 0 var(--space-3) var(--space-1);
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--color-text-secondary);
-    text-decoration: none;
   }
 
   .railTab {
     position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-decoration: none;
     transition: background-color var(--t-fast) var(--ease-both), color var(--t-fast) var(--ease-both);
   }
 
   .railTab:hover {
-    background: var(--color-surface-brand);
-    color: var(--color-text-brand);
+    background: var(--color-surface-sunken);
+    color: var(--color-text);
   }
 
   .railTab[aria-current="page"] {
     background: var(--color-surface-brand);
-    color: var(--color-text-brand);
+    color: var(--brand-900);
     font-weight: 600;
   }
 
   .railTab[aria-current="page"]::before {
     content: "";
     position: absolute;
-    left: -6px;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 0;
+    top: 10px;
+    bottom: 10px;
     width: 3px;
-    height: 24px;
     border-radius: var(--radius-bubble);
-    background: var(--color-accent);
+    background: var(--brand-700);
   }
 
-  .railCreate {
-    margin-top: var(--space-3);
-    width: var(--fab-size);
-    height: var(--fab-size);
-    border-radius: var(--radius-bubble);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--brand-500) 92%, var(--white)), var(--brand-500));
-    color: var(--color-text-on-brand);
-    display: grid;
-    place-items: center;
-    box-shadow: var(--shadow-brand);
-    transition: transform var(--t-fast) var(--ease-both);
+  .railLabel {
+    flex: 1;
+    min-width: 0;
   }
 
-  .railCreate:hover {
-    background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  .railBadge {
+    padding: 1px 7px;
+    border-radius: var(--radius-bubble);
+    background: var(--brand-900);
     color: var(--white);
-  }
-
-  .railCreate:active {
-    transform: scale(0.96);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
   }
 
   .railSpacer {
     flex: 1;
+  }
+
+  .railUser {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: 12px;
+    border: 1px solid var(--color-border-soft);
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .railUser:hover {
+    background: var(--color-surface-sunken);
+  }
+
+  .railAvatar {
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--brand-900);
+    color: var(--white);
+    font-weight: 700;
+  }
+
+  .railUserText {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .railUserName {
+    font-weight: 600;
+    font-size: var(--size-small);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .railUserMeta {
+    font-size: var(--size-meta);
+    color: var(--color-text-secondary);
   }
 
   .body {
@@ -473,8 +538,20 @@
     padding: var(--space-6) var(--space-6) var(--space-16);
   }
 
+  .mainWide {
+    padding: clamp(20px, 2.4vw, 32px) clamp(20px, 2.6vw, 40px) 48px;
+  }
+
+  .mainFill {
+    flex: none;
+    height: calc(100dvh - var(--topline-height) - var(--safe-top) - 1px);
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: var(--space-5);
+  }
+
   .toplineInner {
-    padding: 0 var(--space-6);
+    padding: 0 clamp(20px, 2.6vw, 40px);
   }
 
   .metric {
@@ -484,4 +561,118 @@
   .shellFocus .rail {
     display: none;
   }
+}
+
+.userMenuWrap {
+  position: relative;
+}
+
+.userMenuWrap .railUser {
+  width: 100%;
+  background: var(--color-surface-raised);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.userMenuWrap .railUser > svg {
+  color: var(--color-text-secondary);
+  flex: none;
+}
+
+.userMenuWrap .railUserText {
+  flex: 1;
+}
+
+.userMenuWrap .railUser[aria-expanded="true"],
+.userMenuWrap .railUser[data-active="true"] {
+  border-color: var(--brand-200);
+  background: var(--color-surface-brand);
+}
+
+.userMenu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  z-index: var(--z-sheet);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.userMenuHead {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border-soft);
+  min-width: 0;
+}
+
+.userMenuName {
+  font-weight: 600;
+}
+
+.userMenuEmail {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--size-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.userMenuItem > span:first-of-type {
+  flex: 1;
+}
+
+.userMenuItem svg {
+  color: var(--color-text-secondary);
+}
+
+.userMenuItem:hover,
+.userMenuItem:focus-visible {
+  background: var(--color-surface-sunken);
+}
+
+.userMenuItem[aria-current="page"] {
+  background: var(--color-surface-brand);
+  font-weight: 600;
+}
+
+.userMenuSep {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--color-border-soft);
+}
+
+.railCount {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--radius-bubble);
+  background: var(--orange-700);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
 }

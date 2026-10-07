@@ -3,8 +3,28 @@ import { useNavigate } from 'react-router-dom'
 import styles from './ds.module.css'
 import { Button } from './Button.jsx'
 import { useT } from '../i18n/index.js'
+import { Breadcrumbs } from './Screen.jsx'
 
-export function PageHeader({ title, back = true, backTo, onBack, actions, children }) {
+export function PageHeader({ title, back = true, backTo, backLabel, crumbs, onBack, actions, children }) {
+  const trail = crumbs || (backTo && backLabel ? [{ label: backLabel, to: backTo }, { label: title }] : null)
+  if (trail) {
+    return (
+      <>
+        <div className={styles.pageCrumbRow}>
+          <Breadcrumbs items={trail} />
+          <span className={styles.pageHeaderActions}>{actions}</span>
+        </div>
+        <div className={styles.pageTitleBlock}>
+          <h1 className={styles.pageTitle}>{title}</h1>
+          {children ? <p className={styles.pageLead}>{children}</p> : null}
+        </div>
+      </>
+    )
+  }
+  return <ClassicHeader title={title} back={back} backTo={backTo} onBack={onBack} actions={actions}>{children}</ClassicHeader>
+}
+
+function ClassicHeader({ title, back, backTo, onBack, actions, children }) {
   const t = useT()
   const navigate = useNavigate()
   const ref = useRef(null)

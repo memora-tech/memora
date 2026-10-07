@@ -44,7 +44,7 @@ export function SettingsPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title={t('profile.settings.title')} backTo="/app/perfil" />
+      <PageHeader title={t('profile.settings.title')} backTo="/app/perfil" backLabel={t('profile.title')} />
 
       <Surface className={styles.stack}>
         <h2 className={styles.sectionTitle}>{t('profile.settings.notifications')}</h2>
