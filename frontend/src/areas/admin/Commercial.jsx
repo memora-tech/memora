@@ -1,5 +1,7 @@
 import styles from './admin.module.css'
-import { Button, Badge, Banner, Surface, SectionTitle, Stat, useToast } from '../../design-system/index.js'
+import { Button, Badge, Banner, Panel, ScreenHeader, StatTile, useToast } from '../../design-system/index.js'
+import { useSectionEyebrow } from './AdminLayout.jsx'
+import { Meter, Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -14,6 +16,8 @@ export function Commercial() {
   useDocumentTitle(t('admin.commercial.title'))
   const state = useAdminData(() => adminApi.get('/admin/commercial/overview'))
   const data = state.data
+  const eyebrow = useSectionEyebrow('comercial')
+  const conversion = data?.dashboard?.redemptions30d ? Math.round((data.dashboard.confirmedUse30d / data.dashboard.redemptions30d) * 100) : 0
 
   const approveStage = async (partner) => {
     try {
@@ -27,22 +31,19 @@ export function Commercial() {
 
   return (
     <>
-      <h1 className={styles.title}>{t('admin.commercial.title')}</h1>
+      <ScreenHeader size="compact" eyebrow={eyebrow} title={t('admin.commercial.title')} lead={t('admin.pages.commercial.lead')} />
       <AdminState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
       {data ? (
         <>
-          <Surface className={styles.stack}>
-            <SectionTitle as="h2">{t('admin.commercial.dashboard')}</SectionTitle>
-            <div className={styles.statsRow}>
-              <Stat value={fmtNumber(data.dashboard.activePartners)} label={t('admin.commercial.activePartners')} />
-              <Stat value={fmtNumber(data.dashboard.redemptions30d)} label={t('admin.commercial.redemptions30d')} />
-              <Stat value={fmtNumber(data.dashboard.confirmedUse30d)} label={t('admin.commercial.confirmedUse30d')} />
-              <Stat value={fmtBRL(data.dashboard.cpaRevenueBRL)} label={t('admin.commercial.cpaRevenue')} />
-              <Stat value={fmtBRL(data.dashboard.positioningRevenueBRL)} label={t('admin.commercial.positioningRevenue')} />
-            </div>
-          </Surface>
+          <h2 className="sr-only">{t('admin.commercial.dashboard')}</h2>
+          <div className={panelStyles.kpis}>
+            <StatTile size="compact" icon="building" label={t('admin.commercial.activePartners')} value={fmtNumber(data.dashboard.activePartners)} />
+            <StatTile size="compact" icon="gift" label={t('admin.commercial.redemptions30d')} value={fmtNumber(data.dashboard.redemptions30d)} />
+            <StatTile size="compact" icon="check" label={t('admin.commercial.confirmedUse30d')} value={fmtNumber(data.dashboard.confirmedUse30d)} note={<Meter value={conversion} tone={conversion >= 50 ? 'success' : 'warning'} label={t('admin.pages.commercial.noteConversion', { pct: conversion })} />} />
+            <StatTile size="compact" tone="ink" icon="wallet" label={t('admin.commercial.cpaRevenue')} value={fmtBRL(data.dashboard.cpaRevenueBRL)} note={t('admin.pages.commercial.noteConversion', { pct: conversion })} />
+            <StatTile size="compact" icon="star" label={t('admin.commercial.positioningRevenue')} value={fmtBRL(data.dashboard.positioningRevenueBRL)} />
+          </div>
           <section className={styles.stack} aria-label={t('admin.commercial.alerts')}>
-            <SectionTitle as="h2">{t('admin.commercial.alerts')}</SectionTitle>
             {data.alerts.map((a) => (
               <Banner key={a.id} tone={a.type === 'queda_conversao' ? 'warning' : 'danger'} icon="alert">
                 <strong>{t(`admin.commercial.alertType.${a.type}`)}</strong> · {a.text} <span className={styles.cellMeta}>{fmtRelative(a.at)}</span>
@@ -70,7 +71,7 @@ export function Commercial() {
                     <tr key={p.id}>
                       <th scope="row">
                         <div className={styles.cellStack}>
-                          <span>{p.name}</span>
+                          <span className={styles.cellTitle}>{p.name}</span>
                           <span className={styles.cellMeta}>
                             {p.category} · {p.campaigns.length} campanhas · {p.redemptions} resgates
                           </span>
@@ -110,7 +111,9 @@ export function Commercial() {
                 <thead>
                   <tr>
                     <th scope="col">{t('admin.commercial.tierName')}</th>
-                    <th scope="col" className={styles.num}>{t('admin.commercial.monthly')}</th>
+                    <th scope="col" className={styles.num}>
+                      {t('admin.commercial.monthly')}
+                    </th>
                     <th scope="col">{t('admin.commercial.description')}</th>
                   </tr>
                 </thead>
@@ -125,9 +128,10 @@ export function Commercial() {
                 </tbody>
               </table>
             </div>
-            <Surface className={styles.stack}>
-              <SectionTitle as="h2">{t('admin.commercial.churn')}</SectionTitle>
-              <p className={styles.cellMeta}>{t('admin.commercial.churnIntro')}</p>
+            <Panel tone="quiet" title={t('admin.commercial.churn')} icon="alert" labelledBy="churn-title" bodyClassName={styles.panelFlush}>
+              <p className={styles.cellMeta} style={{ padding: '14px 18px 0' }}>
+                {t('admin.commercial.churnIntro')}
+              </p>
               <div className={styles.tableWrap}>
                 <table className={`${styles.table} ${styles.tableNarrow}`}>
                   <thead>
@@ -150,7 +154,7 @@ export function Commercial() {
                   </tbody>
                 </table>
               </div>
-            </Surface>
+            </Panel>
           </div>
         </>
       ) : null}

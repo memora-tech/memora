@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import styles from './community.module.css'
-import { Avatar, Banner, Button, Chip, Icon, OverflowMenu, PageHeader, Sheet, Skeleton, Surface, Textarea, useToast } from '../../design-system/index.js'
+import { Avatar, Banner, Button, Chip, Icon, OverflowMenu, PageHeader, Segmented, Sheet, Skeleton, Surface, Textarea, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -12,7 +12,12 @@ import { Markdown } from './Markdown.jsx'
 import { MindMap } from './MindMap.jsx'
 import { MaterialCard } from './ContentCard.jsx'
 import { usePublishMaterial, useRemoveMaterial, useUnpublishMaterial } from './MyContents.jsx'
-import { CommentsSheet } from './CommentsSheet.jsx'
+import { CommentsPanel } from './Comments.jsx'
+import { MapCanvas, MapDiagram } from './MapViews.jsx'
+import { RemixBadge, RemixList } from './Remix.jsx'
+import { TransformSheet } from '../noa/AiFormats.jsx'
+import { QuizView, TimelineView } from './QuizTimeline.jsx'
+import { lengthOf } from './lengthOf.js'
 
 export function MaterialView() {
   const t = useT()
@@ -22,7 +27,8 @@ export function MaterialView() {
   const detail = useAsync(() => studentApi.get(`/community/materials/${materialId}`), [materialId])
   const [reportOpen, setReportOpen] = useState(false)
   const [reportDetail, setReportDetail] = useState('')
-  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [transformOpen, setTransformOpen] = useState(false)
+  const [view, setView] = useState(null)
   const data = detail.data
   const m = data?.material
   useDocumentTitle(m ? m.title : t('community.title'))
@@ -36,8 +42,14 @@ export function MaterialView() {
   const favorite = async () => {
     try {
       const res = await studentApi.post(`/community/materials/${m.id}/favorite`)
-      patchMaterial({ viewer: { ...m.viewer, favorited: res.favorited }, stats: { ...m.stats, favorites: res.favorites } })
-      toast.show({ message: res.favorited ? t('community.material.favoriteToast') : t('community.material.unfavoriteToast'), icon: 'heart' })
+      patchMaterial({
+        viewer: { ...m.viewer, favorited: res.favorited },
+        stats: { ...m.stats, favorites: res.favorites }
+      })
+      toast.show({
+        message: res.favorited ? t('community.material.favoriteToast') : t('community.material.unfavoriteToast'),
+        icon: 'heart'
+      })
     } catch (err) {
       toast.show({ message: err.message, tone: 'danger' })
     }
@@ -45,8 +57,13 @@ export function MaterialView() {
 
   const react = async (emoji) => {
     try {
-      const res = await studentApi.post(`/community/materials/${m.id}/react`, { emoji })
-      patchMaterial({ reactions: res.reactions, viewer: { ...m.viewer, myReactions: res.mine } })
+      const res = await studentApi.post(`/community/materials/${m.id}/react`, {
+        emoji
+      })
+      patchMaterial({
+        reactions: res.reactions,
+        viewer: { ...m.viewer, myReactions: res.mine }
+      })
     } catch (err) {
       toast.show({ message: err.message, tone: 'danger' })
     }
@@ -54,7 +71,10 @@ export function MaterialView() {
 
   const report = async (reason) => {
     try {
-      const res = await studentApi.post(`/community/materials/${m.id}/report`, { reason, detail: reportDetail || null })
+      const res = await studentApi.post(`/community/materials/${m.id}/report`, {
+        reason,
+        detail: reportDetail || null
+      })
       setReportOpen(false)
       setReportDetail('')
       toast.show({ message: res.message, icon: 'flag' })
@@ -66,7 +86,15 @@ export function MaterialView() {
   if (detail.loading && !data) return <Skeleton height={160} count={3} />
   if (detail.error && !data) {
     return (
-      <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={refresh}>{t('common.actions.retry')}</Button>}>
+      <Banner
+        tone="danger"
+        icon="alert"
+        action={
+          <Button size="small" variant="soft" onClick={refresh}>
+            {t('common.actions.retry')}
+          </Button>
+        }
+      >
         {detail.error.status === 404 ? t('community.material.notFound') : t('common.state.error')}
       </Banner>
     )
@@ -74,12 +102,36 @@ export function MaterialView() {
   if (!m) return null
 
   const published = m.status === 'aprovado'
+  const mapView = view || (m.kind === 'mapa' && m.body?.layout === 'diagrama' ? 'diagrama' : 'mapa')
   const body = m.body
   const sources = body.sources || []
   const menu = [
-    published && !m.isMine ? { key: 'report', icon: 'flag', label: t('community.deck.report'), danger: true, onSelect: () => setReportOpen(true) } : null,
-    m.isMine && published ? { key: 'unshare', icon: 'eyeOff', label: t('community.share.unshare'), onSelect: () => unpublish(m) } : null,
-    m.isMine ? { key: 'remove', icon: 'trash', label: t('community.mine.remove'), danger: true, onSelect: () => remove.ask(m) } : null
+    published && !m.isMine
+      ? {
+          key: 'report',
+          icon: 'flag',
+          label: t('community.deck.report'),
+          danger: true,
+          onSelect: () => setReportOpen(true)
+        }
+      : null,
+    m.isMine && published
+      ? {
+          key: 'unshare',
+          icon: 'eyeOff',
+          label: t('community.share.unshare'),
+          onSelect: () => unpublish(m)
+        }
+      : null,
+    m.isMine
+      ? {
+          key: 'remove',
+          icon: 'trash',
+          label: t('community.mine.remove'),
+          danger: true,
+          onSelect: () => remove.ask(m)
+        }
+      : null
   ].filter(Boolean)
 
   return (
@@ -92,9 +144,13 @@ export function MaterialView() {
         <KindTag kind={m.kind} />
         <Chip tone="brand">{m.categoryName}</Chip>
         <Chip tone="neutral" icon="clock">
-          {m.kind === 'mapa' ? t('community.nodes', { count: m.preview.nodes }) : t('community.readingTime', { count: m.readingMinutes })}
+          {lengthOf(t, m)}
         </Chip>
-        {m.lang !== 'pt-BR' ? <Chip tone="brand" icon="globe">{t('community.lang', { lang: t(`community.langNames.${m.lang}`) })}</Chip> : null}
+        {m.lang !== 'pt-BR' ? (
+          <Chip tone="brand" icon="globe">
+            {t('community.lang', { lang: t(`community.langNames.${m.lang}`) })}
+          </Chip>
+        ) : null}
         {m.isMine ? <Chip tone={{ aprovado: 'success', rejeitado: 'danger', privado: 'neutral' }[m.status] || 'warning'}>{t(`community.status.${m.status}`)}</Chip> : null}
         {published ? (
           <Chip tone="neutral" icon={m.audience === 'seguidores' ? 'users' : 'globe'}>
@@ -103,17 +159,29 @@ export function MaterialView() {
         ) : null}
       </div>
 
+      {m.remixOf ? <RemixBadge remixOf={m.remixOf} /> : null}
+
       {data.moderation?.status === 'rejeitado' ? (
         <Banner tone="danger" icon="alert">
-          {t('community.material.moderationRejected', { reason: data.moderation.decision?.reasonCategory || '—', excerpt: data.moderation.decision?.excerpt || '' })}
+          {t('community.material.moderationRejected', {
+            reason: data.moderation.decision?.reasonCategory || '—',
+            excerpt: data.moderation.decision?.excerpt || ''
+          })}
         </Banner>
       ) : data.moderation && !published ? (
         <Banner tone="warning" icon="clock">
-          {t('community.material.moderationPending', { when: fmtRelative(data.moderation.submittedAt), hours: data.moderation.slaHours })}
+          {t('community.material.moderationPending', {
+            when: fmtRelative(data.moderation.submittedAt),
+            hours: data.moderation.slaHours
+          })}
         </Banner>
       ) : m.aiGenerated ? (
         <Banner tone="neutral" icon="sparkle">
-          {m.isMine && !published ? t('community.material.aiNoticeOwn', { client: m.source?.client || 'IA' }) : t('community.material.aiNotice')}
+          {m.isMine && !published
+            ? t('community.material.aiNoticeOwn', {
+                client: m.source?.client || 'IA'
+              })
+            : t('community.material.aiNotice')}
         </Banner>
       ) : null}
 
@@ -157,8 +225,25 @@ export function MaterialView() {
             </span>
           )}
           {published ? (
-            <Button size="small" variant="ghost" icon="message" onClick={() => setCommentsOpen(true)}>
+            <Button
+              size="small"
+              variant="ghost"
+              icon="message"
+              onClick={() => {
+                const el = document.getElementById('comentarios')
+                el?.scrollIntoView({
+                  behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+                  block: 'start'
+                })
+                el?.querySelector('textarea')?.focus({ preventScroll: true })
+              }}
+            >
               {t('community.deck.comments', { count: m.commentCount })}
+            </Button>
+          ) : null}
+          {published ? (
+            <Button size="small" variant="ghost" icon="sparkle" onClick={() => setTransformOpen(true)}>
+              {t('ai.transform.action')}
             </Button>
           ) : null}
           {published ? (
@@ -176,12 +261,46 @@ export function MaterialView() {
             <Markdown text={body.markdown} />
             {body.url ? (
               <Button variant="soft" icon="external" href={body.url} target="_blank" rel="noopener noreferrer">
-                {t('community.material.original', { outlet: body.outlet || new URL(body.url).hostname })}
+                {t('community.material.original', {
+                  outlet: body.outlet || new URL(body.url).hostname
+                })}
               </Button>
             ) : null}
           </>
+        ) : m.kind === 'quiz' ? (
+          <QuizView questions={body.questions} materialId={m.id} viewerQuiz={m.viewer?.quiz} />
+        ) : m.kind === 'linha' ? (
+          <TimelineView events={body.events} />
         ) : m.kind === 'mapa' ? (
-          <MindMap root={body.root} />
+          <div className={styles.mapViews}>
+            <div className={styles.mapViewBar}>
+              <Segmented
+                label={t('community.mapviews.label')}
+                value={mapView}
+                onChange={setView}
+                options={[
+                  {
+                    value: 'mapa',
+                    label: t('community.mapviews.map'),
+                    icon: 'mindmap'
+                  },
+                  {
+                    value: 'diagrama',
+                    label: t('community.mapviews.diagram'),
+                    icon: 'route'
+                  }
+                ]}
+              />
+            </div>
+            {mapView === 'diagrama' ? (
+              <MapDiagram root={body.root} />
+            ) : (
+              <>
+                <MapCanvas root={body.root} />
+                <MindMap root={body.root} />
+              </>
+            )}
+          </div>
         ) : (
           <Markdown text={body.markdown} />
         )}
@@ -228,6 +347,14 @@ export function MaterialView() {
         </Surface>
       ) : null}
 
+      {published ? (
+        <Surface id="comentarios" className={styles.commentsBlock}>
+          <CommentsPanel basePath={`/community/materials/${m.id}`} authorId={m.authorId} />
+        </Surface>
+      ) : null}
+
+      <RemixList remixes={data.remixes} />
+
       {data.related.length ? (
         <section className={styles.section} aria-labelledby="sec-rel">
           <h2 id="sec-rel" className={styles.sectionTitle}>
@@ -252,7 +379,7 @@ export function MaterialView() {
           ))}
         </div>
       </Sheet>
-      <CommentsSheet open={commentsOpen} onClose={() => setCommentsOpen(false)} basePath={`/community/materials/${m.id}`} onChanged={refresh} />
+      <TransformSheet open={transformOpen} item={m} onClose={() => setTransformOpen(false)} />
       {publish.dialog}
       {remove.dialog}
     </div>

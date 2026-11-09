@@ -4,3 +4,4 @@ dev-dist/
 .vite/
 coverage/
 *.log
+.claude/settings.local.json

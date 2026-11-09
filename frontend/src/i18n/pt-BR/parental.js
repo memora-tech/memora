@@ -121,5 +121,31 @@ export const parental = {
     title: 'Atividade',
     history: 'Suas decisões',
     empty: 'Nenhuma decisão registrada ainda.'
+  },
+  shell: {
+    skip: 'Pular para o conteúdo',
+    menu: 'Menu de navegação',
+    close: 'Fechar menu',
+    groups: { follow: 'Acompanhamento', control: 'Controle' }
+  },
+  entry: {
+    kicker: 'Responsáveis',
+    headline: 'Acompanhe o estudo do seu filho sem invadir a rotina dele.',
+    highlights: ['Resumo semanal com dias de estudo, cards e acertos.', 'Cada liberação é independente e reversível.', 'Pedidos do aluno chegam aqui para você decidir.'],
+    footnote: 'Documentos de verificação são apagados após o uso.'
+  },
+  pages: {
+    summaryLead: 'Como foi a semana de {name} e o que está liberado na conta.',
+    permissionsLead: 'Cada liberação é independente. O que não estiver liberado vira uma solicitação para você decidir.',
+    requestsLead: 'Pedidos do aluno que dependem da sua decisão.',
+    activityLead: 'Histórico das suas decisões, da mais recente para a mais antiga.',
+    weekCards: 'Cards na semana',
+    weekMinutes: 'Minutos na semana',
+    accuracyNote: 'média da semana',
+    streakNote: { one: '{count} dia com estudo', other: '{count} dias com estudo' },
+    daysOfSeven: '{count} de 7 dias',
+    enabled: { one: '{count} liberada', other: '{count} liberadas' },
+    allowed: 'Liberado',
+    blocked: 'Bloqueado'
   }
 }

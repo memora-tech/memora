@@ -123,7 +123,7 @@ function itemHref(item) {
   return `/app/comunidade/conteudo/${item.id}`
 }
 
-const FILTERS = ['all', 'noticia', 'flashcards', 'resumo', 'mapa']
+const FILTERS = ['all', 'noticia', 'flashcards', 'resumo', 'mapa', 'quiz', 'linha']
 
 export function MyContents({ onChanged }) {
   const t = useT()
@@ -162,7 +162,15 @@ export function MyContents({ onChanged }) {
 
       {list.loading && !list.data ? <Skeleton height={88} count={3} /> : null}
       {list.error && !list.data ? (
-        <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={refresh}>{t('common.actions.retry')}</Button>}>
+        <Banner
+          tone="danger"
+          icon="alert"
+          action={
+            <Button size="small" variant="soft" onClick={refresh}>
+              {t('common.actions.retry')}
+            </Button>
+          }
+        >
           {t('common.state.error')}
         </Banner>
       ) : null}
@@ -204,9 +212,7 @@ export function MyContents({ onChanged }) {
                 </Button>
               ) : (
                 <>
-                  {m.kind === 'noticia' && m.status !== 'em_triagem' ? (
-                    <Button size="small" variant="ghost" icon="edit" to={`/app/perfil/blog/${m.id}`} label={`${t('common.actions.edit')} ${m.title}`} />
-                  ) : null}
+                  {m.kind === 'noticia' && m.status !== 'em_triagem' ? <Button size="small" variant="ghost" icon="edit" to={`/app/perfil/blog/${m.id}`} label={`${t('common.actions.edit')} ${m.title}`} /> : null}
                   {m.status === 'privado' || m.status === 'rejeitado' ? (
                     <Button size="small" icon="send" onClick={() => publish.ask(m)}>
                       {t('community.share.cta')}

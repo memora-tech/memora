@@ -83,28 +83,15 @@ const PATHS = {
   school: 'M3 10 12 5l9 5-9 5-9-5Zm3 2v5c2 2 10 2 12 0v-5m3-2v6',
   mindmap: 'M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-6-7a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm12 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM7.4 6.4l3.2 4.2m6-4.2-3.2 4.2m-6 6.2 3.2-3.2m6 3.2-3.2-3.2',
   news: 'M4 5h13v14H6a2 2 0 0 1-2-2V5Zm13 4h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7M7 16h4',
-  plug: 'M9 3v5m6-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4'
+  plug: 'M9 3v5m6-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4',
+  quiz: 'M4 6.5 5.5 8 8 5M4 12.5 5.5 14 8 11M4 18h4M11 6.5h9M11 12.5h9M11 18h9',
+  timeline: 'M3 12h18M7 12V7m5 5v5m5-5V7M5 5h4m1 14h4m1-14h4'
 }
 
 export function Icon({ name, size = 22, strokeWidth = 1.8, className, label, ...rest }) {
   const d = PATHS[name] || PATHS.help
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden={label ? undefined : 'true'}
-      role={label ? 'img' : undefined}
-      aria-label={label}
-      focusable="false"
-      className={className}
-      {...rest}
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden={label ? undefined : 'true'} role={label ? 'img' : undefined} aria-label={label} focusable="false" className={className} {...rest}>
       <path d={d} />
     </svg>
   )

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { partnerApi, ApiError } from '../../lib/api.js'
-import { Surface, Button, Input, Banner } from '../../design-system/index.js'
+import { Panel, ScreenHeader, Button, Input, Banner, Icon } from '../../design-system/index.js'
+import { panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { fmtDateTime } from '../../lib/format.js'
 import styles from './partner.module.css'
@@ -43,47 +44,46 @@ export function PartnerValidate({ data, onChange }) {
 
   return (
     <>
-      <div>
-        <h1 className={styles.pageTitle}>{t('partner.validate.title')}</h1>
-        <p className={styles.pageIntro}>{t('partner.validate.intro')}</p>
-      </div>
+      <ScreenHeader size="compact" eyebrow={t('partner.shell.groups.operation')} title={t('partner.validate.title')} lead={t('partner.validate.intro')} />
 
-      <Surface as="form" onSubmit={submit} noValidate>
-        <div className={styles.validateForm}>
-          <Input id="redeem-code" label={t('partner.validate.code')} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} error={error} placeholder={t('partner.validate.placeholder')} className={styles.codeInput} autoComplete="off" spellCheck={false} />
-          <Button type="submit" size="large" icon="check" loading={loading}>
-            {t('partner.validate.submit')}
-          </Button>
-        </div>
-        {result ? (
-          <div className={styles.result}>
-            <Banner tone={TONES[result.kind]} icon={ICONS[result.kind]}>
-              <strong>{result.kind === 'error' ? t('partner.validate.genericError') : t(`partner.validate.${result.kind}`)}</strong>
-              <div>
-                {result.kind === 'ok' ? t('partner.validate.okText', { code: result.code, date: fmtDateTime(result.usedAt) }) : null}
-                {result.kind === 'already_used' ? (result.usedAt ? t('partner.validate.usedAtText', { date: fmtDateTime(result.usedAt) }) : null) : null}
-                {result.kind === 'expired' ? t('partner.validate.expiredText') : null}
-                {result.kind === 'not_found' ? t('partner.validate.notFoundText') : null}
-              </div>
-            </Banner>
+      <div className={panelStyles.split}>
+        <form onSubmit={submit} noValidate className={styles.validateCard}>
+          <span className={styles.validateIcon} aria-hidden="true">
+            <Icon name="qr" size={28} />
+          </span>
+          <div className={styles.validateForm}>
+            <Input id="redeem-code" label={t('partner.validate.code')} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} error={error} placeholder={t('partner.validate.placeholder')} className={styles.codeInput} autoComplete="off" spellCheck={false} />
+            <Button type="submit" size="large" icon="check" loading={loading}>
+              {t('partner.validate.submit')}
+            </Button>
           </div>
-        ) : null}
-      </Surface>
+          {result ? (
+            <div className={styles.result}>
+              <Banner tone={TONES[result.kind]} icon={ICONS[result.kind]}>
+                <strong>{result.kind === 'error' ? t('partner.validate.genericError') : t(`partner.validate.${result.kind}`)}</strong>
+                <div>
+                  {result.kind === 'ok' ? t('partner.validate.okText', { code: result.code, date: fmtDateTime(result.usedAt) }) : null}
+                  {result.kind === 'already_used' ? (result.usedAt ? t('partner.validate.usedAtText', { date: fmtDateTime(result.usedAt) }) : null) : null}
+                  {result.kind === 'expired' ? t('partner.validate.expiredText') : null}
+                  {result.kind === 'not_found' ? t('partner.validate.notFoundText') : null}
+                </div>
+              </Banner>
+            </div>
+          ) : null}
+        </form>
 
-      <Surface tone="sunken">
-        <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>{t('partner.validate.apiTitle')}</h2>
-        </div>
-        <p className={styles.cardSub}>{data.api.docs}</p>
-        <div className={styles.apiRow}>
-          <span className={styles.cardSub}>{t('partner.validate.apiEndpoint')}</span>
-          <code className={styles.mono}>POST {data.api.baseUrl}</code>
-        </div>
-        <div className={styles.apiRow}>
-          <span className={styles.cardSub}>{t('partner.validate.apiKey')}</span>
-          <code className={styles.mono}>{data.api.key}</code>
-        </div>
-      </Surface>
+        <Panel tone="quiet" title={t('partner.validate.apiTitle')} icon="zap" labelledBy="api-title">
+          <p className={styles.cardSub}>{data.api.docs}</p>
+          <div className={styles.apiRow}>
+            <span className={styles.cardSub}>{t('partner.validate.apiEndpoint')}</span>
+            <code className={styles.mono}>POST {data.api.baseUrl}</code>
+          </div>
+          <div className={styles.apiRow}>
+            <span className={styles.cardSub}>{t('partner.validate.apiKey')}</span>
+            <code className={styles.mono}>{data.api.key}</code>
+          </div>
+        </Panel>
+      </div>
     </>
   )
 }

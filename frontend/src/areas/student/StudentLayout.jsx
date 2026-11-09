@@ -18,6 +18,7 @@ import { useMcpRequests } from '../../features/mcp/arrivals.js'
 import { NotificationCard } from '../../features/notifications/NotificationCard.jsx'
 
 const NAV_GROUPS = [
+  { key: 'community', items: [{ to: '/app/comunidade', key: 'community', icon: 'users', live: true }] },
   {
     key: 'study',
     items: [
@@ -26,24 +27,24 @@ const NAV_GROUPS = [
       { to: '/app/criar', key: 'create', icon: 'plus' }
     ]
   },
-  { key: 'community', items: [{ to: '/app/comunidade', key: 'community', icon: 'users' }] },
   {
     key: 'ai',
     items: [
       { to: '/app/noa', key: 'noa', icon: 'sparkle', badge: 'IA' },
-      { to: '/app/recebidos', key: 'requests', icon: 'plug', counter: true }
+      { to: '/app/perfil/conexoes', key: 'connections', icon: 'plug' },
+      { to: '/app/recebidos', key: 'requests', icon: 'archive', counter: true }
     ]
   }
 ]
 
 const WIDE_EXACT = ['/app', '/app/decks', '/app/criar', '/app/perfil', '/app/carteira', '/app/perfil/conexoes']
 const WIDE_PREFIX = ['/app/comunidade', '/app/noa', '/app/recebidos', '/app/decks/', '/app/pastas', '/app/perfil/objetivos', '/app/perfil/blog']
-const FILL = ['/app/comunidade']
+const FILL = []
 
 const TABS = [
+  { to: '/app/comunidade', key: 'community', icon: 'users' },
   { to: '/app', key: 'study', icon: 'book', end: true },
   { to: '/app/decks', key: 'decks', icon: 'folder' },
-  { to: '/app/comunidade', key: 'community', icon: 'users' },
   { to: '/app/noa', key: 'noa', icon: 'sparkle' },
   { to: '/app/perfil', key: 'profile', icon: 'user' }
 ]
@@ -172,6 +173,7 @@ export function StudentLayout() {
                   <Icon name={item.icon} size={20} />
                   <span className={styles.railLabel}>{tabLabel(item.key)}</span>
                   {item.badge ? <span className={styles.railBadge}>{item.badge}</span> : null}
+                  {item.live ? <span className={styles.railLive} aria-hidden="true" /> : null}
                   {item.counter && requests.pending ? (
                     <span className={styles.railCount}>
                       {requests.pending}

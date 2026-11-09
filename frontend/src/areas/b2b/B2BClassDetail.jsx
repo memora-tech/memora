@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import styles from './b2b.module.css'
-import { Button, Badge, Chip, Banner, Surface, Stat, ConfirmDialog, SectionTitle, useToast } from '../../design-system/index.js'
+import { Button, Badge, Banner, ConfirmDialog, ScreenHeader, useToast } from '../../design-system/index.js'
+import { ClassCard } from './B2BDashboard.jsx'
+import { panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { b2bApi } from '../../lib/api.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -53,59 +55,37 @@ export function B2BClassDetail() {
   return (
     <B2BShell overview={state.data?.overview}>
       <B2BState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
-      {state.data && !klass ? <Banner tone="danger" icon="alert">{t('b2b.detail.notFound')}</Banner> : null}
+      {state.data && !klass ? (
+        <Banner tone="danger" icon="alert">
+          {t('b2b.detail.notFound')}
+        </Banner>
+      ) : null}
       {klass ? (
         <>
-          <div>
-            <Button variant="text" icon="arrowLeft" onClick={() => navigate('/b2b/painel')}>
-              {t('b2b.detail.back')}
-            </Button>
-          </div>
-          <Surface className={styles.classCard}>
-            <div className={styles.classHead}>
-              <div>
-                <h1 className={styles.classTitle}>{t('b2b.detail.title', { name: klass.name })}</h1>
-                <div className={styles.metaList}>
-                  <span>{t('b2b.classes.subject')}: {klass.subject}</span>
-                  <span>{t('b2b.classes.room')}: {klass.room}</span>
-                  <span>{t('b2b.classes.period', { year: klass.year, semester: klass.semester })}</span>
-                  <span>{t('b2b.classes.teacher')}: {klass.teacherName}</span>
-                </div>
-              </div>
-              <Chip tone="neutral" icon="users">
-                {t('b2b.classes.students', { count: klass.total })}
-              </Chip>
-            </div>
-            <Badge tone={klass.consented >= klass.minAggregate ? 'success' : 'warning'}>{t('b2b.classes.consented', { count: klass.consented })}</Badge>
-            {klass.aggregates ? (
-              <div className={styles.stats}>
-                <Stat value={fmtNumber(klass.aggregates.activeStudents)} label={t('b2b.classes.activeStudents')} />
-                <Stat value={`${klass.aggregates.avgAccuracy}%`} label={t('b2b.classes.avgAccuracy')} />
-                <Stat value={fmtNumber(klass.aggregates.avgCardsWeek)} label={t('b2b.classes.avgCardsWeek')} />
-                <Stat value={fmtNumber(klass.aggregates.studiedLast7Days)} label={t('b2b.classes.active7d')} />
-              </div>
-            ) : (
-              <Banner tone="warning" icon="alert">
-                <strong>{t('b2b.classes.blocked')}</strong> {klass.aggregateBlockedReason}
-              </Banner>
-            )}
-          </Surface>
-          <Banner tone="brand" icon="info">
-            {t('b2b.rules.noRanking')}
-          </Banner>
+          <ScreenHeader size="compact" crumbs={[{ label: t('b2b.detail.back'), to: '/b2b/painel' }, { label: klass.name }]} eyebrow={state.data?.overview?.tenant?.name} title={t('b2b.detail.title', { name: klass.name })} lead={`${klass.subject} · ${klass.room} · ${t('b2b.classes.period', { year: klass.year, semester: klass.semester })} · ${klass.teacherName}`} />
+          <ClassCard klass={klass} heading="h2" />
+          <p className={panelStyles.callout}>{t('b2b.rules.noRanking')}</p>
           {klass.students ? (
             <section aria-label={t('b2b.detail.students')} className={styles.stack}>
-              <SectionTitle as="h2">{t('b2b.detail.students')}</SectionTitle>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
-                  <caption>{t('b2b.detail.caption')}</caption>
+                  <caption>
+                    {t('b2b.detail.students')}
+                    <small>{t('b2b.detail.caption')}</small>
+                  </caption>
                   <thead>
                     <tr>
                       <th scope="col">{t('b2b.detail.name')}</th>
                       <th scope="col">{t('b2b.detail.consent')}</th>
-                      <th scope="col" className="num">{t('b2b.detail.cardsWeek')}</th>
-                      <th scope="col" className="num">{t('b2b.detail.accuracy')}</th>
-                      <th scope="col" className="num">{t('b2b.detail.streak')}</th>
+                      <th scope="col" className="num">
+                        {t('b2b.detail.cardsWeek')}
+                      </th>
+                      <th scope="col" className="num">
+                        {t('b2b.detail.accuracy')}
+                      </th>
+                      <th scope="col" className="num">
+                        {t('b2b.detail.streak')}
+                      </th>
                       <th scope="col">{t('b2b.detail.lastStudy')}</th>
                       {canRevoke ? <th scope="col">{t('b2b.detail.revoke')}</th> : null}
                     </tr>
@@ -114,9 +94,7 @@ export function B2BClassDetail() {
                     {klass.students.map((s) => (
                       <tr key={s.id}>
                         <th scope="row">{s.name}</th>
-                        <td>
-                          {s.consent && s.projectionActive ? <Badge tone="success">{t('b2b.detail.consentYes')}</Badge> : s.consent === false && s.projectionActive === false && s.metrics === null ? <Badge tone="neutral">{t('b2b.detail.consentNo')}</Badge> : <Badge tone="neutral">{t('b2b.detail.consentNo')}</Badge>}
-                        </td>
+                        <td>{s.consent && s.projectionActive ? <Badge tone="success">{t('b2b.detail.consentYes')}</Badge> : s.consent === false && s.projectionActive === false && s.metrics === null ? <Badge tone="neutral">{t('b2b.detail.consentNo')}</Badge> : <Badge tone="neutral">{t('b2b.detail.consentNo')}</Badge>}</td>
                         <td className="num">{s.metrics ? fmtNumber(s.metrics.cardsWeek) : '—'}</td>
                         <td className="num">{s.metrics ? `${s.metrics.accuracy}%` : '—'}</td>
                         <td className="num">{s.metrics ? s.metrics.streak : '—'}</td>
@@ -124,7 +102,7 @@ export function B2BClassDetail() {
                         {canRevoke ? (
                           <td>
                             {s.consent && s.projectionActive ? (
-                              <Button variant="danger" size="small" onClick={() => setRevoking(s)}>
+                              <Button variant="ghost" size="small" icon="x" onClick={() => setRevoking(s)}>
                                 {t('b2b.detail.revoke')}
                               </Button>
                             ) : (

@@ -1,5 +1,7 @@
 import styles from './admin.module.css'
-import { Surface, Stat, SectionTitle, Badge, Icon } from '../../design-system/index.js'
+import { Badge, Icon, Panel, ScreenHeader, StatTile } from '../../design-system/index.js'
+import { useSectionEyebrow } from './AdminLayout.jsx'
+import { panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -12,26 +14,27 @@ export function Team() {
   useDocumentTitle(t('admin.team.title'))
   const state = useAdminData(() => adminApi.get('/admin/me'))
   const data = state.data
+  const eyebrow = useSectionEyebrow('equipe')
 
   return (
     <>
-      <h1 className={styles.title}>{t('admin.team.title')}</h1>
+      <ScreenHeader size="compact" eyebrow={eyebrow} title={t('admin.team.title')} lead={t('admin.pages.team.lead')} />
       <AdminState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
       {data ? (
         <>
-          <Surface className={styles.stack}>
-            <p className={styles.cellMeta}>{t('admin.team.intro')}</p>
-            <div className={styles.statsRow}>
-              <Stat value={data.team.moderators} label={t('admin.team.moderators')} />
-              <Stat value={data.team.support} label={t('admin.team.support')} />
-              <Stat value={data.team.commercial} label={t('admin.team.commercial')} />
-              <Stat value={data.team.sre} label={t('admin.team.sre')} />
-            </div>
-            <span className={styles.cellMeta}>{t('admin.team.reviewedAt', { when: fmtRelative(data.team.reviewedAt) })}</span>
-          </Surface>
-          <Surface className={styles.stack}>
-            <SectionTitle as="h2">{t('admin.team.roles')}</SectionTitle>
-            <p className={styles.cellMeta}>{t('admin.team.rolesIntro')}</p>
+          <div className={panelStyles.kpis}>
+            <StatTile size="compact" icon="shield" label={t('admin.team.moderators')} value={data.team.moderators} />
+            <StatTile size="compact" icon="help" label={t('admin.team.support')} value={data.team.support} />
+            <StatTile size="compact" icon="building" label={t('admin.team.commercial')} value={data.team.commercial} />
+            <StatTile size="compact" icon="zap" label={t('admin.team.sre')} value={data.team.sre} />
+          </div>
+          <p className={styles.cellMeta}>
+            {t('admin.team.intro')} {t('admin.team.reviewedAt', { when: fmtRelative(data.team.reviewedAt) })}
+          </p>
+          <Panel tone="quiet" title={t('admin.team.roles')} icon="key" labelledBy="roles-title" bodyClassName={styles.panelFlush}>
+            <p className={styles.cellMeta} style={{ padding: '14px 18px 0' }}>
+              {t('admin.team.rolesIntro')}
+            </p>
             <div className={styles.tableWrap}>
               <table className={`${styles.table} ${styles.tableNarrow}`}>
                 <thead>
@@ -60,7 +63,7 @@ export function Team() {
                 </tbody>
               </table>
             </div>
-          </Surface>
+          </Panel>
         </>
       ) : null}
     </>

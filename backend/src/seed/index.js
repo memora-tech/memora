@@ -4,6 +4,7 @@ import { appendAudit } from '../lib/audit.js'
 import { CATEGORIES, REACTIONS, ownDecks, communityContent } from './content.js'
 import { seedPanels } from './panels.js'
 import { seedMaterials } from './materials.js'
+import { seedGroups } from './groups.js'
 
 const birthDateYearsAgo = (years) => {
   const d = new Date()
@@ -83,9 +84,7 @@ export function applyProfile(state, key) {
   state.profile = key
   state.study.u1.studyDays = profile.studyDays
   state.notifications.u1.intensity = profile.isMinor ? 'leve' : state.notifications.u1.intensity === 'leve' ? 'padrao' : state.notifications.u1.intensity
-  state.notifications.u1.quietWindow = profile.isMinor
-    ? { start: '21:00', end: '07:00', learned: false, lockedForMinor: true }
-    : { start: '23:00', end: '07:30', learned: true, lockedForMinor: false }
+  state.notifications.u1.quietWindow = profile.isMinor ? { start: '21:00', end: '07:00', learned: false, lockedForMinor: true } : { start: '23:00', end: '07:30', learned: true, lockedForMinor: false }
   if (profile.plan === 'premium') {
     state.subscriptions.u1 = {
       plan: 'premium',
@@ -96,9 +95,7 @@ export function applyProfile(state, key) {
       renewsAt: daysFromNow(27),
       refundEligibleUntil: daysFromNow(4),
       fairUse: { usedBRL: 12.4, capBRL: 20, generationsMonth: 24, degraded: false },
-      payments: [
-        { id: 'pay1', at: daysFromNow(-3), amountBRL: 29.9, method: 'Pix Automático', status: 'pago', nfse: { number: 'NFS-e 2026/00412', availableAt: daysFromNow(-1), url: '#nfse-00412' } }
-      ],
+      payments: [{ id: 'pay1', at: daysFromNow(-3), amountBRL: 29.9, method: 'Pix Automático', status: 'pago', nfse: { number: 'NFS-e 2026/00412', availableAt: daysFromNow(-1), url: '#nfse-00412' } }],
       dunning: null,
       cancelledAt: null
     }
@@ -170,28 +167,149 @@ export function seed(profileKey = 'adult-free') {
       answered: { u1: { c1: 4 } },
       shares: [],
       materialFavorites: [{ userId: 'u1', materialId: 'm2', at: daysFromNow(-1) }],
-      materialReactions: []
+      materialReactions: [],
+      quizAttempts: [],
+      ...seedGroups(),
+      groupPostLikes: []
     },
     materials: seedMaterials(),
     mcp: {
       connections: [{ id: 'mcp_seed1', userId: 'u1', name: 'Claude Desktop', token: null, tokenHint: 'a91f', client: 'claude-ai', createdAt: daysFromNow(-6), lastUsedAt: hoursFromNow(-3), revokedAt: null }],
-      activity: [{ id: 'act_seed1', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_mapa_mental', write: true, ok: true, targetType: 'material', targetId: 'm7', title: 'Como funciona a repetição espaçada', at: hoursFromNow(-3), seenAt: hoursFromNow(-2) }]
+      activity: [
+        { id: 'act_seed2', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_quiz', write: true, ok: true, targetType: 'material', targetId: 'm12', title: 'Quiz: ciclo cardíaco', at: hoursFromNow(-1), seenAt: hoursFromNow(-1) },
+        { id: 'act_seed1', userId: 'u1', connectionId: 'mcp_seed1', client: 'claude-ai', tool: 'salvar_mapa_mental', write: true, ok: true, targetType: 'material', targetId: 'm7', title: 'Como funciona a repetição espaçada', at: hoursFromNow(-3), seenAt: hoursFromNow(-2) }
+      ]
     },
     publications: [
-      { id: 'pub1', deckId: 'd6', authorId: 'u1', authorName: 'Manoel', deckName: 'Direito Administrativo', version: 1, status: 'aprovado', plan: 'free', submittedAt: daysFromNow(-17), decidedAt: daysFromNow(-15), slaHours: 72, risk: { score: 12, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', 'Completude 100%'] }, reviewType: 'integral', reviewReason: 'Primeiros 5 decks do autor', assignedTo: 'adm8', decision: { by: 'adm8', decision: 'aprovado', reasonCategory: null, excerpt: null }, publicId: 'p-adm-2026', categoryId: 'concursos', difficulty: 'medio', cardCount: 5 },
-      { id: 'pub2', deckId: 'd2', authorId: 'u1', authorName: 'Manoel', deckName: 'Citologia', version: 1, status: 'em_triagem', plan: 'free', submittedAt: hoursFromNow(-30), decidedAt: null, slaHours: 72, risk: { score: 18, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', '1 card com imagem sem texto alternativo'] }, reviewType: 'integral', reviewReason: 'Primeiros 5 decks do autor', assignedTo: 'adm1', decision: null, publicId: null, categoryId: 'vestibular', difficulty: 'medio', cardCount: 6 },
-      { id: 'pub3', deckId: 'x_d1', authorId: 'x6', authorName: 'Carlos T.', deckName: 'Anatomia: ossos do crânio', version: 1, status: 'em_revisao', plan: 'premium', submittedAt: hoursFromNow(-20), decidedAt: null, slaHours: 24, risk: { score: 81, level: 'alto', factors: ['Possível cópia em massa de material protegido (87%)', 'Completude 100%'] }, reviewType: 'integral', reviewReason: 'Risco alto', assignedTo: 'adm1', decision: null, publicId: null, categoryId: 'superior', difficulty: 'dificil', cardCount: 42 },
-      { id: 'pub4', deckId: 'x_d2', authorId: 'x7', authorName: 'Marcos V.', deckName: 'Matemática básica: frações', version: 2, status: 'em_triagem', plan: 'free', submittedAt: hoursFromNow(-50), decidedAt: null, slaHours: 72, risk: { score: 55, level: 'medio', factors: ['Duplicidade 92% com deck já publicado', 'Idioma consistente'] }, reviewType: 'amostral', reviewReason: 'Autor com histórico limpo', assignedTo: null, decision: null, publicId: null, categoryId: 'medio', difficulty: 'facil', cardCount: 18 },
-      { id: 'pub5', deckId: 'x_d3', authorId: 'x8', authorName: 'Fernanda R.', deckName: 'Direito Penal resumido', version: 1, status: 'rejeitado', plan: 'free', submittedAt: daysFromNow(-8), decidedAt: daysFromNow(-6), slaHours: 72, risk: { score: 40, level: 'medio', factors: ['Termos técnicos sem fonte'] }, reviewType: 'integral', reviewReason: 'Primeiros 5 decks do autor', assignedTo: 'adm8', decision: { by: 'adm8', decision: 'rejeitado', reasonCategory: 'veracidade', excerpt: 'Card 7: "A prescrição da pretensão punitiva é imprescritível" contradiz o art. 109 do CP.' }, publicId: null, categoryId: 'concursos', difficulty: 'medio', cardCount: 25 }
+      {
+        id: 'pub1',
+        deckId: 'd6',
+        authorId: 'u1',
+        authorName: 'Manoel',
+        deckName: 'Direito Administrativo',
+        version: 1,
+        status: 'aprovado',
+        plan: 'free',
+        submittedAt: daysFromNow(-17),
+        decidedAt: daysFromNow(-15),
+        slaHours: 72,
+        risk: { score: 12, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', 'Completude 100%'] },
+        reviewType: 'integral',
+        reviewReason: 'Primeiros 5 decks do autor',
+        assignedTo: 'adm8',
+        decision: { by: 'adm8', decision: 'aprovado', reasonCategory: null, excerpt: null },
+        publicId: 'p-adm-2026',
+        categoryId: 'concursos',
+        difficulty: 'medio',
+        cardCount: 5
+      },
+      {
+        id: 'pub2',
+        deckId: 'd2',
+        authorId: 'u1',
+        authorName: 'Manoel',
+        deckName: 'Citologia',
+        version: 1,
+        status: 'em_triagem',
+        plan: 'free',
+        submittedAt: hoursFromNow(-30),
+        decidedAt: null,
+        slaHours: 72,
+        risk: { score: 18, level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', '1 card com imagem sem texto alternativo'] },
+        reviewType: 'integral',
+        reviewReason: 'Primeiros 5 decks do autor',
+        assignedTo: 'adm1',
+        decision: null,
+        publicId: null,
+        categoryId: 'vestibular',
+        difficulty: 'medio',
+        cardCount: 6
+      },
+      {
+        id: 'pub3',
+        deckId: 'x_d1',
+        authorId: 'x6',
+        authorName: 'Carlos T.',
+        deckName: 'Anatomia: ossos do crânio',
+        version: 1,
+        status: 'em_revisao',
+        plan: 'premium',
+        submittedAt: hoursFromNow(-20),
+        decidedAt: null,
+        slaHours: 24,
+        risk: { score: 81, level: 'alto', factors: ['Possível cópia em massa de material protegido (87%)', 'Completude 100%'] },
+        reviewType: 'integral',
+        reviewReason: 'Risco alto',
+        assignedTo: 'adm1',
+        decision: null,
+        publicId: null,
+        categoryId: 'superior',
+        difficulty: 'dificil',
+        cardCount: 42
+      },
+      {
+        id: 'pub4',
+        deckId: 'x_d2',
+        authorId: 'x7',
+        authorName: 'Marcos V.',
+        deckName: 'Matemática básica: frações',
+        version: 2,
+        status: 'em_triagem',
+        plan: 'free',
+        submittedAt: hoursFromNow(-50),
+        decidedAt: null,
+        slaHours: 72,
+        risk: { score: 55, level: 'medio', factors: ['Duplicidade 92% com deck já publicado', 'Idioma consistente'] },
+        reviewType: 'amostral',
+        reviewReason: 'Autor com histórico limpo',
+        assignedTo: null,
+        decision: null,
+        publicId: null,
+        categoryId: 'medio',
+        difficulty: 'facil',
+        cardCount: 18
+      },
+      {
+        id: 'pub5',
+        deckId: 'x_d3',
+        authorId: 'x8',
+        authorName: 'Fernanda R.',
+        deckName: 'Direito Penal resumido',
+        version: 1,
+        status: 'rejeitado',
+        plan: 'free',
+        submittedAt: daysFromNow(-8),
+        decidedAt: daysFromNow(-6),
+        slaHours: 72,
+        risk: { score: 40, level: 'medio', factors: ['Termos técnicos sem fonte'] },
+        reviewType: 'integral',
+        reviewReason: 'Primeiros 5 decks do autor',
+        assignedTo: 'adm8',
+        decision: { by: 'adm8', decision: 'rejeitado', reasonCategory: 'veracidade', excerpt: 'Card 7: "A prescrição da pretensão punitiva é imprescritível" contradiz o art. 109 do CP.' },
+        publicId: null,
+        categoryId: 'concursos',
+        difficulty: 'medio',
+        cardCount: 25
+      }
     ],
     reports: [
       { id: 'rep1', targetType: 'deck', targetId: 'c6', targetName: 'Matemática Financeira para concursos', reason: 'Conteúdo incorreto', detail: 'Fórmula do desconto composto está errada no card 3.', reporter: 'x5', status: 'aberta', createdAt: daysFromNow(-1) },
       { id: 'rep2', targetType: 'comment', targetId: 'cm4', targetName: 'Comentário em "Direitos Fundamentais em 40 cards"', reason: 'Spam', detail: null, reporter: 'x9', status: 'auto_resolvida', createdAt: daysFromNow(-2) },
-      { id: 'rep3', targetType: 'contato_suspeito', targetId: 'x11', targetName: 'Conta adulta "Ricardo M." em contato com aluno de 15 anos', reason: 'Nôa: padrão de contato suspeito de adulto com conta de menor', detail: '3 comentários direcionados ao mesmo aluno e pedido de contato externo em menos de 2 h.', reporter: 'noa', status: 'aberta', createdAt: hoursFromNow(-1), slaHours: 4, priority: 'alta' }
+      {
+        id: 'rep3',
+        targetType: 'contato_suspeito',
+        targetId: 'x11',
+        targetName: 'Conta adulta "Ricardo M." em contato com aluno de 15 anos',
+        reason: 'Nôa: padrão de contato suspeito de adulto com conta de menor',
+        detail: '3 comentários direcionados ao mesmo aluno e pedido de contato externo em menos de 2 h.',
+        reporter: 'noa',
+        status: 'aberta',
+        createdAt: hoursFromNow(-1),
+        slaHours: 4,
+        priority: 'alta'
+      }
     ],
-    appeals: [
-      { id: 'ap1', publicationId: 'pub5', authorName: 'Fernanda R.', filedAt: daysFromNow(-5), deadline: daysFromNow(25), text: 'O card 7 foi corrigido; o texto original era um erro de digitação.', status: 'em_analise', reviewer: 'adm1', originalReviewer: 'adm8' }
-    ],
+    appeals: [{ id: 'ap1', publicationId: 'pub5', authorName: 'Fernanda R.', filedAt: daysFromNow(-5), deadline: daysFromNow(25), text: 'O card 7 foi corrigido; o texto original era um erro de digitação.', status: 'em_analise', reviewer: 'adm1', originalReviewer: 'adm8' }],
     ledger: [],
     coupons: [
       { id: 'cp1', partnerId: 'p1', partnerName: 'Café Sinapse', title: '1 café coado', description: 'Um café coado grande em qualquer unidade.', costNeurons: 30, stock: 120, validityDays: 30, positioning: 'destaque', category: 'Alimentação', terms: 'Válido de segunda a sexta, não cumulativo.' },
@@ -235,17 +353,35 @@ export function seed(profileKey = 'adult-free') {
     noa: {
       catalogVersion: 'v1.2',
       catalog: [
-        { key: 'mark_difficult', name: 'Marcar deck como difícil', trigger: '3 erros seguidos em cards do mesmo deck', threshold: 3, effect: 'Marca o deck como difícil; as revisões dele ficam mais frequentes.', tokenCost: 120, autonomous: false, reversible: true, explanation: 'Você errou três vezes seguidas em cards deste deck na última sessão. Marcar como difícil faz o algoritmo trazer esses cards mais cedo. Você pode desmarcar a qualquer momento no menu do deck.' },
+        {
+          key: 'mark_difficult',
+          name: 'Marcar deck como difícil',
+          trigger: '3 erros seguidos em cards do mesmo deck',
+          threshold: 3,
+          effect: 'Marca o deck como difícil; as revisões dele ficam mais frequentes.',
+          tokenCost: 120,
+          autonomous: false,
+          reversible: true,
+          explanation: 'Você errou três vezes seguidas em cards deste deck na última sessão. Marcar como difícil faz o algoritmo trazer esses cards mais cedo. Você pode desmarcar a qualquer momento no menu do deck.'
+        },
         { key: 'reorder_queue', name: 'Reordenar fila do dia', trigger: 'Deck com mais erros na semana não está no início da fila', threshold: 1, effect: 'Reordena a fila de hoje. Reversível em um toque.', tokenCost: 80, autonomous: true, reversible: true, explanation: 'Coloquei primeiro o deck em que você mais erra esta semana, porque a memória rende mais no início da sessão.' },
         { key: 'suggest_reinforcement', name: 'Propor deck de reforço', trigger: 'Mesmo tópico errado em 3 sessões diferentes', threshold: 3, effect: 'Gera uma sugestão de deck de reforço; nada é criado sem confirmação.', tokenCost: 400, autonomous: false, reversible: true, explanation: 'Você errou o mesmo tópico em três sessões. Um deck curto de reforço costuma resolver em uma semana.' },
         { key: 'adjust_goal', name: 'Ajustar meta sugerida', trigger: 'Meta batida em menos de 3 dos últimos 7 dias', threshold: 3, effect: 'Ajusta a meta sugerida; a meta configurada só muda se você aceitar.', tokenCost: 60, autonomous: true, reversible: true, explanation: 'Metas que raramente são batidas desmotivam. Sugeri um valor que você conseguiu manter nas últimas semanas.' },
         { key: 'reminder_time', name: 'Escolher horário do lembrete', trigger: 'Horário de uso real difere do lembrete em mais de 2 h', threshold: 2, effect: 'Move o lembrete para o horário em que você mais estuda. Reversível.', tokenCost: 40, autonomous: true, reversible: true, explanation: 'Você costuma estudar em outro horário. Movi o lembrete para ele; pode voltar em Configurações.' },
-        { key: 'reduce_load', name: 'Reduzir carga por cansaço', trigger: 'Dois de três sinais de cansaço ativos', threshold: 2, effect: 'Reduz a carga da sessão atual. Você pode manter a carga normal com um toque.', tokenCost: 0, autonomous: true, reversible: true, explanation: 'Dois sinais de cansaço apareceram: tempo de resposta acima do dobro da sua média e taxa de erro 1,5× maior. Reduzi a sessão para proteger a retenção.' }
+        {
+          key: 'reduce_load',
+          name: 'Reduzir carga por cansaço',
+          trigger: 'Dois de três sinais de cansaço ativos',
+          threshold: 2,
+          effect: 'Reduz a carga da sessão atual. Você pode manter a carga normal com um toque.',
+          tokenCost: 0,
+          autonomous: true,
+          reversible: true,
+          explanation: 'Dois sinais de cansaço apareceram: tempo de resposta acima do dobro da sua média e taxa de erro 1,5× maior. Reduzi a sessão para proteger a retenção.'
+        }
       ],
       budget: { u1: { dayKey: dayKey(), suggestionsUsed: 1, suggestionsLimit: 5, autonomousUsed: 1, autonomousLimit: 1 } },
-      suggestions: [
-        { id: 'sug1', userId: 'u1', actionKey: 'mark_difficult', deckId: 'd1', title: 'Marcar Direito Constitucional como difícil?', body: 'Você errou 3 vezes seguidas em "eficácia contida" e "cláusula pétrea". Marcando como difícil, as revisões ficam mais frequentes.', showAfterCard: 5, status: 'pendente', createdAt: nowIso() }
-      ],
+      suggestions: [{ id: 'sug1', userId: 'u1', actionKey: 'mark_difficult', deckId: 'd1', title: 'Marcar Direito Constitucional como difícil?', body: 'Você errou 3 vezes seguidas em "eficácia contida" e "cláusula pétrea". Marcando como difícil, as revisões ficam mais frequentes.', showAfterCard: 5, status: 'pendente', createdAt: nowIso() }],
       decisions: [
         { id: 'dec1', userId: 'u1', actionKey: 'reorder_queue', at: hoursFromNow(-6), text: 'Reordenei sua fila de hoje para começar por Direito Constitucional, seu deck com mais erros esta semana.', reversible: true, reverted: false, contested: null },
         { id: 'dec2', userId: 'u1', actionKey: 'adjust_goal', at: daysFromNow(-3), text: 'Sugeri reduzir sua meta de 25 para 20 cards por dia, pois você bateu a meta em 2 dos últimos 7 dias.', reversible: true, reverted: false, contested: null, accepted: true },
@@ -277,9 +413,7 @@ export function seed(profileKey = 'adult-free') {
     },
     privacy: { exports: [], deletions: [] },
     support: {
-      tickets: [
-        { id: 'tk1', userId: 'u1', subject: 'Cupom não apareceu em Meus cupons', message: 'Resgatei um café e não vi o QR.', status: 'resolvido', createdAt: daysFromNow(-6), updatedAt: daysFromNow(-5), replies: [{ by: 'Beto Suporte', text: 'Oi, Manoel! O cupom estava em "Meus cupons" com o QR offline. Qualquer coisa, chama de novo.', at: daysFromNow(-5) }] }
-      ]
+      tickets: [{ id: 'tk1', userId: 'u1', subject: 'Cupom não apareceu em Meus cupons', message: 'Resgatei um café e não vi o QR.', status: 'resolvido', createdAt: daysFromNow(-6), updatedAt: daysFromNow(-5), replies: [{ by: 'Beto Suporte', text: 'Oi, Manoel! O cupom estava em "Meus cupons" com o QR offline. Qualquer coisa, chama de novo.', at: daysFromNow(-5) }] }]
     },
     auditLog: [],
     accessLog: [],

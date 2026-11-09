@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './study.module.css'
+import home from './home.module.css'
 import { Badge, Button, Icon, Sheet, Surface, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useStudy } from '../../state/StudyContext.jsx'
@@ -11,7 +12,7 @@ import { NoaExplanation } from './NoaCard.jsx'
 
 const sameDay = (iso) => new Date(iso).toDateString() === new Date().toDateString()
 
-export function NoaPresence() {
+export function NoaPresence({ variant }) {
   const t = useT()
   const toast = useToast()
   const study = useStudy()
@@ -42,19 +43,39 @@ export function NoaPresence() {
 
   return (
     <>
-      <Surface tone="noa" className={styles.noaStrip} onClick={() => setOpen(true)} aria-label={`${t('study.session.noaLabel')}. ${headline}`}>
-        <span className={styles.noaStripMark} aria-hidden="true">
-          <Icon name="sparkle" size={18} />
-        </span>
-        <span className={styles.noaStripBody}>
-          <span className={styles.noaStripName}>
-            {t('study.session.noaLabel')}
-            {suggestion ? <span className={styles.noaDot} aria-hidden="true" /> : null}
+      {variant === 'card' ? (
+        <button type="button" className={home.noaCard} onClick={() => setOpen(true)} aria-haspopup="dialog">
+          <span className={home.noaHead}>
+            <span className={home.noaMark} aria-hidden="true">
+              <Icon name="sparkle" size={18} />
+            </span>
+            <span className={home.noaEyebrow}>
+              {suggestion ? t('study.noa.suggests') : t('study.session.noaLabel')}
+              {suggestion ? <span className={styles.noaDot} aria-hidden="true" /> : null}
+            </span>
           </span>
-          <span className={styles.noaStripText}>{headline}</span>
-        </span>
-        <Icon name="chevronRight" size={18} className={styles.noaStripChevron} />
-      </Surface>
+          <span className={home.noaTitle}>{suggestion ? suggestion.title : headline}</span>
+          {suggestion?.body ? <span className={home.noaBody}>{suggestion.body}</span> : null}
+          <span className={home.noaFoot}>
+            {t('study.noa.open')}
+            <Icon name="arrowRight" size={16} />
+          </span>
+        </button>
+      ) : (
+        <Surface tone="noa" className={styles.noaStrip} onClick={() => setOpen(true)} aria-label={`${t('study.session.noaLabel')}. ${headline}`}>
+          <span className={styles.noaStripMark} aria-hidden="true">
+            <Icon name="sparkle" size={18} />
+          </span>
+          <span className={styles.noaStripBody}>
+            <span className={styles.noaStripName}>
+              {t('study.session.noaLabel')}
+              {suggestion ? <span className={styles.noaDot} aria-hidden="true" /> : null}
+            </span>
+            <span className={styles.noaStripText}>{headline}</span>
+          </span>
+          <Icon name="chevronRight" size={18} className={styles.noaStripChevron} />
+        </Surface>
+      )}
 
       <Sheet open={open} onClose={() => setOpen(false)} title={t('study.noa.title')}>
         <p className={styles.noaHint}>{t('study.noa.howItWorks')}</p>

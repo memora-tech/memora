@@ -4,6 +4,7 @@ import styles from './create.module.css'
 import { Banner, Button, Chip, Icon, Input, Panel, Screen, ScreenHeader, Sheet, Surface, Textarea, useToast } from '../../design-system/index.js'
 import { fmtRelative } from '../../lib/format.js'
 import { SimulateButton } from '../mcp/SimulateButton.jsx'
+import { CommandCopy, buildCommand } from '../noa/AiFormats.jsx'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
 import { useProto } from '../../state/ProtoContext.jsx'
@@ -46,6 +47,10 @@ function McpDecksPanel() {
       }
     >
       <p className={styles.originHelp}>{active.length ? t('create.mcp.connected', { count: active.length, names: active.map((c) => c.name).join(', ') }) : t('create.mcp.none')}</p>
+      <CommandCopy command={buildCommand(t, 'flashcards')} />
+      <Link to="/app/noa" className={styles.mcpMore}>
+        {t('create.mcp.formats')} <Icon name="arrowRight" size={14} />
+      </Link>
       {received.length ? (
         <ul className={styles.mcpList}>
           {received.map((a) => (
@@ -154,7 +159,15 @@ export function CreatePage() {
       <ScreenHeader eyebrow={t('create.eyebrow')} title={t('create.title')} lead={t('create.lead')} actions={q ? <Chip tone={q.used >= q.limit ? 'warning' : 'neutral'}>{t('create.quota', { used: q.used, limit: q.limit })}</Chip> : null} />
 
       {error ? (
-        <Banner tone="danger" icon="alert" action={<Button size="small" variant="text" onClick={() => setError(null)}>{t('common.actions.close')}</Button>}>
+        <Banner
+          tone="danger"
+          icon="alert"
+          action={
+            <Button size="small" variant="text" onClick={() => setError(null)}>
+              {t('common.actions.close')}
+            </Button>
+          }
+        >
           {error}
         </Banner>
       ) : null}
@@ -187,7 +200,11 @@ export function CreatePage() {
           <span className={styles.originBody}>
             <span className={styles.originTitle}>
               {t('create.origin.text')}
-              {clipboard ? <Chip tone="brand" icon="zap">{t('create.origin.textClipboard')}</Chip> : null}
+              {clipboard ? (
+                <Chip tone="brand" icon="zap">
+                  {t('create.origin.textClipboard')}
+                </Chip>
+              ) : null}
             </span>
             <span className={styles.originHelp}>{t('create.origin.textHelp')}</span>
           </span>

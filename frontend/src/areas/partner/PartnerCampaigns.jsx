@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { partnerApi } from '../../lib/api.js'
-import { Surface, Button, Chip, Badge, Stat, Sheet, Input, Textarea, Stepper, EmptyState, useToast } from '../../design-system/index.js'
+import { Button, Chip, Badge, Sheet, Input, Textarea, Stepper, ScreenHeader, useToast } from '../../design-system/index.js'
+import { Meter, PanelEmpty, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { fmtNumber } from '../../lib/format.js'
 import styles from './partner.module.css'
@@ -75,31 +76,43 @@ export function PartnerCampaigns({ data, onChange }) {
 
   return (
     <>
-      <div className={styles.pageHead}>
-        <h1 className={styles.pageTitle}>{t('partner.campaigns.title')}</h1>
-        <Button icon="plus" onClick={() => setCreating(true)}>
-          {t('partner.campaigns.new')}
-        </Button>
-      </div>
+      <ScreenHeader
+        size="compact"
+        eyebrow={t('partner.shell.groups.operation')}
+        title={t('partner.campaigns.title')}
+        lead={t('partner.pages.campaignsLead')}
+        actions={
+          <Button icon="plus" onClick={() => setCreating(true)}>
+            {t('partner.campaigns.new')}
+          </Button>
+        }
+      />
 
       {campaigns.length === 0 ? (
-        <Surface>
-          <EmptyState icon="gift" title={t('partner.campaigns.empty')} text={t('partner.campaigns.emptyText')} />
-        </Surface>
+        <PanelEmpty icon="gift" title={t('partner.campaigns.empty')} text={t('partner.campaigns.emptyText')} />
       ) : (
-        <div className={`${styles.grid} ${styles.grid2}`}>
+        <div className={styles.campaignGrid}>
           {campaigns.map((c) => {
             const soldOut = c.stock <= 0
             const lastUnits = c.stock > 0 && c.stock <= 3
+            const usePct = c.redemptions ? Math.round((c.used / c.redemptions) * 100) : 0
             return (
-              <Surface key={c.id}>
+              <article key={c.id} className={panelStyles.card} data-tone={c.paused ? 'muted' : soldOut ? 'danger' : lastUnits ? 'warning' : undefined}>
                 <div className={styles.campaign}>
                   <div className={styles.campaignHead}>
                     <div>
                       <h2 className={styles.campaignTitle}>{c.title}</h2>
                       <p className={styles.campaignDesc}>{c.description}</p>
                     </div>
-                    {c.paused ? <Badge tone="neutral" icon="pause">{t('partner.campaigns.paused')}</Badge> : soldOut ? <Badge tone="danger">{t('partner.campaigns.soldOut')}</Badge> : lastUnits ? <Badge tone="warning">{t('partner.campaigns.lastUnits')}</Badge> : null}
+                    {c.paused ? (
+                      <Badge tone="neutral" icon="pause">
+                        {t('partner.campaigns.paused')}
+                      </Badge>
+                    ) : soldOut ? (
+                      <Badge tone="danger">{t('partner.campaigns.soldOut')}</Badge>
+                    ) : lastUnits ? (
+                      <Badge tone="warning">{t('partner.campaigns.lastUnits')}</Badge>
+                    ) : null}
                   </div>
                   <div className={styles.chips}>
                     <Chip tone="reward" icon="neuron">
@@ -114,10 +127,23 @@ export function PartnerCampaigns({ data, onChange }) {
                       </Chip>
                     ) : null}
                   </div>
-                  <div className={styles.campaignStats}>
-                    <Stat value={fmtNumber(c.stock)} label={t('partner.campaigns.stock')} />
-                    <Stat value={fmtNumber(c.redemptions)} label={t('partner.campaigns.redemptions')} />
-                    <Stat value={fmtNumber(c.used)} label={t('partner.campaigns.used')} />
+                  <dl className={styles.campaignStats}>
+                    <div>
+                      <dt>{t('partner.campaigns.stock')}</dt>
+                      <dd data-tone={soldOut ? 'danger' : lastUnits ? 'warning' : undefined}>{fmtNumber(c.stock)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('partner.campaigns.redemptions')}</dt>
+                      <dd>{fmtNumber(c.redemptions)}</dd>
+                    </div>
+                    <div>
+                      <dt>{t('partner.campaigns.used')}</dt>
+                      <dd>{fmtNumber(c.used)}</dd>
+                    </div>
+                  </dl>
+                  <div className={styles.useRow}>
+                    <Meter value={usePct} tone="success" label={t('partner.pages.useRate', { pct: usePct })} />
+                    <span>{t('partner.pages.usedOfRedeemed', { used: fmtNumber(c.used), redeemed: fmtNumber(c.redemptions) })}</span>
                   </div>
                   <div className={styles.campaignActions}>
                     <Button
@@ -136,7 +162,7 @@ export function PartnerCampaigns({ data, onChange }) {
                     </Button>
                   </div>
                 </div>
-              </Surface>
+              </article>
             )
           })}
         </div>

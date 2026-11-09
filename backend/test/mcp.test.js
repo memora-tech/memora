@@ -20,7 +20,10 @@ async function connect(student) {
 let seq = 0
 function rpc(token, method, params) {
   seq += 1
-  return request(app).post('/v1/mcp').set(auth(token)).send({ jsonrpc: '2.0', id: seq, method, ...(params ? { params } : {}) })
+  return request(app)
+    .post('/v1/mcp')
+    .set(auth(token))
+    .send({ jsonrpc: '2.0', id: seq, method, ...(params ? { params } : {}) })
 }
 
 const call = (token, name, args) => rpc(token, 'tools/call', { name, arguments: args })
@@ -28,7 +31,13 @@ const call = (token, name, args) => rpc(token, 'tools/call', { name, arguments: 
 const MAPA = {
   titulo: 'Revolução Francesa',
   categoria: 'vestibular',
-  tema_central: { titulo: 'Revolução Francesa', filhos: [{ titulo: 'Causas', filhos: [{ titulo: 'Crise fiscal' }, { titulo: 'Iluminismo' }] }, { titulo: 'Fases', nota: 'Monarquia constitucional, Convenção, Diretório' }] }
+  tema_central: {
+    titulo: 'Revolução Francesa',
+    filhos: [
+      { titulo: 'Causas', filhos: [{ titulo: 'Crise fiscal' }, { titulo: 'Iluminismo' }] },
+      { titulo: 'Fases', nota: 'Monarquia constitucional, Convenção, Diretório' }
+    ]
+  }
 }
 
 beforeEach(() => {
@@ -51,7 +60,7 @@ describe('servidor MCP', () => {
     expect(JSON.stringify(list.body)).not.toContain(res.body.token)
   })
 
-  it('initialize negocia a versão e tools/list expõe as 8 ferramentas', async () => {
+  it('initialize negocia a versão e tools/list expõe as 10 ferramentas', async () => {
     const token = await connect(await studentToken())
     const init = await rpc(token, 'initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'claude-ai', version: '1' } })
     expect(init.body.result.protocolVersion).toBe('2025-03-26')
@@ -61,7 +70,7 @@ describe('servidor MCP', () => {
     const note = await request(app).post('/v1/mcp').set(auth(token)).send({ jsonrpc: '2.0', method: 'notifications/initialized' })
     expect(note.status).toBe(202)
     const tools = await rpc(token, 'tools/list')
-    expect(tools.body.result.tools).toHaveLength(8)
+    expect(tools.body.result.tools).toHaveLength(10)
     expect(tools.body.result.tools.find((t) => t.name === 'buscar_comunidade').annotations.readOnlyHint).toBe(true)
   })
 
@@ -81,7 +90,14 @@ describe('servidor MCP', () => {
   it('salvar_flashcards chega como solicitação pendente e só entra na biblioteca depois de aprovado', async () => {
     const student = await studentToken()
     const token = await connect(student)
-    const res = await call(token, 'salvar_flashcards', { titulo: 'Verbos irregulares', categoria: 'idiomas', cards: [{ frente: 'go', verso: 'went / gone' }, { frente: 'see', verso: 'saw / seen' }] })
+    const res = await call(token, 'salvar_flashcards', {
+      titulo: 'Verbos irregulares',
+      categoria: 'idiomas',
+      cards: [
+        { frente: 'go', verso: 'went / gone' },
+        { frente: 'see', verso: 'saw / seen' }
+      ]
+    })
     expect(res.body.result.isError).toBe(false)
     expect(res.body.result.structuredContent).toMatchObject({ cards: 2, status: 'pendente' })
     const before = await request(app).get('/v1/decks').set(auth(student))
@@ -186,7 +202,7 @@ describe('comunidade com vários tipos de conteúdo', () => {
   it('feed traz contagem por tipo, novidades misturadas e estado da conexão de IA', async () => {
     const student = await studentToken()
     const feed = await request(app).get('/v1/community/feed').set(auth(student))
-    expect(feed.body.counts).toMatchObject({ flashcards: 7, resumo: 2, mapa: 2, noticia: 2, mine: 7 })
+    expect(feed.body.counts).toMatchObject({ flashcards: 7, resumo: 2, mapa: 3, noticia: 2, quiz: 1, linha: 1, mine: 7 })
     expect(new Set(feed.body.latest.map((x) => x.kind)).size).toBeGreaterThan(1)
     expect(feed.body.mcp).toBeUndefined()
     expect(feed.body.sources.map((s) => s.client)).toContain('Claude')
@@ -197,7 +213,7 @@ describe('comunidade com vários tipos de conteúdo', () => {
     const res = await request(app).get('/v1/noa/overview').set(auth(student))
     expect(res.body.suggestions).toHaveLength(1)
     expect(res.body.decisions.length).toBeGreaterThan(0)
-    expect(res.body.mcp).toEqual({ connections: 1, aiSaved: 1 })
+    expect(res.body.mcp).toEqual({ connections: 1, aiSaved: 2 })
     expect(res.body.insights.today.cardsDue).toBe(18)
     expect(res.body.insights.weakest).toMatchObject({ id: 'd1', name: 'Direito Constitucional' })
     expect(res.body.insights.objective).toMatchObject({ name: 'ENEM', daysLeft: 23 })
@@ -297,6 +313,19 @@ describe('blog, público e comentários', () => {
     const deckComments = await request(app).get('/v1/community/decks/c1/comments').set(auth(student))
     expect(deckComments.body.threads.every((c) => c.deckId === 'c1')).toBe(true)
   })
+
+  it('curtir comentário alterna e o feed traz o comentário em destaque', async () => {
+    const student = await studentToken()
+    const liked = await request(app).post('/v1/community/comments/cm7r1/like').set(auth(student))
+    expect(liked.body).toMatchObject({ liked: true, likeCount: 1 })
+    const unliked = await request(app).post('/v1/community/comments/cm7r1/like').set(auth(student))
+    expect(unliked.body).toMatchObject({ liked: false, likeCount: 0 })
+    const feed = await request(app).get('/v1/community/feed').set(auth(student))
+    const quiz = feed.body.materials.quiz.find((m) => m.id === 'm10')
+    expect(quiz.commentPreview).toMatchObject({ id: 'cm7', authorName: 'Larissa Mota', replyCount: 2, likeCount: 18 })
+    const deck = feed.body.highlights.find((d) => d.id === 'c4')
+    expect(deck.commentPreview).toMatchObject({ id: 'cm12' })
+  })
 })
 
 describe('post de blog vindo de outra IA até a comunidade', () => {
@@ -331,5 +360,123 @@ describe('post de blog vindo de outra IA até a comunidade', () => {
     expect(post).toMatchObject({ status: 'aprovado', audience: 'comunidade', aiGenerated: true, source: { client: 'Claude Desktop' } })
     const blogAfter = await request(app).get('/v1/me/materials').set(auth(student))
     expect(blogAfter.body.items.some((m) => m.id === id)).toBe(true)
+  })
+})
+
+describe('remix e diagrama', () => {
+  it('salvar_mapa_mental com remix_de credita o original e guarda o layout de diagrama', async () => {
+    const student = await studentToken()
+    const token = await connect(student)
+    const saved = await call(token, 'salvar_mapa_mental', { ...MAPA, layout: 'diagrama', remix_de: 'm1' })
+    const out = saved.body.result.structuredContent
+    const material = store.state.materials.find((m) => m.id === out.id)
+    expect(material.body.layout).toBe('diagrama')
+    expect(material.remixOf).toMatchObject({ id: 'm1', kind: 'resumo', authorName: 'Helena Ruiz' })
+  })
+
+  it('remix_de inexistente é ignorado sem falhar', async () => {
+    const student = await studentToken()
+    const token = await connect(student)
+    const saved = await call(token, 'salvar_mapa_mental', { ...MAPA, remix_de: 'nao-existe' })
+    const material = store.state.materials.find((m) => m.id === saved.body.result.structuredContent.id)
+    expect(material.remixOf).toBeUndefined()
+  })
+
+  it('o original lista seus remixes publicados', async () => {
+    const student = await studentToken()
+    const res = await request(app).get('/v1/community/materials/m1').set(auth(student))
+    expect(res.body.material.remixCount).toBe(1)
+    expect(res.body.remixes.map((r) => r.id)).toEqual(['m9'])
+  })
+})
+
+describe('quiz e linha do tempo', () => {
+  const QUIZ = { titulo: 'Quiz de citologia', categoria: 'vestibular', perguntas: [{ enunciado: 'Qual organela produz ATP?', alternativas: ['Ribossomo', 'Mitocôndria', 'Lisossomo'], correta: 1, explicacao: 'Respiração celular.' }] }
+  const LINHA = {
+    titulo: 'Era Vargas',
+    categoria: 'vestibular',
+    eventos: [
+      { quando: '1930', titulo: 'Revolução de 1930' },
+      { quando: '1937', titulo: 'Estado Novo', nota: 'Nova Constituição.' }
+    ]
+  }
+
+  it('salvar_quiz chega pendente com questões, gabarito e prévia', async () => {
+    const student = await studentToken()
+    const token = await connect(student)
+    const saved = await call(token, 'salvar_quiz', { ...QUIZ, remix_de: 'm1' })
+    const out = saved.body.result.structuredContent
+    expect(out).toMatchObject({ tipo: 'quiz', status: 'pendente' })
+    const material = store.state.materials.find((m) => m.id === out.id)
+    expect(material.body.questions[0]).toMatchObject({ prompt: 'Qual organela produz ATP?', answer: 1, options: ['Ribossomo', 'Mitocôndria', 'Lisossomo'] })
+    expect(material.remixOf).toMatchObject({ id: 'm1' })
+    const requests = await request(app).get('/v1/mcp/requests?status=pendente').set(auth(student))
+    expect(requests.body.items.find((r) => r.target.id === out.id).body.questions).toHaveLength(1)
+  })
+
+  it('salvar_quiz recusa gabarito fora das alternativas', async () => {
+    const student = await studentToken()
+    const token = await connect(student)
+    const saved = await call(token, 'salvar_quiz', { ...QUIZ, perguntas: [{ ...QUIZ.perguntas[0], correta: 5 }] })
+    expect(saved.body.result.isError).toBe(true)
+    expect(saved.body.result.content[0].text).toMatch(/alternativa correta/)
+  })
+
+  it('salvar_linha_do_tempo guarda os marcos na ordem e ler_conteudo devolve o texto', async () => {
+    const student = await studentToken()
+    const token = await connect(student)
+    const saved = await call(token, 'salvar_linha_do_tempo', LINHA)
+    const material = store.state.materials.find((m) => m.id === saved.body.result.structuredContent.id)
+    expect(material.body.events.map((e) => e.when)).toEqual(['1930', '1937'])
+    expect(material.description).toBe('2 marcos, de 1930 a 1937.')
+    const read = await call(token, 'ler_conteudo', { id: 'm11' })
+    expect(read.body.result.content[0].text).toMatch(/1953: Dupla hélice do DNA/)
+  })
+
+  it('a comunidade traz quiz e linha do tempo com prévia', async () => {
+    const student = await studentToken()
+    const quiz = await request(app).get('/v1/community/materials/m10').set(auth(student))
+    expect(quiz.body.material.preview).toMatchObject({ questions: 6, options: 5 })
+    const linha = await request(app).get('/v1/community/materials/m11').set(auth(student))
+    expect(linha.body.material.preview).toMatchObject({ events: 8, from: '1866', to: '2012' })
+  })
+})
+
+describe('grupos de estudo', () => {
+  it('lista grupos com membros, itens e participação do aluno', async () => {
+    const student = await studentToken()
+    const res = await request(app).get('/v1/community/groups').set(auth(student))
+    expect(res.body.joined).toEqual(['g_enem', 'g_oab'])
+    const enem = res.body.groups.find((g) => g.id === 'g_enem')
+    expect(enem.itemCount).toBeGreaterThan(0)
+    expect(enem.memberCount).toBe(18421)
+  })
+
+  it('detalhe traz itens do grupo, ranking por autor e mural', async () => {
+    const student = await studentToken()
+    const res = await request(app).get('/v1/community/groups/g_enem').set(auth(student))
+    expect(res.body.items.every((i) => ['vestibular', 'medio'].includes(i.categoryId) || i.tags.length)).toBe(true)
+    expect(res.body.ranking[0].position).toBe(1)
+    expect(res.body.posts[0].createdAt >= res.body.posts[1].createdAt).toBe(true)
+  })
+
+  it('só membro posta no mural; entrar e sair alterna a participação', async () => {
+    const student = await studentToken()
+    const denied = await request(app).post('/v1/community/groups/g_saude/posts').set(auth(student)).send({ text: 'Oi, turma!' })
+    expect(denied.status).toBe(403)
+    const joined = await request(app).post('/v1/community/groups/g_saude/join').set(auth(student))
+    expect(joined.body.group.joined).toBe(true)
+    const posted = await request(app).post('/v1/community/groups/g_saude/posts').set(auth(student)).send({ text: 'Oi, turma!' })
+    expect(posted.status).toBe(201)
+    const left = await request(app).post('/v1/community/groups/g_saude/join').set(auth(student))
+    expect(left.body.group.joined).toBe(false)
+  })
+
+  it('curtir post do mural alterna e conta uma vez por aluno', async () => {
+    const student = await studentToken()
+    const first = await request(app).post('/v1/community/group-posts/gp1/like').set(auth(student))
+    expect(first.body).toEqual({ likes: 215, liked: true })
+    const second = await request(app).post('/v1/community/group-posts/gp1/like').set(auth(student))
+    expect(second.body).toEqual({ likes: 214, liked: false })
   })
 })

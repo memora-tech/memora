@@ -3,7 +3,8 @@ export const create = {
   eyebrow: 'Estudo',
   lead: 'Escolha de onde vêm os cards. A IA gera, você revisa e aprova antes de estudar.',
   mcp: {
-    title: 'Vindos de outros sistemas',
+    title: 'Da sua IA: Claude, ChatGPT e outras',
+    formats: 'Também dá para pedir mapa mental, resumo e outros formatos',
     connect: 'Configurar conexão',
     manage: 'Gerenciar conexões',
     none: 'Conecte o Claude, o ChatGPT ou uma plataforma de ensino por MCP: os decks gerados lá chegam aqui, prontos para revisar.',

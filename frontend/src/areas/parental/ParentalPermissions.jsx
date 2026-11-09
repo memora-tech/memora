@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { parentalApi } from '../../lib/api.js'
-import { Surface, Toggle, Button, Banner, Input, useToast } from '../../design-system/index.js'
+import { Panel, ScreenHeader, Toggle, Button, Input, Icon, useToast } from '../../design-system/index.js'
+import { Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import styles from './parental.module.css'
 
@@ -46,46 +47,41 @@ export function ParentalPermissions({ data, onChange }) {
 
   return (
     <>
-      <div>
-        <h1 className={styles.pageTitle}>{t('parental.permissions.title')}</h1>
-        <p className={styles.pageIntro}>{t('parental.permissions.intro')}</p>
-      </div>
+      <ScreenHeader size="compact" eyebrow={t('parental.shell.groups.control')} title={t('parental.permissions.title')} lead={t('parental.pages.permissionsLead')} />
 
-      <Surface>
-        <div className={styles.permissionList}>
-          {KEYS.map((key) => (
-            <div key={key} className={styles.permissionItem}>
-              <Toggle checked={Boolean(permissions[key])} onChange={(v) => toggle(key, v)} label={permissionLabels[key]?.label || key} help={permissionLabels[key]?.help} disabled={busy === key} />
-            </div>
-          ))}
-        </div>
-      </Surface>
-
-      <Surface as="form" onSubmit={saveWindow}>
-        <div className={styles.cardHead}>
-          <div>
-            <h2 className={styles.cardTitle}>{permissionLabels.notificationWindow?.label || t('parental.permissions.windowTitle')}</h2>
-            <p className={styles.cardSub}>{permissionLabels.notificationWindow?.help || t('parental.permissions.windowHelp')}</p>
+      <div className={panelStyles.split}>
+        <Panel tone="quiet" title={t('parental.permissions.title')} icon="shield" labelledBy="perm-title" action={<Trend tone="brand">{t('parental.pages.enabled', { count: KEYS.filter((k) => permissions[k]).length })}</Trend>}>
+          <div className={styles.permissionList}>
+            {KEYS.map((key) => (
+              <div key={key} className={styles.permissionItem} data-on={permissions[key] ? 'true' : 'false'}>
+                <Toggle checked={Boolean(permissions[key])} onChange={(v) => toggle(key, v)} label={permissionLabels[key]?.label || key} help={permissionLabels[key]?.help} disabled={busy === key} />
+              </div>
+            ))}
           </div>
-        </div>
-        <div className={styles.windowFields}>
-          <Input id="window-start" type="time" label={t('parental.permissions.start')} value={window.start} onChange={(e) => setWindow((w) => ({ ...w, start: e.target.value }))} />
-          <Input id="window-end" type="time" label={t('parental.permissions.end')} value={window.end} onChange={(e) => setWindow((w) => ({ ...w, end: e.target.value }))} />
-        </div>
-        <div className={styles.actions}>
-          <Button type="submit" variant="soft" icon="check" loading={savingWindow}>
-            {t('parental.permissions.saveWindow')}
-          </Button>
-        </div>
-      </Surface>
+        </Panel>
 
-      <div className={styles.notes}>
-        <Banner tone="neutral" icon="lock">
-          {t('parental.permissions.toneNote')}
-        </Banner>
-        <Banner tone="brand" icon="neuron">
-          {t('parental.permissions.gamificationNote')}
-        </Banner>
+        <div className={panelStyles.stack}>
+          <Panel tone="quiet" title={permissionLabels.notificationWindow?.label || t('parental.permissions.windowTitle')} icon="clock" labelledBy="window-title">
+            <p className={styles.cardSub}>{permissionLabels.notificationWindow?.help || t('parental.permissions.windowHelp')}</p>
+            <div className={styles.windowFields}>
+              <Input id="window-start" type="time" label={t('parental.permissions.start')} value={window.start} onChange={(e) => setWindow((w) => ({ ...w, start: e.target.value }))} />
+              <Input id="window-end" type="time" label={t('parental.permissions.end')} value={window.end} onChange={(e) => setWindow((w) => ({ ...w, end: e.target.value }))} />
+            </div>
+            <div className={styles.actions}>
+              <Button type="button" variant="soft" icon="check" loading={savingWindow} onClick={saveWindow}>
+                {t('parental.permissions.saveWindow')}
+              </Button>
+            </div>
+          </Panel>
+          <p className={panelStyles.callout}>
+            <Icon name="lock" size={18} />
+            <span>{t('parental.permissions.toneNote')}</span>
+          </p>
+          <p className={panelStyles.callout}>
+            <Icon name="neuron" size={18} />
+            <span>{t('parental.permissions.gamificationNote')}</span>
+          </p>
+        </div>
       </div>
     </>
   )

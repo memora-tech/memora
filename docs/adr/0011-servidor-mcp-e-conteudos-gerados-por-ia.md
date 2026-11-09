@@ -66,3 +66,36 @@ Memora.
 - **Contra**: herda o ADR-0001, ou seja, tudo é perdido ao reiniciar o processo. Não há OAuth
   (exigido por alguns clientes MCP remotos); o token vai no header `Authorization`. Sem SSE, não
   há notificações do servidor para o cliente.
+
+## Atualização de 2026-11-09
+
+O contexto e a decisão acima continuam valendo. Esta seção registra o que mudou desde então.
+
+- **Seis tipos de conteúdo.** Além de flashcards, resumos, mapas mentais e posts de blog, o
+  Memora aceita `quiz` (múltipla escolha) e `linha` (linha do tempo). `state.materials` passa a
+  ter `kind` em `resumo`, `mapa`, `noticia`, `quiz` ou `linha`, com `body` próprio:
+  - `quiz`: `questions[]` com `id`, `prompt`, `options` (2 a 5), `answer` (índice da correta) e
+    `explanation` opcional; até 40 questões.
+  - `linha`: `events[]` com `id`, `when`, `label` e `note` opcional; de 2 a 60 marcos.
+- **Ferramentas de escrita** passam a ser seis: `salvar_flashcards`, `salvar_resumo`,
+  `salvar_mapa_mental`, `salvar_quiz`, `salvar_linha_do_tempo` e `salvar_noticia`. As de leitura
+  não mudam. Quiz e linha do tempo seguem o mesmo caminho dos outros materiais: chegam pendentes
+  em Recebidos e só vão para a comunidade com aprovação do aluno e moderação.
+- **Mapa mental em diagrama.** `salvar_mapa_mental` aceita `layout: 'mapa' | 'diagrama'`
+  (padrão `mapa`), guardado em `body.layout`. O diagrama mostra a mesma árvore como etapas de um
+  fluxo ou processo.
+- **Remix com crédito.** Toda ferramenta de escrita aceita `remix_de`, o id de um deck ou material
+  da comunidade usado como base. O servidor só grava `remixOf` (`id`, `kind`, `title`,
+  `authorId`, `authorName`) se o original existir e for visível ao aluno. O conteúdo novo mostra o
+  crédito, e o original lista os remixes aprovados (`remixes`, `remixCount`).
+- **Tentativas de quiz.** O servidor corrige e guarda as tentativas em
+  `state.community.quizAttempts` (`POST /community/materials/:id/quiz-attempts`). O detalhe do
+  material traz `viewer.quiz` com a melhor nota, o total de tentativas e a última. As questões
+  erradas da última tentativa viram um deck "Revisão: <título>" já programado
+  (`POST /community/materials/:id/quiz-review`). Esse deck nasce no app, por ação do aluno, então
+  não passa por Recebidos.
+- **Grupos de estudo.** `state.community.groups` reúne alunos por prova ou tema. O grupo não tem
+  conteúdo próprio: mostra os decks e materiais publicados que combinam com sua categoria ou suas
+  tags (`backend/src/lib/groups.js`), com ranking de criadores, meta semanal coletiva e um mural.
+  Postar no mural exige ser membro, ter conta verificada e, para menores, a liberação do
+  responsável. Conteúdo vindo de IA só aparece num grupo depois de aprovado e publicado.

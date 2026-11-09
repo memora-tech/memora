@@ -1,9 +1,9 @@
 import { Router } from 'express'
 import { requireStudent } from '../lib/auth.js'
-import { fail, guardianGate, requireVerified, categoryName, ownDecksOf, cardsOfDeck } from '../lib/helpers.js'
+import { fail, guardianGate, requireVerified, categoryName, ownDecksOf, cardsOfDeck, commentView } from '../lib/helpers.js'
 import { id, nowIso } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
-import { AUDIENCES, MaterialInputError, canSeeMaterial, createMaterial, materialPublic, normalizeMaterialInput } from '../lib/materials.js'
+import { AUDIENCES, MaterialInputError, QuizReviewError, canSeeMaterial, createMaterial, createQuizReviewDeck, gradeQuiz, materialPublic, normalizeMaterialInput, quizViewer, remixesOf } from '../lib/materials.js'
 import { shareMaterialWithFollowers, submitMaterialPublication } from '../lib/publishing.js'
 
 function findVisible(state, materialId, viewerId) {
@@ -30,13 +30,44 @@ export function materialRoutes() {
       .filter((x) => x.id !== m.id && canSeeMaterial(state, x, req.user.id) && x.status === 'aprovado' && (x.categoryId === m.categoryId || x.tags.some((t) => m.tags.includes(t))))
       .slice(0, 3)
       .map((x) => materialPublic(state, x, req.user.id))
+    const material = materialPublic(state, m, req.user.id, { full: true })
+    if (m.kind === 'quiz') material.viewer = { ...material.viewer, quiz: quizViewer(state, m, req.user.id) }
     res.json({
-      material: materialPublic(state, m, req.user.id, { full: true }),
+      material,
       reactionsList: state.reactions,
       related,
+      remixes: remixesOf(state, m.id, req.user.id),
       moderation: m.ownerId === req.user.id && publication ? { status: publication.status, decision: publication.decision ? { reasonCategory: publication.decision.reasonCategory, excerpt: publication.decision.excerpt } : null, slaHours: publication.slaHours, submittedAt: publication.submittedAt } : null,
       notice: m.aiGenerated ? 'Conteúdo gerado com IA e revisado pela moderação antes de entrar na comunidade. Confira as fontes antes de usar em prova.' : null
     })
+  })
+
+  r.post('/community/materials/:id/quiz-attempts', requireStudent, (req, res) => {
+    const state = req.store.state
+    const m = findVisible(state, req.params.id, req.user.id)
+    if (!m) return fail(res, 404, 'not_found', 'Conteúdo não encontrado.')
+    if (m.kind !== 'quiz') return fail(res, 422, 'not_quiz', 'Este conteúdo não é um quiz.')
+    try {
+      res.status(201).json(gradeQuiz(state, m, req.user.id, req.body?.answers))
+    } catch (err) {
+      if (err instanceof MaterialInputError) return fail(res, 422, 'validation', err.message)
+      throw err
+    }
+  })
+
+  r.post('/community/materials/:id/quiz-review', requireStudent, (req, res) => {
+    const state = req.store.state
+    const m = findVisible(state, req.params.id, req.user.id)
+    if (!m) return fail(res, 404, 'not_found', 'Conteúdo não encontrado.')
+    if (m.kind !== 'quiz') return fail(res, 422, 'not_quiz', 'Este conteúdo não é um quiz.')
+    try {
+      const out = createQuizReviewDeck(state, m, req.user)
+      appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'quiz_review_created', target: m.id, details: { deckId: out.deckId, cards: out.cards } })
+      res.status(201).json(out)
+    } catch (err) {
+      if (err instanceof QuizReviewError) return fail(res, 422, err.code, err.message)
+      throw err
+    }
   })
 
   r.post('/community/materials/:id/favorite', requireStudent, (req, res) => {
@@ -88,7 +119,10 @@ export function materialRoutes() {
     const state = req.store.state
     const m = findVisible(state, req.params.id, req.user.id)
     if (!m) return fail(res, 404, 'not_found', 'Conteúdo não encontrado.')
-    const threads = state.community.comments.filter((c) => c.materialId === m.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const threads = state.community.comments
+      .filter((c) => c.materialId === m.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((c) => commentView(c, req.user.id))
     res.json({ threads, total: threads.reduce((n, t) => n + 1 + t.replies.length, 0) })
   })
 
@@ -110,7 +144,7 @@ export function materialRoutes() {
     } else {
       state.community.comments.push({ ...entry, deckId: null, materialId: m.id, replies: [] })
     }
-    res.status(201).json({ comment: entry, notifiedAuthor: m.ownerId !== req.user.id })
+    res.status(201).json({ comment: commentView(entry, req.user.id), notifiedAuthor: m.ownerId !== req.user.id })
   })
 
   r.get('/me/materials', requireStudent, (req, res) => {
@@ -197,23 +231,25 @@ export function materialRoutes() {
     const state = req.store.state
     const materials = state.materials.filter((m) => m.ownerId === req.user.id && !m.deletedAt && m.mcpReview !== 'pendente').map((m) => materialPublic(state, m, req.user.id))
     const communityDeckFor = (deck) => state.community.decks.find((c) => c.publicId && c.publicId === deck.publication?.publicId)
-    const decks = ownDecksOf(state, req.user.id).filter((d) => d.mcpReview !== 'pendente').map((d) => {
-      const community = communityDeckFor(d)
-      return {
-        kind: 'flashcards',
-        id: d.id,
-        title: d.name,
-        categoryId: d.categoryId,
-        categoryName: categoryName(state, d.categoryId),
-        status: d.publication?.status === 'aprovado' ? 'aprovado' : d.publication?.status === 'em_triagem' || d.publication?.status === 'em_revisao' ? 'em_triagem' : d.publication?.status === 'rejeitado' ? 'rejeitado' : 'privado',
-        audience: 'comunidade',
-        createdAt: d.createdAt,
-        publishedAt: community?.publishedAt || null,
-        cardCount: cardsOfDeck(state, d.id).length,
-        communityId: community?.id || null,
-        stats: community ? { studiedWeek: community.stats.studiedWeek, votes: community.stats.votes, favorites: community.stats.favorites } : null
-      }
-    })
+    const decks = ownDecksOf(state, req.user.id)
+      .filter((d) => d.mcpReview !== 'pendente')
+      .map((d) => {
+        const community = communityDeckFor(d)
+        return {
+          kind: 'flashcards',
+          id: d.id,
+          title: d.name,
+          categoryId: d.categoryId,
+          categoryName: categoryName(state, d.categoryId),
+          status: d.publication?.status === 'aprovado' ? 'aprovado' : d.publication?.status === 'em_triagem' || d.publication?.status === 'em_revisao' ? 'em_triagem' : d.publication?.status === 'rejeitado' ? 'rejeitado' : 'privado',
+          audience: 'comunidade',
+          createdAt: d.createdAt,
+          publishedAt: community?.publishedAt || null,
+          cardCount: cardsOfDeck(state, d.id).length,
+          communityId: community?.id || null,
+          stats: community ? { studiedWeek: community.stats.studiedWeek, votes: community.stats.votes, favorites: community.stats.favorites } : null
+        }
+      })
     const followers = state.community.authors.find((a) => a.id === req.user.id)?.followers || 0
     const items = [...materials, ...decks].sort((a, b) => (b.publishedAt || b.createdAt).localeCompare(a.publishedAt || a.createdAt))
     res.json({ items, followers })

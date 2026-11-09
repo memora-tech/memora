@@ -4,6 +4,8 @@ import { useT } from '../../i18n/index.js'
 import { fmtNumber } from '../../lib/format.js'
 import { CommunityDeckCard } from './CommunityDeckCard.jsx'
 import { KindTag, itemLink } from './kinds.jsx'
+import { QuizMini, TimelineMini } from './QuizTimeline.jsx'
+import { lengthOf } from './lengthOf.js'
 
 function Preview({ item }) {
   const t = useT()
@@ -21,6 +23,8 @@ function Preview({ item }) {
       </span>
     )
   }
+  if (item.kind === 'quiz') return <QuizMini sample={item.preview.sample} options={item.preview.options} count={item.preview.questions} />
+  if (item.kind === 'linha') return <TimelineMini marks={item.preview.marks} from={item.preview.from} to={item.preview.to} />
   if (item.kind === 'noticia' && item.preview.outlet) {
     return (
       <span className={styles.outlet}>
@@ -33,7 +37,7 @@ function Preview({ item }) {
 
 export function MaterialCard({ item, because, showStatus }) {
   const t = useT()
-  const length = item.kind === 'mapa' ? t('community.nodes', { count: item.preview.nodes }) : t('community.readingTime', { count: item.readingMinutes })
+  const length = lengthOf(t, item)
   return (
     <Surface interactive to={itemLink(item)} className={styles.contentCard} data-kind={item.kind}>
       <span className={styles.cardHead}>

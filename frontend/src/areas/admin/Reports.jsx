@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import styles from './admin.module.css'
-import { Button, Badge, Banner, Select, Textarea, Input, Surface, Sheet, EmptyState, useToast } from '../../design-system/index.js'
+import { Button, Badge, Banner, Select, Textarea, Input, Sheet, ScreenHeader, StatTile, useToast } from '../../design-system/index.js'
+import { useSectionEyebrow } from './AdminLayout.jsx'
+import { PanelEmpty, Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -26,7 +28,12 @@ export function Reports() {
   useDocumentTitle(t('admin.reports.title'))
 
   const state = useAdminData(() => adminApi.get('/admin/moderation/reports'))
+  const eyebrow = useSectionEyebrow('denuncias')
   const reports = state.data?.reports || []
+  const sorted = [...reports].sort((a, b) => (a.status === 'aberta' ? 0 : 1) - (b.status === 'aberta' ? 0 : 1))
+  const openCount = reports.filter((r) => r.status === 'aberta').length
+  const resolvedCount = reports.filter((r) => r.status === 'resolvida').length
+  const autoCount = reports.length - openCount - resolvedCount
 
   const openResolve = (report) => {
     setActive(report)
@@ -61,16 +68,20 @@ export function Reports() {
 
   return (
     <>
-      <h1 className={styles.title}>{t('admin.reports.title')}</h1>
-      <Banner tone="brand" icon="info">
-        {t('admin.reports.intro')}
-      </Banner>
+      <ScreenHeader size="compact" eyebrow={eyebrow} title={t('admin.reports.title')} lead={t('admin.reports.intro')} />
       <AdminState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
+      {state.data ? (
+        <div className={panelStyles.kpis}>
+          <StatTile size="compact" icon="flag" label={t('admin.pages.reports.kpiOpen')} value={openCount} note={<Trend tone={openCount ? 'warning' : 'success'}>{t('admin.pages.reports.noteOpen')}</Trend>} />
+          <StatTile size="compact" icon="check" label={t('admin.pages.reports.kpiResolved')} value={resolvedCount} />
+          <StatTile size="compact" icon="zap" label={t('admin.pages.reports.kpiAuto')} value={autoCount} />
+        </div>
+      ) : null}
       {state.data ? (
         reports.length ? (
           <div className={styles.list}>
-            {reports.map((r) => (
-              <Surface key={r.id} className={styles.stack}>
+            {sorted.map((r) => (
+              <article key={r.id} className={styles.card} data-tone={r.status === 'aberta' ? 'warning' : undefined}>
                 <div className={styles.cardHead}>
                   <div className={styles.stack}>
                     <h2 className={styles.cardTitle}>{r.targetName}</h2>
@@ -84,7 +95,7 @@ export function Reports() {
                       </span>
                       <span>{t('admin.reports.reportedAt', { when: fmtRelative(r.createdAt) })}</span>
                     </div>
-                    {r.detail ? <p>{r.detail}</p> : null}
+                    {r.detail ? <p className={styles.quote}>{r.detail}</p> : null}
                   </div>
                   <Badge tone={STATUS_TONE[r.status] || 'neutral'}>{t(`admin.reports.status.${r.status}`)}</Badge>
                 </div>
@@ -99,17 +110,17 @@ export function Reports() {
                   </Banner>
                 ) : null}
                 {r.status === 'aberta' && canDecide ? (
-                  <div className={styles.formActions}>
+                  <div className={panelStyles.cardFoot}>
                     <Button variant="soft" icon="check" onClick={() => openResolve(r)}>
                       {t('admin.reports.resolve')}
                     </Button>
                   </div>
                 ) : null}
-              </Surface>
+              </article>
             ))}
           </div>
         ) : (
-          <EmptyState icon="flag" title={t('admin.reports.empty')} />
+          <PanelEmpty icon="flag" title={t('admin.reports.empty')} />
         )
       ) : null}
       <Sheet

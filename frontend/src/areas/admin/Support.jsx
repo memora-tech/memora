@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import styles from './admin.module.css'
-import { Button, Badge, Banner, Input, Textarea, Toggle, Tabs, Surface, Sheet, SectionTitle, EmptyState, useToast, Stat } from '../../design-system/index.js'
+import { Button, Badge, Banner, Input, Textarea, Toggle, TabBar, TabPanel, Surface, Sheet, SectionTitle, ScreenHeader, StatTile, useToast, Stat } from '../../design-system/index.js'
+import { useSectionEyebrow } from './AdminLayout.jsx'
+import { PanelEmpty, Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -13,20 +15,26 @@ const TICKET_TONE = { aberto: 'warning', respondido: 'brand', resolvido: 'succes
 export function Support() {
   const t = useT()
   const [tab, setTab] = useState('accounts')
+  const eyebrow = useSectionEyebrow('suporte')
   useDocumentTitle(t('admin.support.title'))
   return (
     <>
-      <h1 className={styles.title}>{t('admin.support.title')}</h1>
-      <Tabs
-        label={t('admin.support.title')}
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { value: 'accounts', label: t('admin.support.tabs.accounts'), icon: 'user' },
-          { value: 'tickets', label: t('admin.support.tabs.tickets'), icon: 'message' }
-        ]}
-      />
-      {tab === 'accounts' ? <Accounts /> : <Tickets />}
+      <ScreenHeader size="compact" eyebrow={eyebrow} title={t('admin.support.title')} lead={t('admin.pages.support.lead')} />
+      <div className={panelStyles.stickyBar}>
+        <TabBar
+          label={t('admin.support.title')}
+          idBase="suporte"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'accounts', label: t('admin.support.tabs.accounts'), icon: 'user' },
+            { value: 'tickets', label: t('admin.support.tabs.tickets'), icon: 'message' }
+          ]}
+        />
+      </div>
+      <TabPanel idBase="suporte" value={tab}>
+        {tab === 'accounts' ? <Accounts /> : <Tickets />}
+      </TabPanel>
     </>
   )
 }
@@ -79,8 +87,8 @@ function Accounts() {
 
   return (
     <div className={styles.stack}>
-      <form onSubmit={search} className={styles.toolbar}>
-        <div style={{ flex: 1, minWidth: 240 }}>
+      <form onSubmit={search} className={styles.searchBar} role="search">
+        <div>
           <Input label={t('admin.support.search')} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <Button type="submit" icon="search" loading={searching}>
@@ -105,7 +113,7 @@ function Accounts() {
                 {results.map((u) => (
                   <tr key={u.id}>
                     <th scope="row">
-                      {u.name} {u.isMinor ? <Badge tone="brand">{t('admin.support.minor')}</Badge> : null}
+                      <span className={styles.cellTitle}>{u.name}</span> {u.isMinor ? <Badge tone="brand">{t('admin.support.minor')}</Badge> : null}
                     </th>
                     <td className={styles.mono}>{u.email}</td>
                     <td>
@@ -132,9 +140,10 @@ function Accounts() {
             </table>
           </div>
         ) : (
-          <EmptyState icon="user" title={t('admin.support.noResults')} />
+          <PanelEmpty icon="user" title={t('admin.support.noResults')} />
         )
       ) : null}
+      {results === null && !view ? <PanelEmpty icon="search" title={t('admin.pages.support.searchTitle')} text={t('admin.pages.support.searchHint')} /> : null}
       {view ? <ViewAs view={view} onClose={() => setView(null)} /> : null}
       <Sheet
         open={Boolean(target)}
@@ -196,9 +205,7 @@ function ViewAs({ view, onClose }) {
             <dt>{t('admin.support.plan')}</dt>
             <dd>{t(`admin.plan.${view.account.plan}`)}</dd>
             <dt>{t('admin.support.verified')}</dt>
-            <dd>
-              {[view.account.verified?.email && t('admin.support.verifiedEmail'), view.account.verified?.phone && t('admin.support.verifiedPhone')].filter(Boolean).join(', ') || t('admin.common.none')}
-            </dd>
+            <dd>{[view.account.verified?.email && t('admin.support.verifiedEmail'), view.account.verified?.phone && t('admin.support.verifiedPhone')].filter(Boolean).join(', ') || t('admin.common.none')}</dd>
             <dt>{t('admin.support.ageVerification')}</dt>
             <dd>
               {view.account.ageVerification.status} · {view.account.ageVerification.method}
@@ -295,6 +302,7 @@ function Tickets() {
   const [busy, setBusy] = useState(null)
   const state = useAdminData(() => adminApi.get('/admin/support/tickets'))
   const tickets = state.data?.tickets || []
+  const count = (status) => tickets.filter((x) => x.status === status).length
 
   const draft = (id) => drafts[id] || { text: '', close: false }
   const setDraft = (id, patch) => setDrafts((d) => ({ ...d, [id]: { ...draft(id), ...patch } }))
@@ -320,9 +328,22 @@ function Tickets() {
       <AdminState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
       {state.data ? (
         <>
-          <Banner tone="neutral" icon="clock">
-            {t('admin.support.sla', { hours: state.data.sla.humanResponseHours, minorHours: state.data.sla.minorSuspicionHours })}
-          </Banner>
+          <div className={panelStyles.kpis}>
+            <StatTile
+              size="compact"
+              icon="message"
+              label={t('admin.pages.support.kpiOpen')}
+              value={count('aberto')}
+              note={
+                <Trend tone={count('aberto') ? 'warning' : 'success'} icon="clock">
+                  {t('admin.support.sla', { hours: state.data.sla.humanResponseHours, minorHours: state.data.sla.minorSuspicionHours }).split(';')[0]}
+                </Trend>
+              }
+            />
+            <StatTile size="compact" icon="send" label={t('admin.pages.support.kpiAnswered')} value={count('respondido')} />
+            <StatTile size="compact" icon="check" label={t('admin.pages.support.kpiResolved')} value={count('resolvido')} />
+          </div>
+          <p className={panelStyles.callout}>{t('admin.support.sla', { hours: state.data.sla.humanResponseHours, minorHours: state.data.sla.minorSuspicionHours })}</p>
           {!canReply ? (
             <Banner tone="neutral" icon="lock">
               {t('admin.support.replyForbidden')}
@@ -333,7 +354,7 @@ function Tickets() {
               {tickets.map((tk) => {
                 const d = draft(tk.id)
                 return (
-                  <Surface key={tk.id} className={styles.stack}>
+                  <article key={tk.id} className={styles.card} data-tone={tk.status === 'aberto' ? 'warning' : tk.status === 'resolvido' ? 'muted' : undefined}>
                     <div className={styles.cardHead}>
                       <div className={styles.stack}>
                         <h2 className={styles.cardTitle}>{tk.subject}</h2>
@@ -343,9 +364,9 @@ function Tickets() {
                       </div>
                       <Badge tone={TICKET_TONE[tk.status] || 'neutral'}>{t(`admin.support.ticketStatus.${tk.status}`)}</Badge>
                     </div>
-                    <p>{tk.message}</p>
+                    <p className={styles.quote}>{tk.message}</p>
                     {tk.replies.length ? (
-                      <ul className={styles.stack}>
+                      <ul className={styles.thread}>
                         {tk.replies.map((r, i) => (
                           <li key={i} className={`${styles.replyItem} ${r.mine ? '' : styles.replyMine}`}>
                             <span className={styles.cellMeta}>
@@ -369,12 +390,12 @@ function Tickets() {
                         </div>
                       </div>
                     ) : null}
-                  </Surface>
+                  </article>
                 )
               })}
             </div>
           ) : (
-            <EmptyState icon="message" title={t('admin.support.emptyTickets')} />
+            <PanelEmpty icon="message" title={t('admin.support.emptyTickets')} />
           )}
         </>
       ) : null}

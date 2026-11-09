@@ -40,9 +40,9 @@ export function Breadcrumbs({ items }) {
   )
 }
 
-export function ScreenHeader({ eyebrow, title, lead, actions, titleId, crumbs }) {
+export function ScreenHeader({ eyebrow, title, lead, actions, titleId, crumbs, size, className }) {
   return (
-    <header className={styles.head}>
+    <header className={[styles.head, size === 'compact' && styles.headCompact, className].filter(Boolean).join(' ')}>
       <div className={styles.headText}>
         <Breadcrumbs items={crumbs} />
         {eyebrow ? <span className={styles.eyebrow}>{eyebrow}</span> : null}
@@ -91,9 +91,9 @@ export function StatRow({ children }) {
   return <div className={styles.stats}>{children}</div>
 }
 
-export function StatTile({ label, value, note, icon, tone }) {
+export function StatTile({ label, value, note, icon, tone, size }) {
   return (
-    <div className={styles.tile} data-tone={tone || 'plain'}>
+    <div className={styles.tile} data-tone={tone || 'plain'} data-size={size || undefined}>
       <span className={styles.tileLabel}>
         {icon ? <Icon name={icon} size={14} /> : null}
         {label}
@@ -104,10 +104,10 @@ export function StatTile({ label, value, note, icon, tone }) {
   )
 }
 
-export function Panel({ title, icon, action, children, className, bodyClassName, as = 'section', labelledBy }) {
+export function Panel({ title, icon, action, children, className, bodyClassName, as = 'section', labelledBy, tone }) {
   const Tag = as
   return (
-    <Tag className={[styles.panel, className].filter(Boolean).join(' ')} aria-labelledby={title ? labelledBy : undefined}>
+    <Tag className={[styles.panel, tone === 'quiet' && styles.panelQuiet, className].filter(Boolean).join(' ')} aria-labelledby={title ? labelledBy : undefined}>
       {title ? (
         <header className={styles.panelHead}>
           <h2 id={labelledBy} className={styles.panelTitle}>

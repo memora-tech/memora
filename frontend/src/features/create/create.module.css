@@ -96,12 +96,12 @@
   flex: none;
 }
 
-.stepDot[data-state="active"] {
+.stepDot[data-state='active'] {
   background: var(--color-accent);
   color: var(--color-text-on-brand);
 }
 
-.stepDot[data-state="done"] {
+.stepDot[data-state='done'] {
   background: var(--color-success-soft);
   color: var(--color-success);
 }
@@ -110,7 +110,7 @@
   font-weight: 500;
 }
 
-.stepLabel[data-state="active"] {
+.stepLabel[data-state='active'] {
   color: var(--color-text-brand);
 }
 
@@ -294,4 +294,18 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.mcpMore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--size-small);
+  font-weight: 600;
+  color: var(--color-text-brand);
+  text-decoration: none;
+}
+
+.mcpMore:hover {
+  text-decoration: underline;
 }

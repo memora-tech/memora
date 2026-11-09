@@ -40,7 +40,15 @@ describe('comunidade com vários tipos de conteúdo', () => {
     expect(mapas).toHaveFocus()
     expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', mapas.id)
     expect(await screen.findByText('Mapa mental: sistema cardiovascular')).toBeInTheDocument()
-    expect(screen.getByText('2 publicações')).toBeInTheDocument()
+    expect(screen.getByText('3 publicações')).toBeInTheDocument()
+  })
+
+  it('mapa em layout de diagrama abre na vista de etapas e credita o original do remix', async () => {
+    renderAt('/app/comunidade/conteudo/m9')
+    expect(await screen.findByRole('heading', { level: 2, name: /Respiração celular/ }, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Diagrama/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('Etapa 1:', { exact: false })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Remix de resumo .Respiração celular em 5 minutos., de Helena Ruiz/ })).toHaveAttribute('href', '/app/comunidade/conteudo/m1')
   })
 
   it('mapa mental abre e fecha ramos pelo botão com aria-expanded', async () => {
@@ -48,7 +56,9 @@ describe('comunidade com vários tipos de conteúdo', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Sistema cardiovascular' }, { timeout: 4000 })).toBeInTheDocument()
     const heart = screen.getByRole('button', { name: /^Coração/ })
     expect(heart).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('Ciclo cardíaco')).toBeVisible()
+    const outline = screen.getByRole('region', { name: 'Sistema cardiovascular' })
+    expect(within(outline).getByText('Ciclo cardíaco')).toBeVisible()
+    expect(screen.getByRole('radio', { name: /Mapa/ })).toHaveAttribute('aria-checked', 'true')
     await userEvent.click(heart)
     expect(heart).toHaveAttribute('aria-expanded', 'false')
     expect(document.getElementById(heart.getAttribute('aria-controls'))).not.toBeVisible()
@@ -138,7 +148,7 @@ describe('estrutura do app', () => {
 
   it('a aba Estudar mostra os decks programados na aba Decks', async () => {
     renderAt('/app')
-    const section = await screen.findByRole('region', { name: 'Decks programados' }, { timeout: 4000 })
+    const section = await screen.findByRole('region', { name: 'Fila de hoje' }, { timeout: 4000 })
     expect(within(section).getByRole('link', { name: 'Citologia' })).toBeInTheDocument()
     expect(within(section).queryByRole('link', { name: 'Farmacologia' })).not.toBeInTheDocument()
   })
@@ -186,19 +196,81 @@ describe('deck e objetivos', () => {
   })
 })
 
+describe('comentários na comunidade', () => {
+  it('a página do conteúdo mostra os comentários, curte e responde sem abrir janela', async () => {
+    renderAt('/app/comunidade/conteudo/m10')
+    const region = await screen.findByRole('region', { name: /Comentários/ }, { timeout: 4000 })
+    expect(await within(region).findByText('Errei a da EC 19 de novo. Essa cai toda prova da FGV!')).toBeInTheDocument()
+    expect(within(region).getAllByText('Autor').length).toBeGreaterThan(0)
+    await userEvent.click(within(region).getByRole('button', { name: 'Curtir comentário (18 curtidas)' }))
+    expect(await within(region).findByRole('button', { name: 'Curtir comentário (19 curtidas)' })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.type(within(region).getByRole('textbox', { name: 'Escreva um comentário' }), 'Que quiz bom!')
+    await userEvent.click(within(region).getByRole('button', { name: 'Enviar' }))
+    expect(await within(region).findByText('Que quiz bom!')).toBeInTheDocument()
+  })
+
+  it('o feed mostra o comentário em destaque e abre a conversa no próprio cartão', async () => {
+    renderAt('/app/comunidade')
+    const post = (await screen.findByRole('heading', { name: 'Quiz: princípios da Administração Pública', level: 3 }, { timeout: 4000 })).closest('article')
+    expect(within(post).getByText(/Errei a da EC 19/)).toBeInTheDocument()
+    await userEvent.click(within(post).getByRole('button', { name: /Ver os 4 comentários/ }))
+    expect(await within(post).findByRole('textbox', { name: 'Escreva um comentário' })).toHaveFocus()
+    expect(await within(post).findByText('Fiz 6/6! Mais quizzes de Administrativo, por favor.')).toBeInTheDocument()
+  })
+})
+
+describe('quiz e linha do tempo', () => {
+  it('responde o quiz com correção comentada e abre o gabarito', async () => {
+    renderAt('/app/comunidade/conteudo/m10')
+    expect(await screen.findByText('Questão 1 de 6', {}, { timeout: 4000 })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Alternativa A:\s*Legalidade/ }))
+    expect(await screen.findByText('Não foi dessa vez. A correta é a C.')).toBeInTheDocument()
+    expect(screen.getByText(/Súmula Vinculante 13/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('radio', { name: 'Gabarito' }))
+    expect(screen.getAllByText('resposta certa', { exact: false })).toHaveLength(6)
+  })
+
+  it('guarda a tentativa, mostra a melhor nota e transforma as erradas em flashcards', async () => {
+    renderAt('/app/comunidade/conteudo/m10')
+    await screen.findByText('Questão 1 de 6', {}, { timeout: 4000 })
+    const picks = ['A', 'B', 'A', 'A', 'A', 'B']
+    for (const [i, letter] of picks.entries()) {
+      await userEvent.click(screen.getByRole('button', { name: new RegExp(`^Alternativa ${letter}: `) }))
+      if (i < picks.length - 1) await userEvent.click(screen.getByRole('button', { name: 'Próxima' }))
+    }
+    await userEvent.click(screen.getByRole('button', { name: 'Ver resultado' }))
+    expect(await screen.findByText('Sua melhor nota', {}, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByText('4 de 6')).toBeInTheDocument()
+    expect(live.store.state.community.quizAttempts).toMatchObject([{ materialId: 'm10', score: 4, wrong: ['q1', 'q4'] }])
+    await userEvent.click(screen.getByRole('button', { name: 'Revisar as erradas com flashcards' }))
+    const open = await screen.findAllByRole('link', { name: /Abrir deck/ })
+    const deck = live.store.state.decks.find((d) => d.name === 'Revisão: Quiz: princípios da Administração Pública')
+    expect(deck).toMatchObject({ scheduled: true })
+    expect(open[0]).toHaveAttribute('href', `/app/decks/${deck.id}`)
+  })
+
+  it('mostra a linha do tempo em ordem com cada marco', async () => {
+    renderAt('/app/comunidade/conteudo/m11')
+    const list = await screen.findByRole('list', { name: 'Linha do tempo com 8 marcos' }, { timeout: 4000 })
+    const items = within(list).getAllByRole('listitem')
+    expect(items).toHaveLength(8)
+    expect(within(items[4]).getByRole('heading', { name: 'Dupla hélice do DNA' })).toBeInTheDocument()
+  })
+})
+
 describe('recebidos via MCP', () => {
   it('pendente aparece em Recebidos, com contador no menu, e aprovar para o meu blog tira da fila', async () => {
     renderAt('/app/recebidos')
     expect(await screen.findByRole('heading', { name: 'Recebidos via MCP', level: 1 }, { timeout: 4000 })).toBeInTheDocument()
     const [nav] = screen.getAllByRole('navigation', { name: 'Navegação principal' })
-    expect(await within(nav).findByRole('link', { name: /Recebidos \(MCP\).*1/ }, { timeout: 4000 })).toBeInTheDocument()
+    expect(await within(nav).findByRole('link', { name: /Recebidos \(MCP\).*2/ }, { timeout: 4000 })).toBeInTheDocument()
     const card = (await screen.findByRole('heading', { name: 'Como funciona a repetição espaçada' })).closest('article')
     await userEvent.click(within(card).getByRole('button', { name: 'Aprovar' }))
     const dialog = await screen.findByRole('dialog', { name: 'Aprovar solicitação' })
     await userEvent.click(within(dialog).getByRole('radio', { name: /Só no meu blog/ }))
     await userEvent.click(within(dialog).getByRole('button', { name: 'Aprovar e guardar no meu blog' }))
     await waitFor(() => expect(live.store.state.materials.find((m) => m.id === 'm7')).toMatchObject({ mcpReview: 'aprovado', status: 'privado' }))
-    expect(await screen.findByText('Nenhuma solicitação esperando')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Quiz: ciclo cardíaco' })).toBeInTheDocument()
   })
 
   it('recusar exclui o conteúdo enviado pela IA', async () => {
@@ -229,5 +301,20 @@ describe('conexões MCP no perfil', () => {
     const dialog = await screen.findByRole('alertdialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Revogar' }))
     await waitFor(() => expect(live.store.state.mcp.connections.find((c) => c.name === 'ChatGPT').revokedAt).toBeTruthy())
+  })
+})
+
+describe('grupos de estudo', () => {
+  it('entra no grupo, posta no mural e vê o pódio do ranking', async () => {
+    renderAt('/app/comunidade/grupos/g_saude')
+    expect(await screen.findByRole('heading', { level: 1, name: 'Medicina e Saúde' }, { timeout: 4000 })).toBeInTheDocument()
+    expect(screen.getByText(/Entre no grupo para postar/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Entrar no grupo' }))
+    const box = await screen.findByLabelText('Escreva no mural', {}, { timeout: 4000 })
+    await userEvent.type(box, 'Alguém tem resumo de ECG?')
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar' }))
+    expect(await screen.findByText('Alguém tem resumo de ECG?', {}, { timeout: 4000 })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /Ranking/ }))
+    expect(screen.getByRole('list', { name: 'Pódio da semana' })).toBeInTheDocument()
   })
 })
