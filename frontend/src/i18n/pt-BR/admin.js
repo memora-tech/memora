@@ -101,7 +101,7 @@ export const admin = {
     version: 'v{version}',
     cards: { one: '{count} card', other: '{count} cards' },
     blocks: { one: '{count} bloco', other: '{count} blocos' },
-    kind: { resumo: 'Resumo', mapa: 'Mapa mental', noticia: 'Notícia' },
+    kind: { resumo: 'Resumo', mapa: 'Mapa mental', noticia: 'Notícia', quiz: 'Quiz', linha: 'Linha do tempo' },
     submitted: 'Enviado {when}',
     dueAt: 'Prazo {date}',
     empty: 'Nenhuma publicação nesta fila.',
@@ -488,5 +488,89 @@ export const admin = {
     reviewedAt: 'Última revisão {when}',
     roles: 'Papéis e permissões mínimas',
     rolesIntro: 'Cada papel acessa só as seções da sua função. Engenharia mantém acesso técnico a todas.'
+  },
+  shell: {
+    skip: 'Pular para o conteúdo',
+    menu: 'Menu de navegação',
+    close: 'Fechar menu',
+    groups: {
+      trust: 'Confiança',
+      care: 'Atendimento',
+      business: 'Negócio',
+      platform: 'Plataforma',
+      org: 'Organização'
+    }
+  },
+  entry: {
+    kicker: 'Operação interna',
+    headline: 'Moderação, suporte e conformidade num só lugar, com rastro de auditoria em cada ação.',
+    highlights: ['Permissão mínima por papel, vinda do diretório interno.', 'Toda leitura de dado pessoal fica registrada com finalidade.', 'Decisões com motivo, trecho e canal de contestação.'],
+    footnote: 'Acesso restrito à equipe Memora.',
+    sections: { one: '{count} seção', other: '{count} seções' }
+  },
+  pages: {
+    moderation: {
+      lead: 'Fila priorizada por SLA consumido e risco. Cada decisão gera snapshot imutável e canal de contestação.',
+      kpiPending: 'Na fila',
+      kpiAlert: 'Em alerta de SLA',
+      kpiHighRisk: 'Risco alto',
+      kpiDecided: 'Decididas',
+      noteAlert: 'acima de {pct}% do prazo',
+      noteHighRisk: 'revisão integral',
+      notePremium: { one: '{count} premium', other: '{count} premium' },
+      noteClear: 'tudo dentro do prazo',
+      noSnapshot: 'O snapshot desta versão ainda está sendo gerado.',
+      shown: { one: '{count} publicação', other: '{count} publicações' }
+    },
+    reports: {
+      kpiOpen: 'Abertas',
+      kpiResolved: 'Resolvidas',
+      kpiAuto: 'Tratadas automaticamente',
+      noteOpen: 'exigem revisão humana',
+      openFirst: 'Abertas primeiro'
+    },
+    appeals: {
+      kpiOpen: 'Em análise',
+      kpiAccepted: 'Aceitas',
+      kpiKept: 'Mantidas',
+      noteWindow: 'prazo de 30 dias'
+    },
+    support: {
+      lead: 'Busca de contas com leitura auditada e fila de chamados com SLA de resposta humana.',
+      searchTitle: 'Encontre uma conta para começar',
+      searchHint: 'Busque por nome ou e-mail. Abrir a visão de uma conta exige finalidade e referência do consentimento.',
+      kpiOpen: 'Chamados abertos',
+      kpiAnswered: 'Respondidos',
+      kpiResolved: 'Resolvidos'
+    },
+    commercial: {
+      lead: 'Parceiros, contratos e receita de cupons. Alertas de conversão e renovação chegam primeiro.',
+      noteConversion: '{pct}% de uso confirmado'
+    },
+    finance: {
+      lead: 'Receita recorrente, cobrança falha e emissão de NFS-e. Dados fiscais ficam em base segregada.',
+      notePaid: '{pct}% dos pagamentos pagos',
+      noteDunning: 'em régua de cobrança',
+      noteOk: 'nenhuma pendência'
+    },
+    compliance: {
+      lead: 'Auditoria encadeada, incidentes com prazos legais e leituras de dado pessoal com finalidade.',
+      kpiChain: 'Registros na cadeia',
+      kpiIncidents: 'Incidentes abertos',
+      kpiAccess: 'Leituras registradas',
+      noteChainOk: 'íntegra',
+      noteChainBroken: 'quebrada',
+      noteIncidents: 'prazo legal de 3 dias úteis'
+    },
+    engineering: {
+      lead: 'Flags, custo de IA, qualidade de Nôa e SLOs. Kill switch desliga uma integração na hora.',
+      kpiCost: 'Custo de IA hoje',
+      noteCost: '{pct}% da receita por usuário',
+      noteWithin: 'dentro da meta',
+      noteAbove: 'acima da meta'
+    },
+    team: {
+      lead: 'Dimensionamento do primeiro ano e permissões mínimas por papel.'
+    }
   }
 }

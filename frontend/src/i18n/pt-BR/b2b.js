@@ -150,5 +150,29 @@ export const b2b = {
     retry: 'Tentar de novo',
     forbidden: 'Sem permissão para esta área.',
     offline: 'Você está offline.'
+  },
+  shell: {
+    skip: 'Pular para o conteúdo',
+    menu: 'Menu de navegação',
+    close: 'Fechar menu',
+    groups: { institution: 'Instituição', class: 'Turma aberta' },
+    eyebrow: 'Painel da instituição',
+    lead: 'Turmas, convites e indicadores agregados com consentimento do aluno. Dados isolados por instituição.'
+  },
+  entry: {
+    kicker: 'Escolas e cursinhos',
+    headline: 'Acompanhe suas turmas com dados que o aluno autorizou, e só eles.',
+    highlights: ['Login por SSO da instituição, separado do app do aluno.', 'Agregados só a partir do mínimo de alunos com consentimento.', 'Projeção revogável: o aluno sai das visões individuais na hora.'],
+    footnote: 'Ativação condicionada ao DPA assinado.'
+  },
+  kpi: {
+    classes: 'Turmas ativas',
+    students: 'Alunos matriculados',
+    consented: 'Com consentimento',
+    consentedNote: '{pct}% da base',
+    accuracy: 'Acerto médio',
+    accuracyNote: 'turmas com agregado liberado',
+    blocked: { one: '{count} turma abaixo do mínimo', other: '{count} turmas abaixo do mínimo' },
+    noBlocked: 'todas com agregado'
   }
 }

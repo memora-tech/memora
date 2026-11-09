@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './admin.module.css'
-import { Button, Surface, Wordmark, Banner, Icon } from '../../design-system/index.js'
+import { Button, Banner, Icon } from '../../design-system/index.js'
+import { PanelLogin, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -33,40 +34,49 @@ export function AdminLogin() {
     }
   }
 
+  const highlights = t('admin.entry.highlights')
+  const icons = ['key', 'eye', 'route']
+
   return (
-    <div className={styles.page}>
-      <div className={styles.login}>
-        <Surface className={styles.loginCard}>
-          <form onSubmit={submit} className={styles.loginCard}>
-            <div className={styles.loginHead}>
-              <Wordmark size={28} />
-              <span className={styles.panelName}>{t('admin.name')}</span>
-              <h1 className={styles.loginTitle}>{t('admin.login.title')}</h1>
-              <p className={styles.loginSub}>{t('admin.login.subtitle')}</p>
-            </div>
-            <div role="radiogroup" aria-label={t('admin.login.role')} className={styles.roleList}>
-              {ADMIN_ROLES.map((r) => (
+    <PanelLogin product={t('admin.name')} kicker={t('admin.entry.kicker')} headline={t('admin.entry.headline')} highlights={highlights.map((text, i) => ({ text, icon: icons[i] }))} footnote={t('admin.entry.footnote')}>
+      <form onSubmit={submit}>
+        <div>
+          <h1>{t('admin.login.title')}</h1>
+          <p className={panelStyles.loginSub}>{t('admin.login.subtitle')}</p>
+        </div>
+        <fieldset className={styles.roleField}>
+          <legend className={panelStyles.label}>{t('admin.login.role')}</legend>
+          <div role="radiogroup" aria-label={t('admin.login.role')} className={styles.roleList}>
+            {ADMIN_ROLES.map((r) => {
+              const count = SECTIONS.filter((s) => s.roles.includes(r) && s.key !== 'equipe').length
+              return (
                 <button key={r} type="button" role="radio" aria-checked={role === r ? 'true' : 'false'} className={styles.roleOption} onClick={() => setRole(r)}>
-                  <Icon name={ROLE_ICONS[r]} size={18} />
-                  <span>{t(`admin.roles.${r}`)}</span>
-                  <span className={styles.cellMeta} style={{ marginLeft: 'auto' }}>
-                    {SECTIONS.filter((s) => s.roles.includes(r) && s.key !== 'equipe').length}
+                  <span className={styles.roleIcon}>
+                    <Icon name={ROLE_ICONS[r]} size={16} />
+                  </span>
+                  <span className={styles.roleName}>{t(`admin.roles.${r}`)}</span>
+                  <span className={styles.roleCount}>{t('admin.entry.sections', { count })}</span>
+                  <span className={styles.roleCheck} aria-hidden="true">
+                    <Icon name="check" size={14} />
                   </span>
                 </button>
-              ))}
-            </div>
-            <p className={styles.loginSub}>{t('admin.login.roleHint')}</p>
-            {error ? (
-              <Banner tone="danger" icon="alert">
-                {error}
-              </Banner>
-            ) : null}
-            <Button type="submit" block size="large" icon="key" loading={loading}>
-              {t('admin.login.submit', { role: t(`admin.roles.${role}`) })}
-            </Button>
-          </form>
-        </Surface>
-      </div>
-    </div>
+              )
+            })}
+          </div>
+        </fieldset>
+        {error ? (
+          <Banner tone="danger" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
+        <Button type="submit" block size="large" icon="key" loading={loading}>
+          {t('admin.login.submit', { role: t(`admin.roles.${role}`) })}
+        </Button>
+        <p className={panelStyles.loginNote}>
+          <Icon name="info" size={16} />
+          <span>{t('admin.login.roleHint')}</span>
+        </p>
+      </form>
+    </PanelLogin>
   )
 }

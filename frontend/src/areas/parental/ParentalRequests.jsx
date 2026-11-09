@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { parentalApi } from '../../lib/api.js'
-import { Surface, Button, Badge, EmptyState, ConfirmDialog, SectionTitle, useToast } from '../../design-system/index.js'
+import { Button, Badge, ConfirmDialog, ScreenHeader, Icon, useToast } from '../../design-system/index.js'
+import { PanelEmpty, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { fmtRelative } from '../../lib/format.js'
 import styles from './parental.module.css'
@@ -35,30 +36,27 @@ export function ParentalRequests({ data, onChange }) {
 
   return (
     <>
-      <div>
-        <h1 className={styles.pageTitle}>{t('parental.requests.title')}</h1>
-        <p className={styles.pageIntro}>{t('parental.requests.count', { count: pending.length })}</p>
-      </div>
+      <ScreenHeader size="compact" eyebrow={t('parental.shell.groups.control')} title={t('parental.requests.title')} lead={t('parental.pages.requestsLead')} actions={<Badge tone={pending.length ? 'warning' : 'success'}>{t('parental.requests.count', { count: pending.length })}</Badge>} />
 
-      <section aria-labelledby="pending-title">
-        <SectionTitle as="h2">
-          <span id="pending-title">{t('parental.requests.pending')}</span>
-        </SectionTitle>
-        <div className={styles.grid} style={{ marginTop: 'var(--space-3)' }}>
+      <section aria-labelledby="pending-title" className={panelStyles.stack}>
+        <h2 id="pending-title" className={styles.sectionLabel}>
+          {t('parental.requests.pending')}
+        </h2>
+        <div className={styles.grid}>
           {pending.length === 0 ? (
-            <Surface>
-              <EmptyState icon="check" title={t('parental.requests.empty')} text={t('parental.requests.emptyText')} />
-            </Surface>
+            <PanelEmpty icon="check" title={t('parental.requests.empty')} text={t('parental.requests.emptyText')} />
           ) : (
             pending.map((r) => (
-              <Surface key={r.id}>
+              <article key={r.id} className={panelStyles.card} data-tone="warning">
                 <div className={styles.request}>
                   <div className={styles.requestHead}>
                     <h3 className={styles.requestTitle}>{r.title}</h3>
                     <Badge tone="warning">{t('parental.requests.pendente')}</Badge>
                   </div>
                   <p className={styles.requestDetail}>{r.detail}</p>
-                  <span className={styles.requestMeta}>{t('parental.requests.requestedAt', { when: fmtRelative(r.createdAt) })}</span>
+                  <span className={styles.requestMeta}>
+                    <Icon name="clock" size={14} /> {t('parental.requests.requestedAt', { when: fmtRelative(r.createdAt) })}
+                  </span>
                   <div className={styles.requestActions}>
                     <Button variant="ghost" icon="x" onClick={() => setDenying(r)} disabled={busy === r.id}>
                       {t('parental.requests.deny')}
@@ -68,20 +66,20 @@ export function ParentalRequests({ data, onChange }) {
                     </Button>
                   </div>
                 </div>
-              </Surface>
+              </article>
             ))
           )}
         </div>
       </section>
 
       {decided.length ? (
-        <section aria-labelledby="decided-title">
-          <SectionTitle as="h2">
-            <span id="decided-title">{t('parental.requests.decided')}</span>
-          </SectionTitle>
-          <div className={styles.grid} style={{ marginTop: 'var(--space-3)' }}>
+        <section aria-labelledby="decided-title" className={panelStyles.stack}>
+          <h2 id="decided-title" className={styles.sectionLabel}>
+            {t('parental.requests.decided')}
+          </h2>
+          <div className={styles.grid}>
             {decided.map((r) => (
-              <Surface key={r.id} tone="sunken">
+              <article key={r.id} className={panelStyles.card} data-tone={r.status === 'aprovada' ? 'success' : 'muted'}>
                 <div className={styles.request}>
                   <div className={styles.requestHead}>
                     <h3 className={styles.requestTitle}>{r.title}</h3>
@@ -90,7 +88,7 @@ export function ParentalRequests({ data, onChange }) {
                   <p className={styles.requestDetail}>{r.detail}</p>
                   <span className={styles.requestMeta}>{t('parental.requests.decidedAt', { when: fmtRelative(r.decidedAt || r.createdAt) })}</span>
                 </div>
-              </Surface>
+              </article>
             ))}
           </div>
         </section>

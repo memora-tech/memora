@@ -121,6 +121,7 @@ export const partner = {
   redemptions: {
     title: 'Resgates recentes',
     all: 'Todos os resgates',
+    total: { one: '{count} resgate no total', other: '{count} resgates no total' },
     status: {
       emitido: 'Emitido',
       utilizado: 'Utilizado',
@@ -173,5 +174,35 @@ export const partner = {
     perMonth: 'por mês',
     free: 'Incluído',
     rules: 'Mesma tabela desde o início. Contrato mínimo de 3 meses; multa de cancelamento igual a 1 mês do valor de posicionamento.'
+  },
+  shell: {
+    skip: 'Pular para o conteúdo',
+    menu: 'Menu de navegação',
+    close: 'Fechar menu',
+    groups: { performance: 'Desempenho', operation: 'Operação', commercial: 'Comercial' }
+  },
+  entry: {
+    kicker: 'Empresas parceiras',
+    headline: 'Seus cupons na carteira de quem estuda todo dia.',
+    highlights: ['Você só paga quando o aluno resgata.', 'Baixa do código pelo painel ou por API, uma única vez.', 'Conversão por perfil agregado, sem dado individual.'],
+    footnote: 'CNPJ verificado antes do primeiro acesso.'
+  },
+  pages: {
+    overviewLead: 'Situação da empresa, contrato e os resgates mais recentes.',
+    campaignsLead: 'Ofertas ativas na loja, estoque e desempenho de cada uma.',
+    validateLead: 'Cada código baixa uma única vez, por aqui ou pela API.',
+    reportLead: 'Uso confirmado e perfil agregado dos alunos que resgataram.',
+    positioningLead: 'Quanto custa cada nível de destaque na loja de cupons.',
+    kpiRedemptions: 'Resgates emitidos',
+    kpiUsed: 'Usados',
+    kpiActive: 'Campanhas ativas',
+    kpiStock: 'Estoque total',
+    useRate: '{pct}% de uso',
+    lowStock: { one: '{count} com estoque baixo', other: '{count} com estoque baixo' },
+    stockOk: 'estoque saudável',
+    paused: { one: '{count} pausada', other: '{count} pausadas' },
+    usedOfRedeemed: '{used} de {redeemed} usados',
+    funnel: 'Funil do período',
+    nextStep: 'Próximo passo'
   }
 }

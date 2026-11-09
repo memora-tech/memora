@@ -1,4 +1,5 @@
-import { Surface, EmptyState } from '../../design-system/index.js'
+import { Panel, ScreenHeader } from '../../design-system/index.js'
+import { PanelEmpty } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { fmtDateTime } from '../../lib/format.js'
 import styles from './parental.module.css'
@@ -8,11 +9,8 @@ export function ParentalActivity({ data }) {
   const history = data.history || []
   return (
     <>
-      <h1 className={styles.pageTitle}>{t('parental.activity.title')}</h1>
-      <Surface>
-        <div className={styles.cardHead}>
-          <h2 className={styles.cardTitle}>{t('parental.activity.history')}</h2>
-        </div>
+      <ScreenHeader size="compact" eyebrow={t('parental.shell.groups.follow')} title={t('parental.activity.title')} lead={t('parental.pages.activityLead')} />
+      <Panel tone="quiet" title={t('parental.activity.history')} icon="clock" labelledBy="history-title">
         {history.length ? (
           <ol className={styles.timeline}>
             {history.map((h, i) => (
@@ -23,9 +21,9 @@ export function ParentalActivity({ data }) {
             ))}
           </ol>
         ) : (
-          <EmptyState icon="clock" title={t('parental.activity.empty')} />
+          <PanelEmpty icon="clock" title={t('parental.activity.empty')} />
         )}
-      </Surface>
+      </Panel>
     </>
   )
 }

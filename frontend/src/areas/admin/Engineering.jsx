@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import styles from './admin.module.css'
-import { Button, Badge, Banner, Chip, Toggle, Surface, SectionTitle, Stat, ConfirmDialog, useToast } from '../../design-system/index.js'
+import { Button, Badge, Banner, Chip, Toggle, Panel, SectionTitle, ScreenHeader, StatTile, Stat, ConfirmDialog, useToast } from '../../design-system/index.js'
+import { useSectionEyebrow } from './AdminLayout.jsx'
+import { Sparkline, Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { adminApi } from '../../lib/api.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -17,6 +19,12 @@ export function Engineering() {
   useDocumentTitle(t('admin.engineering.title'))
   const state = useAdminData(() => adminApi.get('/admin/engineering/overview'))
   const data = state.data
+  const eyebrow = useSectionEyebrow('engenharia')
+  const costs = data?.aiCosts || []
+  const lastCost = costs[costs.length - 1]
+  const costShare = lastCost?.revenuePerActiveUserBRL ? Math.round((lastCost.costPerActiveUserBRL / lastCost.revenuePerActiveUserBRL) * 100) : 0
+  const costOver = lastCost ? costShare > (lastCost.thresholdPct || 60) : false
+  const slo = data?.slo
 
   const patchFlag = async (flag, body) => {
     setBusy(flag.key)
@@ -34,41 +42,109 @@ export function Engineering() {
 
   return (
     <>
-      <h1 className={styles.title}>{t('admin.engineering.title')}</h1>
+      <ScreenHeader
+        size="compact"
+        eyebrow={eyebrow}
+        title={t('admin.engineering.title')}
+        lead={t('admin.pages.engineering.lead')}
+        actions={
+          data ? (
+            <div className={styles.chips}>
+              {data.environments.map((env) => (
+                <Chip key={env} tone="neutral" icon="layers">
+                  {env}
+                </Chip>
+              ))}
+            </div>
+          ) : null
+        }
+      />
       <AdminState loading={state.loading} error={state.error} onRetry={() => state.run().catch(() => {})} />
       {data ? (
         <>
+          <div className={panelStyles.kpis}>
+            <StatTile
+              size="compact"
+              icon="zap"
+              label={t('admin.engineering.studyP95')}
+              value={`${slo.studyP95Ms} ms`}
+              note={
+                <Trend tone={slo.studyP95Ms <= slo.targetP95Ms ? 'success' : 'danger'} icon={slo.studyP95Ms <= slo.targetP95Ms ? 'check' : 'alert'}>
+                  {t('admin.engineering.target', { value: slo.targetP95Ms })}
+                </Trend>
+              }
+            />
+            <StatTile
+              size="compact"
+              icon="zap"
+              label={t('admin.engineering.studyP99')}
+              value={`${slo.studyP99Ms} ms`}
+              note={
+                <Trend tone={slo.studyP99Ms <= slo.targetP99Ms ? 'success' : 'danger'} icon={slo.studyP99Ms <= slo.targetP99Ms ? 'check' : 'alert'}>
+                  {t('admin.engineering.target', { value: slo.targetP99Ms })}
+                </Trend>
+              }
+            />
+            <StatTile size="compact" icon="shield" label={t('admin.engineering.availabilityCore')} value={`${slo.availabilityCore}%`} note={`${t('admin.engineering.availabilityOther')}: ${slo.availabilityOther}%`} />
+            {lastCost ? (
+              <StatTile
+                size="compact"
+                icon="sparkle"
+                label={t('admin.pages.engineering.kpiCost')}
+                value={fmtBRL(lastCost.costPerActiveUserBRL)}
+                note={
+                  <>
+                    <Trend tone={costOver ? 'warning' : 'success'}>{t('admin.pages.engineering.noteCost', { pct: costShare })}</Trend>
+                    <Sparkline values={costs.map((c) => c.costPerActiveUserBRL)} tone={costOver ? 'warning' : 'brand'} width={96} height={26} />
+                  </>
+                }
+              />
+            ) : null}
+          </div>
           <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <caption>{t('admin.engineering.flags')}</caption>
+            <table className={`${styles.table} ${styles.tableStack}`} role="table">
+              <caption>
+                {t('admin.engineering.flags')}
+                <small>{t('admin.engineering.killText')}</small>
+              </caption>
               <thead>
-                <tr>
-                  <th scope="col">{t('admin.engineering.flag')}</th>
-                  <th scope="col">{t('admin.engineering.integration')}</th>
-                  <th scope="col">{t('admin.common.status')}</th>
-                  <th scope="col">{t('admin.engineering.kill')}</th>
+                <tr role="row">
+                  <th scope="col" role="columnheader">
+                    {t('admin.engineering.flag')}
+                  </th>
+                  <th scope="col" role="columnheader">
+                    {t('admin.engineering.integration')}
+                  </th>
+                  <th scope="col" role="columnheader">
+                    {t('admin.common.status')}
+                  </th>
+                  <th scope="col" role="columnheader">
+                    {t('admin.engineering.kill')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {data.flags.map((f) => (
-                  <tr key={f.key}>
-                    <th scope="row">
+                  <tr key={f.key} role="row">
+                    <th scope="row" role="rowheader">
                       <div className={styles.cellStack}>
-                        <span>{f.label}</span>
+                        <span className={styles.cellTitle}>{f.label}</span>
                         <span className={`${styles.cellMeta} ${styles.mono}`}>{f.key}</span>
                       </div>
                     </th>
-                    <td>{f.integration}</td>
-                    <td>
+                    <td role="cell" data-label={t('admin.engineering.integration')}>
+                      {f.integration}
+                    </td>
+                    <td role="cell" data-label={t('admin.common.status')}>
                       <Toggle label={f.on ? t('admin.engineering.on') : t('admin.engineering.off')} checked={f.on} disabled={f.kill || busy === f.key} lockedReason={f.kill ? t('admin.engineering.killActive') : undefined} onChange={(v) => patchFlag(f, { on: v })} />
                     </td>
-                    <td>
+                    <td role="cell" data-label={t('admin.engineering.kill')}>
                       {f.kill ? (
                         <Button variant="soft" size="small" icon="refresh" onClick={() => patchFlag(f, { kill: false, on: true })} loading={busy === f.key}>
                           {t('admin.engineering.releaseKill')}
                         </Button>
                       ) : (
-                        <Button variant="danger" size="small" icon="zap" onClick={() => setKilling(f)}>
+                        <Button variant="ghost" size="small" icon="zap" onClick={() => setKilling(f)}>
                           {t('admin.engineering.activateKill')}
                         </Button>
                       )}
@@ -78,21 +154,25 @@ export function Engineering() {
               </tbody>
             </table>
           </div>
-          <Surface className={styles.stack}>
-            <SectionTitle as="h2">{t('admin.engineering.aiCosts')}</SectionTitle>
+          <Panel tone="quiet" title={t('admin.engineering.aiCosts')} icon="chart" labelledBy="aicost-title">
             <p className={styles.cellMeta}>{t('admin.engineering.aiCostsIntro', { pct: data.aiCosts[0]?.thresholdPct ?? 60 })}</p>
             <AiCostChart rows={data.aiCosts} />
-          </Surface>
+          </Panel>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <caption>
-                {t('admin.engineering.noaQuality')} · {t('admin.engineering.noaIntro')}
+                {t('admin.engineering.noaQuality')}
+                <small>{t('admin.engineering.noaIntro')}</small>
               </caption>
               <thead>
                 <tr>
                   <th scope="col">{t('admin.engineering.actionKey')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.acceptance')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.feedback')}</th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.acceptance')}
+                  </th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.feedback')}
+                  </th>
                   <th scope="col">{t('admin.engineering.window')}</th>
                   <th scope="col">{t('admin.common.status')}</th>
                 </tr>
@@ -100,11 +180,21 @@ export function Engineering() {
               <tbody>
                 {data.noaQuality.map((q) => (
                   <tr key={q.action}>
-                    <th scope="row" className={styles.mono}>{q.action}</th>
+                    <th scope="row" className={styles.mono}>
+                      {q.action}
+                    </th>
                     <td className={styles.num}>{Math.round(q.acceptance * 100)}%</td>
                     <td className={styles.num}>{Math.round(q.feedbackPositive * 100)}%</td>
                     <td>{t('admin.engineering.days', { count: q.days })}</td>
-                    <td>{q.flagged ? <Badge tone="danger" icon="alert">{t('admin.engineering.flagged')}</Badge> : <Badge tone="success">{t('admin.common.none')}</Badge>}</td>
+                    <td>
+                      {q.flagged ? (
+                        <Badge tone="danger" icon="alert">
+                          {t('admin.engineering.flagged')}
+                        </Badge>
+                      ) : (
+                        <span className={styles.cellMeta}>{t('admin.common.none')}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -112,24 +202,35 @@ export function Engineering() {
           </div>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <caption className={styles.caption}>
-                {t('admin.engineering.templates')} · {t('admin.engineering.templatesIntro', { pct: Math.round((data.notificationOptOutLimit ?? 0.02) * 100) })}
+              <caption>
+                {t('admin.engineering.templates')}
+                <small>{t('admin.engineering.templatesIntro', { pct: Math.round((data.notificationOptOutLimit ?? 0.02) * 100) })}</small>
               </caption>
               <thead>
                 <tr>
                   <th scope="col">{t('admin.engineering.template')}</th>
                   <th scope="col">{t('admin.engineering.channel')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.sent')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.delivered')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.acted')}</th>
-                  <th scope="col" className={styles.num}>{t('admin.engineering.optOut')}</th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.sent')}
+                  </th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.delivered')}
+                  </th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.acted')}
+                  </th>
+                  <th scope="col" className={styles.num}>
+                    {t('admin.engineering.optOut')}
+                  </th>
                   <th scope="col">{t('admin.common.status')}</th>
                 </tr>
               </thead>
               <tbody>
                 {(data.notificationTemplates || []).map((tpl) => (
                   <tr key={tpl.key}>
-                    <th scope="row" className={styles.mono}>{tpl.key}</th>
+                    <th scope="row" className={styles.mono}>
+                      {tpl.key}
+                    </th>
                     <td>
                       {t(`admin.engineering.channels.${tpl.channel}`)} · {t(`admin.engineering.categories.${tpl.category}`)}
                     </td>
@@ -159,17 +260,12 @@ export function Engineering() {
             </Banner>
           ) : null}
           <div className={styles.grid2}>
-            <Surface className={styles.stack}>
-              <SectionTitle as="h2">{t('admin.engineering.slo')}</SectionTitle>
+            <Panel tone="quiet" title={t('admin.engineering.slo')} icon="clock" labelledBy="slo-title">
               <div className={styles.statsRow}>
-                <Stat value={`${data.slo.studyP95Ms} ms`} label={`${t('admin.engineering.studyP95')} · ${t('admin.engineering.target', { value: data.slo.targetP95Ms })}`} />
-                <Stat value={`${data.slo.studyP99Ms} ms`} label={`${t('admin.engineering.studyP99')} · ${t('admin.engineering.target', { value: data.slo.targetP99Ms })}`} />
                 <Stat value={fmtNumber(data.slo.concurrent)} label={t('admin.engineering.concurrent')} />
                 <Stat value={fmtNumber(data.slo.ingestionPerSec)} label={t('admin.engineering.ingestion')} />
                 <Stat value={`${data.slo.generationP50Sec} s`} label={t('admin.engineering.generationP50')} />
                 <Stat value={`${data.slo.generationP95Sec} s`} label={t('admin.engineering.generationP95')} />
-                <Stat value={`${data.slo.availabilityCore}%`} label={t('admin.engineering.availabilityCore')} />
-                <Stat value={`${data.slo.availabilityOther}%`} label={t('admin.engineering.availabilityOther')} />
               </div>
               <div className={styles.chips}>
                 <Chip tone="neutral" icon="clock">
@@ -182,15 +278,9 @@ export function Engineering() {
                   {t('admin.engineering.lastRestore')}: {fmtDate(data.slo.lastRestoreTest)}
                 </Chip>
               </div>
-            </Surface>
-            <Surface className={styles.stack}>
-              <SectionTitle as="h2">{t('admin.engineering.environments')}</SectionTitle>
+            </Panel>
+            <Panel tone="quiet" title={t('admin.engineering.environments')} icon="layers" labelledBy="env-title">
               <div className={styles.chips}>
-                {data.environments.map((env) => (
-                  <Chip key={env} tone="brand" icon="layers">
-                    {env}
-                  </Chip>
-                ))}
                 <Chip tone="neutral" icon="refresh">
                   {t('admin.engineering.rollback', { minutes: data.rollbackMinutes })}
                 </Chip>
@@ -210,7 +300,7 @@ export function Engineering() {
                 <Stat value={data.queues.generation.free} label={t('admin.engineering.queueFree')} />
                 <Stat value={data.queues.generation.deadLetter} label={t('admin.engineering.deadLetter')} />
               </div>
-            </Surface>
+            </Panel>
           </div>
         </>
       ) : null}
@@ -223,8 +313,8 @@ export function Engineering() {
 
 function AiCostChart({ rows }) {
   const t = useT()
-  const width = 560
-  const height = 200
+  const width = 960
+  const height = 240
   const pad = { top: 16, right: 12, bottom: 36, left: 44 }
   const innerW = width - pad.left - pad.right
   const innerH = height - pad.top - pad.bottom
@@ -243,50 +333,52 @@ function AiCostChart({ rows }) {
           {t('admin.engineering.aboveThreshold', { count: above })}
         </Banner>
       ) : null}
-      <svg viewBox={`0 0 ${width} ${height}`} className={styles.chart} role="img" aria-label={t('admin.engineering.aiCosts')}>
-        <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + innerH} stroke="var(--color-border)" />
-        <line x1={pad.left} y1={pad.top + innerH} x2={width - pad.right} y2={pad.top + innerH} stroke="var(--color-border)" />
-        {[0, 0.5, 1].map((f) => (
-          <g key={f}>
-            <text x={pad.left - 6} y={y(max * f) + 4} textAnchor="end" fontSize="10" fill="var(--color-text-secondary)">
-              {fmtBRL(max * f)}
-            </text>
-          </g>
-        ))}
-        {rows.map((r, i) => {
-          const over = r.costPerActiveUserBRL > threshold
-          const x = pad.left + i * barW + barW * 0.15
-          const h = pad.top + innerH - y(r.costPerActiveUserBRL)
-          return (
-            <g key={r.day}>
-              <rect x={x} y={y(r.costPerActiveUserBRL)} width={barW * 0.7} height={h} rx="3" fill={over ? 'var(--color-warning)' : 'var(--color-accent)'}>
-                <title>
-                  {fmtDateShort(r.day)}: {fmtBRL(r.costPerActiveUserBRL)}
-                </title>
-              </rect>
-              {i % 2 === 0 ? (
-                <text x={x + barW * 0.35} y={pad.top + innerH + 14} textAnchor="middle" fontSize="10" fill="var(--color-text-secondary)">
-                  {fmtDateShort(r.day)}
-                </text>
-              ) : null}
+      <div className={styles.chartScroll}>
+        <svg viewBox={`0 0 ${width} ${height}`} className={styles.chart} role="img" aria-label={t('admin.engineering.aiCosts')}>
+          <line x1={pad.left} y1={pad.top + innerH} x2={width - pad.right} y2={pad.top + innerH} stroke="var(--color-border)" />
+          {[0, 0.5, 1].map((f) => (
+            <g key={f}>
+              {f ? <line x1={pad.left} y1={y(max * f)} x2={width - pad.right} y2={y(max * f)} stroke="var(--gray-200)" strokeDasharray="2 4" /> : null}
+              <text x={pad.left - 6} y={y(max * f) + 4} textAnchor="end" fontSize="10" fill="var(--color-text-secondary)">
+                {fmtBRL(max * f)}
+              </text>
             </g>
-          )
-        })}
-        <line x1={pad.left} y1={y(threshold)} x2={width - pad.right} y2={y(threshold)} stroke="var(--color-danger)" strokeDasharray="6 4" strokeWidth="1.5" />
-        <text x={width - pad.right} y={y(threshold) - 4} textAnchor="end" fontSize="10" fill="var(--color-danger)">
-          {t('admin.engineering.threshold')} {thresholdPct}% · {fmtBRL(threshold)}
-        </text>
-        <line x1={pad.left} y1={y(revenue)} x2={width - pad.right} y2={y(revenue)} stroke="var(--color-success)" strokeDasharray="2 4" />
-        <text x={width - pad.right} y={y(revenue) - 4} textAnchor="end" fontSize="10" fill="var(--color-success)">
-          {t('admin.engineering.revenue')} {fmtBRL(revenue)}
-        </text>
-      </svg>
+          ))}
+          {rows.map((r, i) => {
+            const over = r.costPerActiveUserBRL > threshold
+            const x = pad.left + i * barW + barW * 0.15
+            const h = pad.top + innerH - y(r.costPerActiveUserBRL)
+            return (
+              <g key={r.day}>
+                <rect x={x} y={y(r.costPerActiveUserBRL)} width={barW * 0.7} height={h} rx="3" fill={over ? 'var(--orange-500)' : 'var(--brand-500)'} opacity={over ? 1 : 0.85}>
+                  <title>
+                    {fmtDateShort(r.day)}: {fmtBRL(r.costPerActiveUserBRL)}
+                  </title>
+                </rect>
+                {i % 2 === 0 ? (
+                  <text x={x + barW * 0.35} y={pad.top + innerH + 14} textAnchor="middle" fontSize="10" fill="var(--color-text-secondary)">
+                    {fmtDateShort(r.day)}
+                  </text>
+                ) : null}
+              </g>
+            )
+          })}
+          <line x1={pad.left} y1={y(threshold)} x2={width - pad.right} y2={y(threshold)} stroke="var(--color-danger)" strokeDasharray="6 4" strokeWidth="1.5" />
+          <text x={width - pad.right} y={y(threshold) - 4} textAnchor="end" fontSize="10" fill="var(--color-danger)">
+            {t('admin.engineering.threshold')} {thresholdPct}% · {fmtBRL(threshold)}
+          </text>
+          <line x1={pad.left} y1={y(revenue)} x2={width - pad.right} y2={y(revenue)} stroke="var(--color-success)" strokeDasharray="2 4" />
+          <text x={width - pad.right} y={y(revenue) - 4} textAnchor="end" fontSize="10" fill="var(--color-success)">
+            {t('admin.engineering.revenue')} {fmtBRL(revenue)}
+          </text>
+        </svg>
+      </div>
       <div className={styles.legend}>
         <span>
-          <i className={styles.swatch} style={{ background: 'var(--color-accent)' }} /> {t('admin.engineering.cost')}
+          <i className={styles.swatch} style={{ background: 'var(--brand-500)' }} /> {t('admin.engineering.cost')}
         </span>
         <span>
-          <i className={styles.swatch} style={{ background: 'var(--color-warning)' }} /> {t('admin.engineering.aboveThreshold', { count: above })}
+          <i className={styles.swatch} style={{ background: 'var(--orange-500)' }} /> {t('admin.engineering.aboveThreshold', { count: above })}
         </span>
         <span>
           <i className={styles.swatch} style={{ background: 'var(--color-danger)' }} /> {t('admin.engineering.threshold')}

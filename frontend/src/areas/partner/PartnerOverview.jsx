@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { partnerApi } from '../../lib/api.js'
-import { Surface, Badge, Banner, Button, ConfirmDialog, Icon, ListItem, EmptyState, Stat, useToast } from '../../design-system/index.js'
+import { Panel, ScreenHeader, StatTile, Badge, Banner, Button, ConfirmDialog, Icon, useToast } from '../../design-system/index.js'
+import { Meter, PanelEmpty, Trend, panelStyles } from '../shared/PanelShell.jsx'
 import { useT } from '../../i18n/index.js'
 import { fmtBRL, fmtDate, fmtRelative, fmtNumber } from '../../lib/format.js'
 import styles from './partner.module.css'
@@ -32,10 +33,17 @@ export function PartnerOverview({ data, onChange }) {
   }
 
   const recent = redemptions.slice(0, 5)
+  const campaigns = data.campaigns || []
+  const used = redemptions.filter((r) => r.status === 'utilizado').length
+  const usePct = redemptions.length ? Math.round((used / redemptions.length) * 100) : 0
+  const active = campaigns.filter((c) => !c.paused && c.stock > 0).length
+  const paused = campaigns.filter((c) => c.paused).length
+  const stock = campaigns.reduce((sum, c) => sum + Math.max(0, c.stock || 0), 0)
+  const low = campaigns.filter((c) => c.stock > 0 && c.stock <= 3).length
 
   return (
     <>
-      <h1 className={styles.pageTitle}>{t('partner.nav.overview')}</h1>
+      <ScreenHeader size="compact" eyebrow={t('partner.shell.groups.performance')} title={t('partner.nav.overview')} lead={t('partner.pages.overviewLead')} />
 
       {alerts.length ? (
         <div className={styles.alerts} aria-label={t('partner.alerts.title')}>
@@ -49,11 +57,57 @@ export function PartnerOverview({ data, onChange }) {
         </div>
       ) : null}
 
-      <div className={`${styles.grid} ${styles.grid2}`}>
-        <Surface>
+      <div className={panelStyles.kpis}>
+        <StatTile size="compact" icon="gift" label={t('partner.pages.kpiRedemptions')} value={fmtNumber(redemptions.length)} />
+        <StatTile
+          size="compact"
+          icon="check"
+          label={t('partner.pages.kpiUsed')}
+          value={fmtNumber(used)}
+          note={
+            <>
+              <Meter value={usePct} tone={usePct >= 50 ? 'success' : 'warning'} label={t('partner.pages.useRate', { pct: usePct })} />
+              <span>{t('partner.pages.useRate', { pct: usePct })}</span>
+            </>
+          }
+        />
+        <StatTile
+          size="compact"
+          icon="star"
+          label={t('partner.pages.kpiActive')}
+          value={fmtNumber(active)}
+          note={
+            paused ? (
+              <Trend tone="neutral" icon="pause">
+                {t('partner.pages.paused', { count: paused })}
+              </Trend>
+            ) : null
+          }
+        />
+        <StatTile
+          size="compact"
+          icon="layers"
+          label={t('partner.pages.kpiStock')}
+          value={fmtNumber(stock)}
+          note={
+            low ? (
+              <Trend tone="warning" icon="alert">
+                {t('partner.pages.lowStock', { count: low })}
+              </Trend>
+            ) : (
+              <Trend tone="success" icon="check">
+                {t('partner.pages.stockOk')}
+              </Trend>
+            )
+          }
+        />
+      </div>
+
+      <div className={panelStyles.grid}>
+        <Panel tone="quiet" title={t('partner.company.title')} icon="building" labelledBy="company-title">
           <div className={styles.cardHead}>
             <div>
-              <h2 className={styles.cardTitle}>{partner.name}</h2>
+              <h3 className={styles.cardTitle}>{partner.name}</h3>
               <p className={styles.cardSub}>
                 {t('partner.company.cnpj', { cnpj: partner.cnpj })} · {partner.category}
               </p>
@@ -85,15 +139,19 @@ export function PartnerOverview({ data, onChange }) {
               </dd>
             </dl>
           ) : null}
-        </Surface>
+        </Panel>
 
-        <Surface>
-          <div className={styles.cardHead}>
-            <h2 className={styles.cardTitle}>{t('partner.contract.title')}</h2>
+        <Panel
+          tone="quiet"
+          title={t('partner.contract.title')}
+          icon="file"
+          labelledBy="contract-title"
+          action={
             <Badge tone={contract.acceptedDigitally ? 'success' : 'warning'} icon={contract.acceptedDigitally ? 'check' : 'edit'}>
               {contract.acceptedDigitally ? (contract.acceptedAt ? t('partner.contract.accepted', { date: fmtDate(contract.acceptedAt) }) : t('partner.contract.acceptedNoDate')) : t('partner.contract.pending')}
             </Badge>
-          </div>
+          }
+        >
           <dl className={styles.definitions}>
             <dt>{t('partner.contract.startedLabel')}</dt>
             <dd>{fmtDate(contract.startedAt)}</dd>
@@ -102,11 +160,12 @@ export function PartnerOverview({ data, onChange }) {
             <dt>{t('partner.nav.positioning')}</dt>
             <dd>{contract.positioningTier ? `${contract.positioningTier} · ${t('partner.contract.monthly', { value: fmtBRL(contract.positioningMonthlyBRL) })}` : t('partner.contract.noTier')}</dd>
           </dl>
-          <div className={styles.notes} style={{ marginTop: 'var(--space-4)' }}>
-            <Banner tone="neutral" icon="info">
+          <p className={panelStyles.callout}>
+            <Icon name="info" size={18} />
+            <span>
               {t('partner.contract.minMonths', { months: contract.minMonths })}. {t('partner.contract.penalty', { penalty: contract.penalty })}.
-            </Banner>
-          </div>
+            </span>
+          </p>
           {!contract.acceptedDigitally ? (
             <div className={styles.actions}>
               <Button icon="check" onClick={() => setConfirming(true)}>
@@ -115,52 +174,64 @@ export function PartnerOverview({ data, onChange }) {
               <p className={styles.cardSub}>{t('partner.contract.external')}</p>
             </div>
           ) : null}
-        </Surface>
+        </Panel>
       </div>
 
-      <div className={`${styles.grid} ${styles.grid2}`}>
-        <Surface tone="brand">
-          <div className={styles.cardHead}>
-            <h2 className={styles.cardTitle}>{t('partner.billing.title')}</h2>
-          </div>
+      <div className={panelStyles.grid}>
+        <Panel tone="quiet" title={t('partner.billing.title')} icon="receipt" labelledBy="billing-title">
           <p className={styles.cardSub}>{billing.model}</p>
-          <div className={styles.kpis} style={{ marginTop: 'var(--space-3)' }}>
-            <Stat value={fmtBRL(billing.cpaBRL)} label={t('partner.billing.cpa')} />
-            <Stat value={`${billing.commissionPct}%`} label={t('partner.billing.commission')} />
-            <Stat value={billing.positioningMonthlyBRL ? fmtBRL(billing.positioningMonthlyBRL) : t('partner.billing.none')} label={t('partner.billing.positioning')} />
-          </div>
-          <p className={styles.cardSub} style={{ marginTop: 'var(--space-3)' }}>
-            {t('partner.billing.cpaHelp')}
-          </p>
-        </Surface>
+          <dl className={styles.billing}>
+            <div>
+              <dt>{t('partner.billing.cpa')}</dt>
+              <dd>{fmtBRL(billing.cpaBRL)}</dd>
+            </div>
+            <div>
+              <dt>{t('partner.billing.commission')}</dt>
+              <dd>{`${billing.commissionPct}%`}</dd>
+            </div>
+            <div>
+              <dt>{t('partner.billing.positioning')}</dt>
+              <dd>{billing.positioningMonthlyBRL ? fmtBRL(billing.positioningMonthlyBRL) : t('partner.billing.none')}</dd>
+            </div>
+          </dl>
+          <p className={styles.cardSub}>{t('partner.billing.cpaHelp')}</p>
+        </Panel>
 
-        <Surface>
-          <div className={styles.cardHead}>
-            <h2 className={styles.cardTitle}>{t('partner.redemptions.title')}</h2>
+        <Panel
+          tone="quiet"
+          title={t('partner.redemptions.title')}
+          icon="qr"
+          labelledBy="recent-title"
+          action={
             <Button variant="text" size="small" to="/parceiro/painel/relatorio" iconRight="chevronRight">
               {t('partner.nav.report')}
             </Button>
-          </div>
+          }
+        >
           {recent.length ? (
-            <div className={styles.list}>
+            <ul className={styles.redemptions}>
               {recent.map((r) => (
-                <ListItem
-                  key={r.id}
-                  icon="qr"
-                  title={<span className="tabnum">{r.code}</span>}
-                  meta={r.status === 'utilizado' && r.usedAt ? t('partner.redemptions.usedAt', { date: fmtDate(r.usedAt) }) : r.status === 'expirado' ? t('partner.redemptions.redeemedAt', { when: fmtRelative(r.redeemedAt) }) : t('partner.redemptions.validUntil', { date: fmtDate(r.validUntil) })}
-                  trailing={<Badge tone={STATUS_TONE[r.status] || 'neutral'}>{t(`partner.redemptions.status.${r.status}`)}</Badge>}
-                  chevron={false}
-                />
+                <li key={r.id} className={styles.redemption}>
+                  <span className={styles.redemptionIcon} aria-hidden="true">
+                    <Icon name="qr" size={18} />
+                  </span>
+                  <span className={styles.redemptionText}>
+                    <span className={styles.redemptionCode}>{r.code}</span>
+                    <span className={styles.redemptionMeta}>{r.status === 'utilizado' && r.usedAt ? t('partner.redemptions.usedAt', { date: fmtDate(r.usedAt) }) : r.status === 'expirado' ? t('partner.redemptions.redeemedAt', { when: fmtRelative(r.redeemedAt) }) : t('partner.redemptions.validUntil', { date: fmtDate(r.validUntil) })}</span>
+                  </span>
+                  <span className={styles.redemptionStatus}>
+                    <Badge tone={STATUS_TONE[r.status] || 'neutral'}>{t(`partner.redemptions.status.${r.status}`)}</Badge>
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : (
-            <EmptyState icon="qr" title={t('partner.redemptions.empty')} />
+            <PanelEmpty icon="qr" title={t('partner.redemptions.empty')} />
           )}
-          <p className={styles.cardSub} style={{ marginTop: 'var(--space-3)' }}>
-            {fmtNumber(redemptions.length)} {t('partner.redemptions.all').toLowerCase()} · <Link to="/parceiro/painel/validar">{t('partner.nav.validate')}</Link>
+          <p className={styles.cardSub}>
+            {t('partner.redemptions.total', { count: redemptions.length })} · <Link to="/parceiro/painel/validar">{t('partner.nav.validate')}</Link>
           </p>
-        </Surface>
+        </Panel>
       </div>
 
       <ConfirmDialog open={confirming} onClose={() => setConfirming(false)} onConfirm={accept} title={t('partner.contract.confirmTitle')} confirmLabel={t('partner.contract.confirm')} cancelLabel={t('partner.contract.cancel')} loading={accepting}>
