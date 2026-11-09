@@ -112,6 +112,30 @@ export function authorPublic(state, author, viewerId) {
   return { ...author, following }
 }
 
+export function commentView(comment, viewerId) {
+  const likes = comment.likes || []
+  return {
+    id: comment.id,
+    authorName: comment.authorName,
+    authorId: comment.authorId,
+    text: comment.text,
+    createdAt: comment.createdAt,
+    likeCount: likes.length + (comment.baseLikes || 0),
+    liked: likes.includes(viewerId),
+    isMine: comment.authorId === viewerId,
+    ...(comment.replies ? { deckId: comment.deckId ?? null, materialId: comment.materialId ?? null, replies: comment.replies.map((r) => commentView(r, viewerId)) } : {})
+  }
+}
+
+export function commentPreviewOf(state, match, viewerId) {
+  const threads = state.community.comments.filter(match)
+  if (!threads.length) return null
+  const score = (c) => (c.likes?.length || 0) + (c.baseLikes || 0) + c.replies.length * 2
+  const top = threads.slice().sort((a, b) => score(b) - score(a) || b.createdAt.localeCompare(a.createdAt))[0]
+  const { replies, ...rest } = commentView(top, viewerId)
+  return { ...rest, replyCount: replies.length }
+}
+
 export function communityDeckPublic(state, deck, viewerId) {
   const author = state.community.authors.find((a) => a.id === deck.authorId)
   const cards = state.community.cards.filter((c) => c.deckId === deck.id)
@@ -129,6 +153,7 @@ export function communityDeckPublic(state, deck, viewerId) {
     author: author ? authorPublic(state, author, viewerId) : null,
     cardCount: total,
     commentCount,
+    commentPreview: commentPreviewOf(state, (c) => c.deckId === deck.id, viewerId),
     viewer: { favorited, voted, canVote, answered, total, voteRule: { minPct: 30, minCards: 20 }, myReactions, cloned }
   }
 }

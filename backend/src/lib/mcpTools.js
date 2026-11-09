@@ -1,7 +1,7 @@
 import { id, nowIso } from './ids.js'
 import { appendAudit } from './audit.js'
 import { categoryName, communityDeckPublic } from './helpers.js'
-import { KINDS, KIND_LABELS, MATERIAL_LIMITS, MaterialInputError, createMaterial, materialPublic, normalizeMaterialInput, publishedMaterials, countNodes } from './materials.js'
+import { KINDS, KIND_LABELS, MATERIAL_LIMITS, MaterialInputError, createMaterial, materialPublic, normalizeMaterialInput, publishedMaterials, countNodes, resolveRemix } from './materials.js'
 
 export const MCP_LIMITS = { writesPerDay: 50, cardsPerCall: 200, cardChars: 1000, activeConnections: 5 }
 
@@ -13,7 +13,8 @@ const commonProps = {
   titulo: { type: 'string', description: 'Título curto e específico.', maxLength: MATERIAL_LIMITS.titleChars },
   categoria: { type: 'string', description: CATEGORY_HINT },
   tags: { type: 'array', items: { type: 'string' }, maxItems: MATERIAL_LIMITS.tags, description: 'Até 8 palavras-chave em minúsculas.' },
-  idioma: { type: 'string', enum: ['pt-BR', 'en'], description: 'Idioma do conteúdo. Padrão pt-BR.' }
+  idioma: { type: 'string', enum: ['pt-BR', 'en'], description: 'Idioma do conteúdo. Padrão pt-BR.' },
+  remix_de: { type: 'string', description: 'Id do conteúdo da comunidade usado como base (retornado por buscar_comunidade). O autor original recebe crédito visível.' }
 }
 
 const sourcesProp = {
@@ -63,7 +64,7 @@ const TOOLS = [
   {
     name: 'salvar_mapa_mental',
     title: 'Salvar mapa mental no Memora',
-    description: `Guarda um mapa mental como árvore: um tema central com ramos e sub-ramos (até ${MATERIAL_LIMITS.mapDepth} níveis e ${MATERIAL_LIMITS.mapNodes} nós). Rótulos curtos; detalhe vai em "nota".`,
+    description: `Guarda um mapa mental como árvore: um tema central com ramos e sub-ramos (até ${MATERIAL_LIMITS.mapDepth} níveis e ${MATERIAL_LIMITS.mapNodes} nós). Rótulos curtos; detalhe vai em "nota". Para um diagrama de fluxo ou processo, envie layout "diagrama": cada ramo vira uma etapa, na ordem.`,
     write: true,
     inputSchema: {
       type: 'object',
@@ -81,9 +82,67 @@ const TOOLS = [
       properties: {
         ...commonProps,
         descricao: { type: 'string', maxLength: MATERIAL_LIMITS.leadChars },
+        layout: { type: 'string', enum: ['mapa', 'diagrama'], description: 'mapa (padrão) ou diagrama de etapas.' },
         tema_central: { $ref: '#/$defs/no' }
       },
       required: ['titulo', 'tema_central']
+    }
+  },
+  {
+    name: 'salvar_quiz',
+    title: 'Salvar quiz no Memora',
+    description: `Guarda um quiz de múltipla escolha (até ${MATERIAL_LIMITS.quizQuestions} questões, de 2 a ${MATERIAL_LIMITS.quizOptions} alternativas cada). Enunciado direto, uma só alternativa correta, distratores plausíveis e explicação curta do porquê.`,
+    write: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...commonProps,
+        descricao: { type: 'string', maxLength: MATERIAL_LIMITS.leadChars },
+        perguntas: {
+          type: 'array',
+          minItems: 1,
+          maxItems: MATERIAL_LIMITS.quizQuestions,
+          items: {
+            type: 'object',
+            properties: {
+              enunciado: { type: 'string', maxLength: MATERIAL_LIMITS.promptChars },
+              alternativas: { type: 'array', minItems: 2, maxItems: MATERIAL_LIMITS.quizOptions, items: { type: 'string', maxLength: MATERIAL_LIMITS.optionChars } },
+              correta: { type: 'integer', minimum: 0, description: 'Índice da alternativa correta, começando em 0.' },
+              explicacao: { type: 'string', maxLength: MATERIAL_LIMITS.explanationChars }
+            },
+            required: ['enunciado', 'alternativas', 'correta']
+          }
+        }
+      },
+      required: ['titulo', 'perguntas']
+    }
+  },
+  {
+    name: 'salvar_linha_do_tempo',
+    title: 'Salvar linha do tempo no Memora',
+    description: `Guarda uma linha do tempo com marcos em ordem cronológica (de 2 a ${MATERIAL_LIMITS.timelineEvents}). Cada marco tem quando (ano, data ou período), um título curto e uma nota opcional.`,
+    write: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...commonProps,
+        descricao: { type: 'string', maxLength: MATERIAL_LIMITS.leadChars },
+        eventos: {
+          type: 'array',
+          minItems: 2,
+          maxItems: MATERIAL_LIMITS.timelineEvents,
+          items: {
+            type: 'object',
+            properties: {
+              quando: { type: 'string', maxLength: MATERIAL_LIMITS.whenChars, description: 'Ex.: 1822, 15/11/1889, séc. XVIII.' },
+              titulo: { type: 'string', maxLength: MATERIAL_LIMITS.labelChars },
+              nota: { type: 'string', maxLength: MATERIAL_LIMITS.noteChars }
+            },
+            required: ['quando', 'titulo']
+          }
+        }
+      },
+      required: ['titulo', 'eventos']
     }
   },
   {
@@ -107,7 +166,7 @@ const TOOLS = [
   {
     name: 'buscar_comunidade',
     title: 'Buscar na comunidade Memora',
-    description: 'Procura flashcards, resumos, mapas mentais e notícias publicados pela comunidade. Útil para reaproveitar material antes de gerar algo novo.',
+    description: 'Procura flashcards, resumos, mapas mentais, quizzes, linhas do tempo e notícias publicados pela comunidade. Útil para reaproveitar material antes de gerar algo novo.',
     readOnly: true,
     inputSchema: {
       type: 'object',
@@ -123,7 +182,7 @@ const TOOLS = [
   {
     name: 'ler_conteudo',
     title: 'Ler conteúdo da comunidade',
-    description: 'Traz o conteúdo completo de um item da comunidade (cards de um deck, texto de resumo ou notícia, árvore de mapa mental) para usar na conversa. Use o id retornado por buscar_comunidade.',
+    description: 'Traz o conteúdo completo de um item da comunidade (cards de um deck, texto de resumo ou notícia, árvore de mapa mental, questões de quiz, marcos de linha do tempo) para usar na conversa. Use o id retornado por buscar_comunidade.',
     readOnly: true,
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] }
   },
@@ -156,7 +215,10 @@ export function toolCatalog() {
 
 export class ToolInputError extends Error {}
 
-const str = (value, max) => String(value ?? '').trim().slice(0, max)
+const str = (value, max) =>
+  String(value ?? '')
+    .trim()
+    .slice(0, max)
 
 function writesToday(state, userId) {
   const since = Date.now() - 86400000
@@ -193,7 +255,12 @@ function saveFlashcards(ctx, args) {
     ownerId: user.id,
     name: title,
     categoryId: categoryOf(state, args.categoria),
-    tags: Array.isArray(args.tags) ? args.tags.map((t) => str(t, 40).toLowerCase()).filter(Boolean).slice(0, 8) : [],
+    tags: Array.isArray(args.tags)
+      ? args.tags
+          .map((t) => str(t, 40).toLowerCase())
+          .filter(Boolean)
+          .slice(0, 8)
+      : [],
     difficulty: ['facil', 'medio', 'dificil'].includes(args.dificuldade) ? args.dificuldade : 'medio',
     lang,
     difficult: false,
@@ -207,11 +274,24 @@ function saveFlashcards(ctx, args) {
     mcpReview: 'pendente',
     createdAt: nowIso(),
     lastStudiedAt: null,
-    publication: { status: 'nao_publicado' }
+    publication: { status: 'nao_publicado' },
+    ...(resolveRemix(state, user.id, args.remix_de) ? { remixOf: resolveRemix(state, user.id, args.remix_de) } : {})
   }
   state.decks.push(deck)
   clean.forEach((c, i) => {
-    state.cards.push({ id: id('c'), deckId: deck.id, type: 'text', front: c.front, back: c.back, media: null, lang, origin: { document: `Conversa em ${connection.name}`, page: null, excerpt: null, model: connection.client || null, promptVersion: null }, uncertain: false, sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 }, order: i })
+    state.cards.push({
+      id: id('c'),
+      deckId: deck.id,
+      type: 'text',
+      front: c.front,
+      back: c.back,
+      media: null,
+      lang,
+      origin: { document: `Conversa em ${connection.name}`, page: null, excerpt: null, model: connection.client || null, promptVersion: null },
+      uncertain: false,
+      sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 },
+      order: i
+    })
   })
   user.publicProfile.cardsGenerated = (user.publicProfile.cardsGenerated || 0) + clean.length
   const link = `${appUrl()}/app/recebidos`
@@ -235,7 +315,10 @@ function saveMaterial(kind) {
       sources: args.fontes,
       root: args.tema_central,
       url: args.url_original,
-      outlet: args.veiculo
+      outlet: args.veiculo,
+      layout: args.layout,
+      questions: args.perguntas,
+      events: args.eventos
     }
     let data
     try {
@@ -246,9 +329,11 @@ function saveMaterial(kind) {
     }
     const material = createMaterial(state, { ownerId: user.id, kind, data, source: sourceOf(connection) })
     material.mcpReview = 'pendente'
+    const remix = resolveRemix(state, user.id, args.remix_de)
+    if (remix) material.remixOf = remix
     const label = KIND_LABELS[kind]
     const link = `${appUrl()}/app/recebidos`
-    const size = kind === 'mapa' ? `${countNodes(material.body.root)} nós` : `${String(material.body.markdown).split(/\s+/).filter(Boolean).length} palavras`
+    const size = kind === 'mapa' ? `${countNodes(material.body.root)} nós` : kind === 'quiz' ? `${material.body.questions.length} questões` : kind === 'linha' ? `${material.body.events.length} marcos` : `${String(material.body.markdown).split(/\s+/).filter(Boolean).length} palavras`
     return {
       target: { type: 'material', id: material.id, title: material.title },
       text: `${label} "${material.title}" enviado ao Memora (${size}). ${PENDING_MESSAGE}\nRevisar: ${link}`,
@@ -315,6 +400,14 @@ function readContent(ctx, args) {
   if (m.kind === 'mapa') {
     return { text: `${header}\n\n${renderTree(m.body.root).join('\n')}`, structured: { id: m.id, tipo: m.kind, titulo: m.title, tema_central: m.body.root } }
   }
+  if (m.kind === 'quiz') {
+    const letters = 'ABCDE'
+    const text = m.body.questions.map((q, i) => `${i + 1}. ${q.prompt}\n${q.options.map((o, j) => `   ${letters[j]}) ${o}`).join('\n')}\n   Gabarito: ${letters[q.answer]}${q.explanation ? `. ${q.explanation}` : ''}`).join('\n\n')
+    return { text: `${header}\n\n${text}`, structured: { id: m.id, tipo: m.kind, titulo: m.title, perguntas: m.body.questions.map((q) => ({ enunciado: q.prompt, alternativas: q.options, correta: q.answer, explicacao: q.explanation || null })) } }
+  }
+  if (m.kind === 'linha') {
+    return { text: `${header}\n\n${m.body.events.map((e) => `- ${e.when}: ${e.label}${e.note ? `. ${e.note}` : ''}`).join('\n')}`, structured: { id: m.id, tipo: m.kind, titulo: m.title, eventos: m.body.events.map((e) => ({ quando: e.when, titulo: e.label, nota: e.note || null })) } }
+  }
   const sources = [...(m.body.url ? [`${m.body.outlet || 'Original'}: ${m.body.url}`] : []), ...(m.body.sources || []).map((s) => (s.url ? `${s.title}: ${s.url}` : s.title))]
   return {
     text: `${header}\n\n${m.body.markdown}${sources.length ? `\n\nFontes:\n${sources.map((s) => `- ${s}`).join('\n')}` : ''}`,
@@ -325,12 +418,8 @@ function readContent(ctx, args) {
 function myContents(ctx, args) {
   const { state, user } = ctx
   const limit = Math.min(50, Math.max(1, Number(args.limite) || 15))
-  const decks = state.decks
-    .filter((d) => d.ownerId === user.id && !d.deletedAt)
-    .map((d) => ({ id: d.id, tipo: 'flashcards', titulo: d.name, status: d.publication?.status || 'nao_publicado', criadoEm: d.createdAt, link: `${appUrl()}/app/decks/${d.id}` }))
-  const materials = state.materials
-    .filter((m) => m.ownerId === user.id && !m.deletedAt)
-    .map((m) => ({ id: m.id, tipo: m.kind, titulo: m.title, status: m.status, criadoEm: m.createdAt, link: `${appUrl()}/app/comunidade/conteudo/${m.id}` }))
+  const decks = state.decks.filter((d) => d.ownerId === user.id && !d.deletedAt).map((d) => ({ id: d.id, tipo: 'flashcards', titulo: d.name, status: d.publication?.status || 'nao_publicado', criadoEm: d.createdAt, link: `${appUrl()}/app/decks/${d.id}` }))
+  const materials = state.materials.filter((m) => m.ownerId === user.id && !m.deletedAt).map((m) => ({ id: m.id, tipo: m.kind, titulo: m.title, status: m.status, criadoEm: m.createdAt, link: `${appUrl()}/app/comunidade/conteudo/${m.id}` }))
   const items = [...materials, ...decks].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm)).slice(0, limit)
   return {
     text: items.length ? items.map((i) => `- [${KIND_LABELS[i.tipo]}] ${i.titulo} (${i.status})`).join('\n') : 'Nada guardado ainda.',
@@ -341,7 +430,7 @@ function myContents(ctx, args) {
 function listCategories(ctx) {
   const categories = ctx.state.categories.map((c) => ({ id: c.id, nome: c.name }))
   return {
-    text: `Categorias: ${categories.map((c) => `${c.id} (${c.nome})`).join(', ')}.\nTipos: flashcards, resumo, mapa (mapa mental), noticia.`,
+    text: `Categorias: ${categories.map((c) => `${c.id} (${c.nome})`).join(', ')}.\nTipos: flashcards, resumo, mapa (mapa mental ou diagrama), noticia, quiz, linha (linha do tempo).`,
     structured: { categorias: categories, tipos: ['flashcards', ...KINDS] }
   }
 }
@@ -351,6 +440,8 @@ const HANDLERS = {
   salvar_resumo: saveMaterial('resumo'),
   salvar_mapa_mental: saveMaterial('mapa'),
   salvar_noticia: saveMaterial('noticia'),
+  salvar_quiz: saveMaterial('quiz'),
+  salvar_linha_do_tempo: saveMaterial('linha'),
   buscar_comunidade: searchCommunity,
   ler_conteudo: readContent,
   meus_conteudos: myContents,

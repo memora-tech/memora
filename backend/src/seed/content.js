@@ -175,9 +175,15 @@ export function ownDecks() {
     card('d1', 1, 'O que são normas de eficácia contida?', 'Normas de aplicabilidade imediata que uma lei posterior pode restringir. Exemplo: liberdade de profissão (art. 5º, XIII).', { sched: sched({ dueInDays: 0, lapses: 3, difficulty: 7.2 }), origin: origin('Apostila Constitucional 2026.pdf', 12, 'as normas de eficácia contida possuem aplicabilidade imediata...') }),
     card('d1', 2, 'Quais são os princípios expressos da Administração Pública no art. 37?', 'Legalidade, impessoalidade, moralidade, publicidade e eficiência (LIMPE).', { sched: sched({ dueInDays: 0 }), origin: origin('Apostila Constitucional 2026.pdf', 30, 'A administração pública direta e indireta obedecerá aos princípios...') }),
     card('d1', 3, 'Qual é o prazo para impetrar mandado de segurança?', '120 dias contados da ciência do ato impugnado (Lei 12.016/2009, art. 23).', { sched: sched({ dueInDays: 0 }), origin: origin('Apostila Constitucional 2026.pdf', 21, 'O direito de requerer mandado de segurança extinguir-se-á decorridos cento e vinte dias...') }),
-    card('d1', 4, 'O que é cláusula pétrea?', 'Matéria que não pode ser objeto de emenda tendente a aboli-la: forma federativa, voto direto, secreto, universal e periódico, separação dos Poderes e direitos e garantias individuais (art. 60, §4º).', { sched: sched({ dueInDays: 0, lapses: 2, difficulty: 6.8 }), origin: origin('Apostila Constitucional 2026.pdf', 9, 'Não será objeto de deliberação a proposta de emenda tendente a abolir...') }),
+    card('d1', 4, 'O que é cláusula pétrea?', 'Matéria que não pode ser objeto de emenda tendente a aboli-la: forma federativa, voto direto, secreto, universal e periódico, separação dos Poderes e direitos e garantias individuais (art. 60, §4º).', {
+      sched: sched({ dueInDays: 0, lapses: 2, difficulty: 6.8 }),
+      origin: origin('Apostila Constitucional 2026.pdf', 9, 'Não será objeto de deliberação a proposta de emenda tendente a abolir...')
+    }),
     card('d1', 5, 'Para que serve o habeas data?', 'Assegurar o conhecimento ou a retificação de informações pessoais constantes de registros de entidades governamentais ou de caráter público.', { sched: sched({ dueInDays: 0 }), origin: origin('Apostila Constitucional 2026.pdf', 22, 'conceder-se-á habeas data para assegurar o conhecimento de informações...') }),
-    card('d1', 6, 'Quem pode propor ADI?', 'Os legitimados do art. 103: Presidente, Mesas do Senado e da Câmara, Governadores, PGR, Conselho Federal da OAB, partidos com representação no Congresso, confederações sindicais e entidades de classe de âmbito nacional.', { sched: sched({ dueInDays: 0 }), origin: origin('Apostila Constitucional 2026.pdf', 40, 'Podem propor a ação direta de inconstitucionalidade...') }),
+    card('d1', 6, 'Quem pode propor ADI?', 'Os legitimados do art. 103: Presidente, Mesas do Senado e da Câmara, Governadores, PGR, Conselho Federal da OAB, partidos com representação no Congresso, confederações sindicais e entidades de classe de âmbito nacional.', {
+      sched: sched({ dueInDays: 0 }),
+      origin: origin('Apostila Constitucional 2026.pdf', 40, 'Podem propor a ação direta de inconstitucionalidade...')
+    }),
     card('d1', 7, 'Qual a diferença entre direitos de 1ª e 2ª geração?', '1ª geração: liberdades negativas (vida, liberdade, propriedade). 2ª geração: direitos sociais que exigem prestação do Estado (saúde, educação, trabalho).', { sched: sched({ dueInDays: 4 }) }),
     card('d1', 8, 'O que é o princípio da simetria?', 'Estados, DF e Municípios devem observar, em suas constituições e leis orgânicas, o modelo federal quando a Constituição assim impõe.', { sched: sched({ dueInDays: 9 }) }),
 
@@ -215,7 +221,18 @@ export function ownDecks() {
   ]
 
   const folders = [
-    { id: 'f1', ownerId: 'u1', name: 'Concurso TRF', parentId: null, createdAt: daysFromNow(-40), shared: true, members: [{ id: 'm1', name: 'Camila Prado', contact: 'camila@exemplo.com', role: 'membro', since: daysFromNow(-20) }, { id: 'm2', name: 'João Vitor', contact: '+55 11 90000-1111', role: 'membro', since: daysFromNow(-9) }] },
+    {
+      id: 'f1',
+      ownerId: 'u1',
+      name: 'Concurso TRF',
+      parentId: null,
+      createdAt: daysFromNow(-40),
+      shared: true,
+      members: [
+        { id: 'm1', name: 'Camila Prado', contact: 'camila@exemplo.com', role: 'membro', since: daysFromNow(-20) },
+        { id: 'm2', name: 'João Vitor', contact: '+55 11 90000-1111', role: 'membro', since: daysFromNow(-9) }
+      ]
+    },
     { id: 'f2', ownerId: 'u1', name: 'ENEM 2026', parentId: null, createdAt: daysFromNow(-22), shared: false, members: [] }
   ]
 
@@ -259,10 +276,28 @@ export function communityContent() {
   ]
 
   const decks = [
-    community('c1', 'a1', 'Bioquímica: Ciclo de Krebs', 'vestibular', 'medio', 'pt-BR', { studiedWeek: 1240, votes: 312, favorites: 890, comments: 3, clones: 140 }, { version: 3, publishedAt: daysFromNow(-6), description: 'As oito etapas do ciclo em cards de uma informação só.', tags: ['bioquímica', 'respiração celular'], reactions: { '👏': 120, '🔥': 88, '🧠': 200, '💡': 40, '❤️': 60, '😂': 5 } }),
+    community(
+      'c1',
+      'a1',
+      'Bioquímica: Ciclo de Krebs',
+      'vestibular',
+      'medio',
+      'pt-BR',
+      { studiedWeek: 1240, votes: 312, favorites: 890, comments: 3, clones: 140 },
+      { version: 3, publishedAt: daysFromNow(-6), description: 'As oito etapas do ciclo em cards de uma informação só.', tags: ['bioquímica', 'respiração celular'], reactions: { '👏': 120, '🔥': 88, '🧠': 200, '💡': 40, '❤️': 60, '😂': 5 } }
+    ),
     community('c2', 'a2', 'Direitos Fundamentais em 40 cards', 'concursos', 'dificil', 'pt-BR', { studiedWeek: 860, votes: 240, favorites: 610, comments: 1, clones: 95 }, { publishedAt: daysFromNow(-20), description: 'Art. 5º da CF/88 inteiro, com jurisprudência do STF.', tags: ['CF/88', 'art. 5º'], reactions: { '👏': 70, '🔥': 55, '🧠': 130, '💡': 22, '❤️': 31, '😂': 2 } }),
     community('c3', 'a3', 'US History: Road to Independence', 'medio', 'medio', 'en', { studiedWeek: 410, votes: 98, favorites: 260, comments: 0, clones: 30 }, { publishedAt: daysFromNow(-12), description: 'From the Stamp Act to the Declaration, one fact per card.', tags: ['american revolution', 'history'], reactions: { '👏': 30, '🔥': 12, '🧠': 44, '💡': 9, '❤️': 15, '😂': 1 } }),
-    community('c4', 'a4', 'Fisiologia: Sistema Cardiovascular', 'superior', 'medio', 'pt-BR', { studiedWeek: 1510, votes: 402, favorites: 1120, comments: 0, clones: 210 }, { version: 2, publishedAt: daysFromNow(-4), description: 'Do ciclo cardíaco à regulação da pressão arterial.', tags: ['fisiologia', 'cardiologia'], reactions: { '👏': 210, '🔥': 160, '🧠': 300, '💡': 80, '❤️': 140, '😂': 12 } }),
+    community(
+      'c4',
+      'a4',
+      'Fisiologia: Sistema Cardiovascular',
+      'superior',
+      'medio',
+      'pt-BR',
+      { studiedWeek: 1510, votes: 402, favorites: 1120, comments: 2, clones: 210 },
+      { version: 2, publishedAt: daysFromNow(-4), description: 'Do ciclo cardíaco à regulação da pressão arterial.', tags: ['fisiologia', 'cardiologia'], reactions: { '👏': 210, '🔥': 160, '🧠': 300, '💡': 80, '❤️': 140, '😂': 12 } }
+    ),
     community('c5', 'a4', 'Inglês: Falsos cognatos', 'idiomas', 'facil', 'pt-BR', { studiedWeek: 730, votes: 150, favorites: 480, comments: 0, clones: 60 }, { publishedAt: daysFromNow(-15), description: 'Palavras que parecem, mas não são.', tags: ['inglês', 'vocabulário'], reactions: { '👏': 60, '🔥': 20, '🧠': 40, '💡': 70, '❤️': 33, '😂': 48 } }),
     community('c6', 'a2', 'Matemática Financeira para concursos', 'concursos', 'medio', 'pt-BR', { studiedWeek: 320, votes: 66, favorites: 190, comments: 0, clones: 22 }, { publishedAt: daysFromNow(-25), description: 'Juros simples, compostos e descontos.', tags: ['matemática', 'juros'], reactions: { '👏': 20, '🔥': 8, '🧠': 25, '💡': 14, '❤️': 6, '😂': 0 } }),
     community('c7', 'a1', 'Química Orgânica: funções', 'vestibular', 'facil', 'pt-BR', { studiedWeek: 540, votes: 120, favorites: 350, comments: 0, clones: 41 }, { publishedAt: daysFromNow(-9), description: 'Reconheça a função pelo grupo funcional.', tags: ['química', 'orgânica'], reactions: { '👏': 44, '🔥': 15, '🧠': 60, '💡': 28, '❤️': 19, '😂': 3 } })
@@ -282,11 +317,20 @@ export function communityContent() {
     ccard('c2', 4, 'Prisão civil por dívida: quando é admitida?', 'Apenas para o devedor de alimentos (a do depositário infiel foi afastada pelo STF).'),
     ccard('c2', 5, 'O que garante o princípio do juiz natural?', 'Ninguém será processado nem sentenciado senão pela autoridade competente; vedado juízo ou tribunal de exceção.'),
 
-    ccard('c3', 1, 'What was the Stamp Act of 1765?', 'A British tax on printed materials in the American colonies, one of the first direct taxes and a major cause of colonial protest.', { lang: 'en', translation: { 'pt-BR': { front: 'O que foi a Lei do Selo de 1765?', back: 'Um imposto britânico sobre materiais impressos nas colônias americanas, um dos primeiros impostos diretos e uma grande causa de protestos coloniais.' } } }),
+    ccard('c3', 1, 'What was the Stamp Act of 1765?', 'A British tax on printed materials in the American colonies, one of the first direct taxes and a major cause of colonial protest.', {
+      lang: 'en',
+      translation: { 'pt-BR': { front: 'O que foi a Lei do Selo de 1765?', back: 'Um imposto britânico sobre materiais impressos nas colônias americanas, um dos primeiros impostos diretos e uma grande causa de protestos coloniais.' } }
+    }),
     ccard('c3', 2, 'Who wrote most of the Declaration of Independence?', 'Thomas Jefferson, in June 1776.', { lang: 'en', translation: { 'pt-BR': { front: 'Quem escreveu a maior parte da Declaração de Independência?', back: 'Thomas Jefferson, em junho de 1776.' } } }),
-    ccard('c3', 3, "What does 'no taxation without representation' mean?", 'Colonists argued Parliament could not tax them because they had no elected representatives in it.', { lang: 'en', translation: { 'pt-BR': { front: "O que significa 'sem representação não há tributação'?", back: 'Os colonos argumentavam que o Parlamento não podia tributá-los porque eles não tinham representantes eleitos nele.' } } }),
+    ccard('c3', 3, "What does 'no taxation without representation' mean?", 'Colonists argued Parliament could not tax them because they had no elected representatives in it.', {
+      lang: 'en',
+      translation: { 'pt-BR': { front: "O que significa 'sem representação não há tributação'?", back: 'Os colonos argumentavam que o Parlamento não podia tributá-los porque eles não tinham representantes eleitos nele.' } }
+    }),
     ccard('c3', 4, 'When was the Boston Tea Party?', 'December 16, 1773.', { lang: 'en', translation: { 'pt-BR': { front: 'Quando foi a Festa do Chá de Boston?', back: '16 de dezembro de 1773.' } } }),
-    ccard('c3', 5, 'What were the Intolerable Acts?', 'Laws passed in 1774 to punish Massachusetts after the Boston Tea Party, closing Boston Harbor and restricting self-government.', { lang: 'en', translation: { 'pt-BR': { front: 'O que foram as Leis Intoleráveis?', back: 'Leis aprovadas em 1774 para punir Massachusetts após a Festa do Chá de Boston, fechando o porto de Boston e restringindo o autogoverno.' } } }),
+    ccard('c3', 5, 'What were the Intolerable Acts?', 'Laws passed in 1774 to punish Massachusetts after the Boston Tea Party, closing Boston Harbor and restricting self-government.', {
+      lang: 'en',
+      translation: { 'pt-BR': { front: 'O que foram as Leis Intoleráveis?', back: 'Leis aprovadas em 1774 para punir Massachusetts após a Festa do Chá de Boston, fechando o porto de Boston e restringindo o autogoverno.' } }
+    }),
 
     ccard('c4', 1, 'Quais são as fases do ciclo cardíaco?', 'Sístole (contração) e diástole (relaxamento).'),
     ccard('c4', 2, 'O que é débito cardíaco?', 'Volume de sangue ejetado por minuto: frequência cardíaca × volume sistólico.'),
@@ -312,12 +356,51 @@ export function communityContent() {
   ]
 
   const comments = [
-    { id: 'cm1', deckId: 'c1', authorName: 'Juliana M.', authorId: 'x1', text: 'O card 4 me salvou na prova de bioquímica, obrigada!', createdAt: daysFromNow(-4), replies: [{ id: 'cm1r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Que bom, Juliana! Publiquei a versão 3 com mais detalhes das coenzimas.', createdAt: daysFromNow(-3) }] },
-    { id: 'cm2', deckId: 'c1', authorName: 'Pedro H.', authorId: 'x2', text: 'Acho que falta o card sobre a regulação do ciclo (isocitrato desidrogenase).', createdAt: daysFromNow(-2), replies: [{ id: 'cm2r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Concordo, entra na próxima versão.', createdAt: daysFromNow(-2) }] },
+    { id: 'cm1', deckId: 'c1', authorName: 'Juliana M.', authorId: 'x1', text: 'O card 4 me salvou na prova de bioquímica, obrigada!', baseLikes: 24, createdAt: daysFromNow(-4), replies: [{ id: 'cm1r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Que bom, Juliana! Publiquei a versão 3 com mais detalhes das coenzimas.', createdAt: daysFromNow(-3) }] },
+    { id: 'cm2', deckId: 'c1', authorName: 'Pedro H.', authorId: 'x2', text: 'Acho que falta o card sobre a regulação do ciclo (isocitrato desidrogenase).', baseLikes: 9, createdAt: daysFromNow(-2), replies: [{ id: 'cm2r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Concordo, entra na próxima versão.', createdAt: daysFromNow(-2) }] },
     { id: 'cm3', deckId: 'c1', authorName: 'Ana Beatriz', authorId: 'x3', text: 'Tem tradução para inglês? Estudo com um colega de fora.', createdAt: daysFromNow(-1), replies: [] },
     { id: 'cm4', deckId: 'c2', authorName: 'Thiago L.', authorId: 'x4', text: 'Excelente para revisão de véspera.', createdAt: daysFromNow(-8), replies: [] },
-    { id: 'cm5', deckId: null, materialId: 'm3', authorName: 'Camila Prado', authorId: 'x5', text: 'Não sabia que errar questão fácil pesava tanto. Vou mudar minha estratégia no simulado.', createdAt: hoursFromNow(-6), replies: [{ id: 'cm5r1', authorName: 'Rafael Nogueira', authorId: 'a2', text: 'Isso! Começa pelas que você domina e deixa as difíceis para o fim.', createdAt: hoursFromNow(-4) }] },
-    { id: 'cm6', deckId: null, materialId: 'm1', authorName: 'Pedro H.', authorId: 'x2', text: 'Resumo perfeito para a véspera. Faltou só a fermentação.', createdAt: daysFromNow(-1), replies: [] }
+    {
+      id: 'cm5',
+      deckId: null,
+      materialId: 'm3',
+      authorName: 'Camila Prado',
+      authorId: 'x5',
+      text: 'Não sabia que errar questão fácil pesava tanto. Vou mudar minha estratégia no simulado.',
+      baseLikes: 31,
+      createdAt: hoursFromNow(-6),
+      replies: [{ id: 'cm5r1', authorName: 'Rafael Nogueira', authorId: 'a2', text: 'Isso! Começa pelas que você domina e deixa as difíceis para o fim.', createdAt: hoursFromNow(-4) }]
+    },
+    { id: 'cm6', deckId: null, materialId: 'm1', authorName: 'Pedro H.', authorId: 'x2', text: 'Resumo perfeito para a véspera. Faltou só a fermentação.', baseLikes: 12, createdAt: daysFromNow(-1), replies: [{ id: 'cm6r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'Boa! Vou fazer um mapa só da fermentação e linkar aqui.', createdAt: hoursFromNow(-20) }] },
+    {
+      id: 'cm7',
+      deckId: null,
+      materialId: 'm10',
+      authorName: 'Larissa Mota',
+      authorId: 'x6',
+      text: 'Errei a da EC 19 de novo. Essa cai toda prova da FGV!',
+      baseLikes: 18,
+      createdAt: hoursFromNow(-3),
+      replies: [
+        { id: 'cm7r1', authorName: 'Rafael Nogueira', authorId: 'a2', text: 'Macete: 19 de 1998, a reforma que trouxe a eficiência. 1-9-9-8.', createdAt: hoursFromNow(-2) },
+        { id: 'cm7r2', authorName: 'Larissa Mota', authorId: 'x6', text: 'Agora não esqueço mais 😂', createdAt: hoursFromNow(-1) }
+      ]
+    },
+    { id: 'cm8', deckId: null, materialId: 'm10', authorName: 'Bruno S.', authorId: 'x7', text: 'Fiz 6/6! Mais quizzes de Administrativo, por favor.', baseLikes: 7, createdAt: hoursFromNow(-2), replies: [] },
+    {
+      id: 'cm9',
+      deckId: null,
+      materialId: 'm11',
+      authorName: 'Marina Costa',
+      authorId: 'x8',
+      text: 'Ver tudo em sequência ajudou muito a entender por que a dupla hélice foi tão importante.',
+      baseLikes: 22,
+      createdAt: hoursFromNow(-10),
+      replies: [{ id: 'cm9r1', authorName: 'Helena Ruiz', authorId: 'a1', text: 'E não esquece da Rosalind Franklin, cai em questão de história da ciência!', createdAt: hoursFromNow(-9) }]
+    },
+    { id: 'cm10', deckId: null, materialId: 'm2', authorName: 'Gustavo R.', authorId: 'x9', text: 'O ramo da pressão arterial ficou muito claro. Usei na monitoria.', baseLikes: 15, createdAt: daysFromNow(-1), replies: [] },
+    { id: 'cm11', deckId: null, materialId: 'm9', authorName: 'Ana Beatriz', authorId: 'x3', text: 'Diagrama perfeito pra decorar o saldo de ATP de cada etapa.', baseLikes: 11, createdAt: hoursFromNow(-7), replies: [] },
+    { id: 'cm12', deckId: 'c4', authorName: 'Carla F.', authorId: 'x10', text: 'Melhor deck de fisio da comunidade. Os cards de condução elétrica são ouro.', baseLikes: 40, createdAt: daysFromNow(-2), replies: [{ id: 'cm12r1', authorName: 'Bia Fonseca', authorId: 'a4', text: 'Obrigada, Carla! Tem um mapa do sistema todo também.', createdAt: daysFromNow(-1) }] }
   ]
 
   return { authors, decks, cards, comments }

@@ -1,13 +1,14 @@
 import { Router } from 'express'
 import { requireStudent } from '../lib/auth.js'
-import { fail, communityDeckPublic, authorPublic, materializedAt, guardianGate, requireVerified, categoryName, ownDecksOf } from '../lib/helpers.js'
+import { fail, communityDeckPublic, authorPublic, materializedAt, guardianGate, requireVerified, categoryName, ownDecksOf, commentView } from '../lib/helpers.js'
 import { id, nowIso } from '../lib/ids.js'
 import { credit } from '../lib/ledger.js'
 import { appendAudit } from '../lib/audit.js'
-import { KINDS, materialPublic, publishedMaterials } from '../lib/materials.js'
+import { KINDS, materialPublic, publishedMaterials, remixCountOf, remixesOf } from '../lib/materials.js'
+import { groupItems, groupRanking, groupSummary } from '../lib/groups.js'
 
 function withAuthor(state, deck, viewerId) {
-  return { kind: 'flashcards', ...communityDeckPublic(state, deck, viewerId) }
+  return { kind: 'flashcards', ...communityDeckPublic(state, deck, viewerId), remixCount: remixCountOf(state, deck.id) }
 }
 
 const engagement = (item) => (item.kind === 'flashcards' ? item.stats.studiedWeek + item.stats.votes * 2 : item.stats.views / 2 + item.stats.favorites * 2)
@@ -23,9 +24,21 @@ export function communityRoutes() {
     const highlights = decks.slice().sort((a, b) => b.stats.studiedWeek + b.stats.votes * 2 - (a.stats.studiedWeek + a.stats.votes * 2))
     const followed = state.community.follows.filter((f) => f.userId === viewer).map((f) => f.authorId)
     const following = decks.filter((d) => followed.includes(d.authorId)).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
-    const rankingWeek = decks.slice().sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek).slice(0, 5).map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
+    const rankingWeek = decks
+      .slice()
+      .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
+      .slice(0, 5)
+      .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
     const creator = state.community.authors.find((a) => a.creatorOfMonth)
-    const creatorOfMonth = creator ? { ...authorPublic(state, creator, viewer), topDecks: decks.filter((d) => d.authorId === creator.id).slice(0, 2).map((d) => ({ id: d.id, name: d.name })) } : null
+    const creatorOfMonth = creator
+      ? {
+          ...authorPublic(state, creator, viewer),
+          topDecks: decks
+            .filter((d) => d.authorId === creator.id)
+            .slice(0, 2)
+            .map((d) => ({ id: d.id, name: d.name }))
+        }
+      : null
     const own = ownDecksOf(state, viewer)
     const favIds = new Set(state.community.favorites.filter((f) => f.userId === viewer).map((f) => f.deckId))
     const lower = (list) => list.map((x) => x.toLowerCase())
@@ -49,13 +62,17 @@ export function communityRoutes() {
       const client = m.source?.client || 'IA'
       sourceCounts[client] = (sourceCounts[client] || 0) + 1
     })
-    const sources = Object.entries(sourceCounts).map(([client, count]) => ({ client, count })).sort((a, b) => b.count - a.count)
+    const sources = Object.entries(sourceCounts)
+      .map(([client, count]) => ({ client, count }))
+      .sort((a, b) => b.count - a.count)
     res.json({ highlights, following: [...following, ...followingMaterials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))), rankingWeek, creatorOfMonth, recommendations, latest, trending, materials: byKind, counts, sources, categories: state.categories, materializedAt: materializedAt(), rules: { maxSessionsPerPersonPerDeckPerDay: 1, ignoresAuthorAndClones: true, refreshMinutes: 15 } })
   })
 
   r.get('/community/search', requireStudent, (req, res) => {
     const state = req.store.state
-    const q = String(req.query.q || '').trim().toLowerCase()
+    const q = String(req.query.q || '')
+      .trim()
+      .toLowerCase()
     const category = req.query.category ? String(req.query.category) : null
     const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
     const sort = String(req.query.sort || 'relevance')
@@ -97,7 +114,8 @@ export function communityRoutes() {
       translation: { available: deck.lang !== req.user.locale, from: deck.lang, to: req.user.locale, cached: true, notice: 'Tradução automática. O moderador revisa apenas o original.' },
       versions: Array.from({ length: deck.version }, (_, i) => ({ version: i + 1, publishedAt: deck.publishedAt, current: i + 1 === deck.version })),
       newVersionNotice: studiedVersion && studiedVersion < deck.version ? { studiedVersion, current: deck.version, keepsProgress: true } : null,
-      reactionsList: state.reactions
+      reactionsList: state.reactions,
+      remixes: remixesOf(state, deck.id, req.user.id)
     })
   })
 
@@ -121,9 +139,44 @@ export function communityRoutes() {
     const deck = state.community.decks.find((d) => d.id === req.params.id)
     if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
     const author = state.community.authors.find((a) => a.id === deck.authorId)
-    const clone = { id: id('d'), ownerId: req.user.id, name: deck.name, categoryId: deck.categoryId, tags: deck.tags, difficulty: deck.difficulty, lang: deck.lang, difficult: false, focus: false, complementary: false, pinned: false, favorite: false, folderId: null, source: { type: 'clone', document: `Clonado de ${author?.name}`, pages: null }, clonedFrom: { deckId: deck.id, authorId: deck.authorId, authorName: author?.name, version: deck.version }, createdAt: nowIso(), lastStudiedAt: null, publication: { status: 'nao_publicado' } }
+    const clone = {
+      id: id('d'),
+      ownerId: req.user.id,
+      name: deck.name,
+      categoryId: deck.categoryId,
+      tags: deck.tags,
+      difficulty: deck.difficulty,
+      lang: deck.lang,
+      difficult: false,
+      focus: false,
+      complementary: false,
+      pinned: false,
+      favorite: false,
+      folderId: null,
+      source: { type: 'clone', document: `Clonado de ${author?.name}`, pages: null },
+      clonedFrom: { deckId: deck.id, authorId: deck.authorId, authorName: author?.name, version: deck.version },
+      createdAt: nowIso(),
+      lastStudiedAt: null,
+      publication: { status: 'nao_publicado' }
+    }
     state.decks.push(clone)
-    state.community.cards.filter((c) => c.deckId === deck.id).forEach((c, i) => state.cards.push({ id: id('c'), deckId: clone.id, type: c.type, front: c.front, back: c.back, media: c.media, lang: c.lang, origin: { document: `Clone de "${deck.name}" v${deck.version}`, page: null, excerpt: null, model: null, promptVersion: null }, uncertain: false, sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 }, order: i }))
+    state.community.cards
+      .filter((c) => c.deckId === deck.id)
+      .forEach((c, i) =>
+        state.cards.push({
+          id: id('c'),
+          deckId: clone.id,
+          type: c.type,
+          front: c.front,
+          back: c.back,
+          media: c.media,
+          lang: c.lang,
+          origin: { document: `Clone de "${deck.name}" v${deck.version}`, page: null, excerpt: null, model: null, promptVersion: null },
+          uncertain: false,
+          sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 },
+          order: i
+        })
+      )
     deck.stats.clones += 1
     if (author) author.neuronsTotal += 5
     appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'deck_cloned', target: deck.id, details: { cloneId: clone.id, authorBonus: 5 } })
@@ -196,7 +249,10 @@ export function communityRoutes() {
 
   r.get('/community/decks/:id/comments', requireStudent, (req, res) => {
     const state = req.store.state
-    const threads = state.community.comments.filter((c) => c.deckId === req.params.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const threads = state.community.comments
+      .filter((c) => c.deckId === req.params.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((c) => commentView(c, req.user.id))
     res.json({ threads, total: threads.reduce((n, t) => n + 1 + t.replies.length, 0) })
   })
 
@@ -219,7 +275,19 @@ export function communityRoutes() {
       state.community.comments.push({ ...entry, deckId: deck.id, replies: [] })
     }
     deck.stats.comments += 1
-    res.status(201).json({ comment: entry, notifiedAuthor: true })
+    res.status(201).json({ comment: commentView(entry, req.user.id), notifiedAuthor: true })
+  })
+
+  r.post('/community/comments/:id/like', requireStudent, (req, res) => {
+    const state = req.store.state
+    const all = state.community.comments.flatMap((c) => [c, ...c.replies])
+    const comment = all.find((c) => c.id === req.params.id)
+    if (!comment) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
+    comment.likes = comment.likes || []
+    const idx = comment.likes.indexOf(req.user.id)
+    if (idx >= 0) comment.likes.splice(idx, 1)
+    else comment.likes.push(req.user.id)
+    res.json(commentView(comment, req.user.id))
   })
 
   r.post('/community/comments/:id/report', requireStudent, (req, res) => {
@@ -227,6 +295,68 @@ export function communityRoutes() {
     const report = { id: id('rep'), targetType: 'comment', targetId: req.params.id, targetName: 'Comentário', reason: req.body?.reason || 'Outro', detail: null, reporter: req.user.id, status: 'auto_analise', createdAt: nowIso() }
     state.reports.unshift(report)
     res.status(201).json({ report, message: 'Comentário enviado para análise automática.' })
+  })
+
+  r.get('/community/groups', requireStudent, (req, res) => {
+    const state = req.store.state
+    const groups = state.community.groups.map((g) => groupSummary(state, g, req.user.id))
+    res.json({ groups, joined: groups.filter((g) => g.joined).map((g) => g.id) })
+  })
+
+  r.get('/community/groups/:id', requireStudent, (req, res) => {
+    const state = req.store.state
+    const group = state.community.groups.find((g) => g.id === req.params.id)
+    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+    const items = groupItems(state, group, req.user.id).sort((a, b) => (b.publishedAt || b.createdAt || '').localeCompare(a.publishedAt || a.createdAt || ''))
+    const liked = new Set(state.community.groupPostLikes.filter((l) => l.userId === req.user.id).map((l) => l.postId))
+    const posts = state.community.groupPosts
+      .filter((p) => p.groupId === group.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((p) => ({ ...p, liked: liked.has(p.id), isMine: p.authorId === req.user.id }))
+    res.json({ group: { ...groupSummary(state, group, req.user.id), rules: group.rules, tags: group.tags }, items, ranking: groupRanking(items).slice(0, 10), posts })
+  })
+
+  r.post('/community/groups/:id/join', requireStudent, (req, res) => {
+    const state = req.store.state
+    const group = state.community.groups.find((g) => g.id === req.params.id)
+    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+    const idx = state.community.groupMembers.findIndex((m) => m.groupId === group.id && m.userId === req.user.id)
+    if (idx >= 0) state.community.groupMembers.splice(idx, 1)
+    else state.community.groupMembers.push({ userId: req.user.id, groupId: group.id, joinedAt: nowIso() })
+    res.json({ group: groupSummary(state, group, req.user.id) })
+  })
+
+  r.post('/community/groups/:id/posts', requireStudent, (req, res) => {
+    const state = req.store.state
+    const group = state.community.groups.find((g) => g.id === req.params.id)
+    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+    if (!state.community.groupMembers.some((m) => m.groupId === group.id && m.userId === req.user.id)) return fail(res, 403, 'not_member', 'Entre no grupo para postar no mural.')
+    const unverified = requireVerified(req.user)
+    if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para postar.', unverified)
+    const gate = guardianGate(state, req.user, 'community', 'O aluno quer postar no mural de um grupo de estudos.')
+    if (gate) return fail(res, 403, gate.code, 'Postar depende da liberação do seu responsável.', gate)
+    const text = String(req.body?.text || '')
+      .trim()
+      .slice(0, 600)
+    if (text.length < 3) return fail(res, 422, 'validation', 'Escreva algo antes de enviar.')
+    const post = { id: id('gp'), groupId: group.id, authorId: req.user.id, authorName: req.user.name, text, createdAt: nowIso(), likes: 0 }
+    state.community.groupPosts.push(post)
+    res.status(201).json({ post: { ...post, liked: false, isMine: true } })
+  })
+
+  r.post('/community/group-posts/:id/like', requireStudent, (req, res) => {
+    const state = req.store.state
+    const post = state.community.groupPosts.find((p) => p.id === req.params.id)
+    if (!post) return fail(res, 404, 'not_found', 'Post não encontrado.')
+    const idx = state.community.groupPostLikes.findIndex((l) => l.postId === post.id && l.userId === req.user.id)
+    if (idx >= 0) {
+      state.community.groupPostLikes.splice(idx, 1)
+      post.likes = Math.max(0, post.likes - 1)
+    } else {
+      state.community.groupPostLikes.push({ postId: post.id, userId: req.user.id })
+      post.likes += 1
+    }
+    res.json({ likes: post.likes, liked: idx < 0 })
   })
 
   r.get('/community/authors/:id', requireStudent, (req, res) => {
@@ -258,7 +388,11 @@ export function communityRoutes() {
     const state = req.store.state
     const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
     res.json({
-      week: decks.slice().sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek).slice(0, 10).map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: categoryName(state, d.categoryId) })),
+      week: decks
+        .slice()
+        .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
+        .slice(0, 10)
+        .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: categoryName(state, d.categoryId) })),
       creatorOfMonth: state.community.authors.find((a) => a.creatorOfMonth) || null,
       materializedAt: materializedAt()
     })
