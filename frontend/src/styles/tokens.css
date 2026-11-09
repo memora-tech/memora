@@ -1,37 +1,37 @@
 :root {
   color-scheme: light;
 
-  --brand-500: #00A1E0;
-  --brand-600: #0086BC;
-  --brand-700: #036B95;
-  --brand-900: #073B5C;
-  --brand-050: #E8F6FC;
-  --brand-100: #CDEBF8;
-  --brand-200: #A3DBF2;
+  --brand-500: #00a1e0;
+  --brand-600: #0086bc;
+  --brand-700: #036b95;
+  --brand-900: #073b5c;
+  --brand-050: #e8f6fc;
+  --brand-100: #cdebf8;
+  --brand-200: #a3dbf2;
 
-  --pearl: #FAFAF7;
-  --white: #FFFFFF;
+  --pearl: #fafaf7;
+  --white: #ffffff;
   --gray-900: #181818;
-  --gray-700: #3D3D3B;
-  --gray-600: #5C5C5A;
-  --gray-400: #9A9A96;
-  --gray-300: #D6D6D0;
-  --gray-200: #E8E8E3;
-  --gray-100: #F1F1EC;
+  --gray-700: #3d3d3b;
+  --gray-600: #5c5c5a;
+  --gray-400: #9a9a96;
+  --gray-300: #d6d6d0;
+  --gray-200: #e8e8e3;
+  --gray-100: #f1f1ec;
 
-  --orange-500: #FF9E2C;
-  --orange-100: #FFE9CF;
-  --orange-700: #8C4B02;
-  --green-600: #2E844A;
-  --green-100: #DFF3E5;
-  --amber-700: #B26B00;
-  --amber-100: #FFF0D1;
-  --red-600: #D8001C;
-  --red-100: #FDE2E5;
-  --violet-600: #6B4EFF;
-  --violet-100: #ECE8FF;
-  --violet-700: #4B32C8;
-  --green-700: #236B3A;
+  --orange-500: #ff9e2c;
+  --orange-100: #ffe9cf;
+  --orange-700: #8c4b02;
+  --green-600: #2e844a;
+  --green-100: #dff3e5;
+  --amber-700: #b26b00;
+  --amber-100: #fff0d1;
+  --red-600: #d8001c;
+  --red-100: #fde2e5;
+  --violet-600: #6b4eff;
+  --violet-100: #ece8ff;
+  --violet-700: #4b32c8;
+  --green-700: #236b3a;
 
   --kind-flashcards-ink: var(--brand-700);
   --kind-flashcards-soft: var(--brand-050);
@@ -41,6 +41,10 @@
   --kind-mapa-soft: var(--green-100);
   --kind-noticia-ink: var(--orange-700);
   --kind-noticia-soft: var(--orange-100);
+  --kind-quiz-ink: #a3245e;
+  --kind-quiz-soft: #fce6ef;
+  --kind-linha-ink: #0b6766;
+  --kind-linha-soft: #ddf2ef;
 
   --color-surface: var(--pearl);
   --color-surface-raised: var(--white);
@@ -56,7 +60,7 @@
   --color-accent-pressed: var(--brand-600);
   --color-border: var(--gray-300);
   --color-border-soft: var(--gray-200);
-  --color-hairline: #ECECE6;
+  --color-hairline: #ecece6;
   --color-focus: var(--brand-600);
   --color-focus-halo: rgba(0, 161, 224, 0.22);
   --color-reward: var(--orange-500);
@@ -102,8 +106,8 @@
   --floating-bottom: calc(var(--tabbar-height) + var(--space-4) + var(--safe-bottom));
   --toast-bottom: calc(var(--tabbar-height) + var(--fab-size) + var(--space-6) + var(--safe-bottom));
 
-  --font-display: "Outfit", "Trebuchet MS", system-ui, sans-serif;
-  --font-text: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: 'Outfit', 'Trebuchet MS', system-ui, sans-serif;
+  --font-text: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --size-display: 30px;
   --size-title: 23px;
   --size-heading: 19px;
@@ -117,7 +121,7 @@
   --tracking-caps: 0.06em;
 
   --shadow-xs: 0 1px 2px rgba(16, 40, 56, 0.05);
-  --shadow-card: 0 1px 2px rgba(16, 40, 56, 0.05), 0 4px 12px -6px rgba(16, 40, 56, 0.10);
+  --shadow-card: 0 1px 2px rgba(16, 40, 56, 0.05), 0 4px 12px -6px rgba(16, 40, 56, 0.1);
   --shadow-raised: 0 2px 4px rgba(16, 40, 56, 0.06), 0 10px 24px -10px rgba(16, 40, 56, 0.16);
   --shadow-soft: 0 4px 10px rgba(16, 40, 56, 0.08), 0 18px 40px -18px rgba(16, 40, 56, 0.22);
   --shadow-sheet: 0 -2px 8px rgba(16, 40, 56, 0.06), 0 -20px 48px -16px rgba(16, 40, 56, 0.26);

@@ -8,6 +8,8 @@ import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
 import { useSession } from '../../state/SessionContext.jsx'
 import { studentApi } from '../../lib/api.js'
 import { fmtRelative } from '../../lib/format.js'
+import { useMcpRequests } from '../mcp/arrivals.js'
+import { AiStatusCard, FlowStrip, FormatGallery } from './AiFormats.jsx'
 
 function Insight({ icon, tone, label, value, text, action }) {
   return (
@@ -59,6 +61,7 @@ export function NoaHub() {
   const overview = useAsync(() => studentApi.get('/noa/overview'), [])
   const [busy, setBusy] = useState(null)
   const [tab, setTab] = useState('suggestions')
+  const requests = useMcpRequests()
   const data = overview.data
   const refresh = () => overview.run().catch(() => {})
   const name = session.user?.name?.split(' ')[0] || ''
@@ -111,7 +114,15 @@ export function NoaHub() {
 
       {overview.loading && !data ? <Skeleton height={140} count={3} /> : null}
       {overview.error && !data ? (
-        <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={refresh}>{t('common.actions.retry')}</Button>}>
+        <Banner
+          tone="danger"
+          icon="alert"
+          action={
+            <Button size="small" variant="soft" onClick={refresh}>
+              {t('common.actions.retry')}
+            </Button>
+          }
+        >
           {t('common.state.error')}
         </Banner>
       ) : null}
@@ -137,7 +148,13 @@ export function NoaHub() {
                 label={t('noa.briefing.todayLabel')}
                 value={ins.today.cardsDue ? t('noa.briefing.todayValue', { count: ins.today.cardsDue }) : t('noa.briefing.todayNone')}
                 text={ins.today.cardsDue ? t('noa.briefing.todayText', { minutes: ins.today.minutes, decks: ins.today.decks }) : t('noa.briefing.todayNoneText')}
-                action={ins.today.cardsDue ? <Button size="small" icon="play" to="/app">{t('noa.briefing.todayAction')}</Button> : null}
+                action={
+                  ins.today.cardsDue ? (
+                    <Button size="small" icon="play" to="/app">
+                      {t('noa.briefing.todayAction')}
+                    </Button>
+                  ) : null
+                }
               />
               <Insight
                 icon="zap"
@@ -145,7 +162,13 @@ export function NoaHub() {
                 label={t('noa.briefing.weakLabel')}
                 value={ins.weakest ? ins.weakest.name : t('noa.briefing.weakNone')}
                 text={ins.weakest ? t('noa.briefing.weakText', { lapses: ins.weakest.lapses, cards: ins.weakest.weakCards }) : t('noa.briefing.weakNoneText')}
-                action={ins.weakest ? <Button size="small" variant="soft" to={`/app/decks/${ins.weakest.id}?modo=fracos`}>{t('noa.briefing.weakAction')}</Button> : null}
+                action={
+                  ins.weakest ? (
+                    <Button size="small" variant="soft" to={`/app/decks/${ins.weakest.id}?modo=fracos`}>
+                      {t('noa.briefing.weakAction')}
+                    </Button>
+                  ) : null
+                }
               />
               <Insight
                 icon="target"
@@ -153,16 +176,39 @@ export function NoaHub() {
                 label={t('noa.briefing.objectiveLabel')}
                 value={ins.objective ? t('noa.briefing.objectiveValue', { count: ins.objective.daysLeft, name: ins.objective.name }) : t('noa.briefing.objectiveNone')}
                 text={ins.objective ? t('noa.briefing.objectiveText') : t('noa.briefing.objectiveNoneText')}
-                action={<Button size="small" variant="ghost" to="/app/perfil/objetivos">{ins.objective ? t('noa.briefing.objectiveAction') : t('noa.briefing.objectiveAdd')}</Button>}
+                action={
+                  <Button size="small" variant="ghost" to="/app/perfil/objetivos">
+                    {ins.objective ? t('noa.briefing.objectiveAction') : t('noa.briefing.objectiveAdd')}
+                  </Button>
+                }
               />
-              <Insight
-                icon="chart"
-                tone="success"
-                label={t('noa.briefing.accuracyLabel')}
-                value={ins.accuracy ? `${ins.accuracy.pct}%` : '—'}
-                text={ins.accuracy ? t('noa.briefing.accuracyText', { count: ins.accuracy.sample }) : t('noa.briefing.accuracyNone')}
-              />
+              <Insight icon="chart" tone="success" label={t('noa.briefing.accuracyLabel')} value={ins.accuracy ? `${ins.accuracy.pct}%` : '—'} text={ins.accuracy ? t('noa.briefing.accuracyText', { count: ins.accuracy.sample }) : t('noa.briefing.accuracyNone')} />
             </ul>
+          </section>
+
+          <section className={styles.aiSection} aria-labelledby="noa-ia">
+            <header className={styles.aiHead}>
+              <span className={styles.aiEyebrow}>
+                <Icon name="plug" size={14} /> {t('noa.ai.eyebrow')}
+              </span>
+              <h2 id="noa-ia" className={styles.aiTitle}>
+                {t('ai.formatsTitle')}
+              </h2>
+              <p className={styles.aiLead}>{t('ai.formatsLead')}</p>
+            </header>
+            <FlowStrip />
+            <div className={styles.aiGrid}>
+              <FormatGallery topic={ins.weakest?.name} />
+              <div className={styles.aiAside}>
+                <AiStatusCard pending={requests.pending} />
+                <div className={styles.aiTip}>
+                  <span className={styles.itemTitle}>
+                    <Icon name="info" size={16} /> {t('noa.ai.tipTitle')}
+                  </span>
+                  <span className={styles.itemText}>{t('noa.ai.tipText')}</span>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className={styles.section} aria-labelledby="noa-acoes">

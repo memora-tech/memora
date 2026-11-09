@@ -11,6 +11,8 @@ export const mcp = {
     from: 'de {source}',
     expand: 'Ler o texto completo',
     expandMap: 'Ver o mapa completo',
+    expandQuiz: 'Testar o quiz',
+    expandTimeline: 'Ver a linha do tempo completa',
     expandDeck: { one: 'Ver o card', other: 'Ver os {count} cards' },
     collapse: 'Recolher',
     mapSummary: { one: 'Tema central "{root}" com {count} ramo.', other: 'Tema central "{root}" com {count} ramos.' },
@@ -36,6 +38,24 @@ export const mcp = {
     empty: { pendente: 'Nenhuma solicitação esperando', aprovado: 'Nada aprovado ainda', recusado: 'Nada recusado' },
     emptyPendingText: 'Quando uma IA conectada enviar algo, aparece aqui para você revisar.',
     footNote: 'Posts aprovados ficam também em',
+    cardN: 'Card {n}',
+    flip: 'Toque para virar',
+    flipHint: 'Ative para virar o card.',
+    selectOne: 'Selecionar "{name}"',
+    selectAll: 'Selecionar todos',
+    selectedCount: { one: '{count} selecionado', other: '{count} selecionados' },
+    bulkLabel: 'Ações em lote',
+    bulkApprove: 'Aprovar selecionados',
+    bulkReject: 'Recusar selecionados',
+    bulkApproveTitle: { one: 'Aprovar {count} item', other: 'Aprovar {count} itens' },
+    bulkApproveConfirm: { one: 'Aprovar {count} item', other: 'Aprovar {count} itens' },
+    bulkWhereTo: 'Para onde vão os resumos, mapas e posts?',
+    bulkDecksNote: 'Os decks de flashcards entram em Meus decks e já ficam programados para estudo.',
+    bulkRejectTitle: { one: 'Recusar {count} item?', other: 'Recusar {count} itens?' },
+    bulkRejectText: 'Os itens selecionados serão excluídos e não vão para o seu blog, seus decks ou a comunidade.',
+    bulkApproved: { one: '{count} item aprovado.', other: '{count} itens aprovados.' },
+    bulkRejected: { one: '{count} item recusado e excluído.', other: '{count} itens recusados e excluídos.' },
+    bulkPartial: { one: '{count} item foi processado antes do erro.', other: '{count} itens foram processados antes do erro.' },
     myBlog: 'Meu blog',
     flow: {
       arrived: { title: 'Chega aqui', help: 'Ninguém mais vê' },
@@ -76,21 +96,36 @@ export const mcp = {
     simulateHint: 'Simula o Claude Desktop chamando a ferramenta salvar_flashcards neste servidor MCP.'
   },
   title: 'Conexões',
-  lead: 'Conecte outros sistemas e assistentes (Claude, ChatGPT, plataformas de ensino) pelo protocolo MCP. Os decks gerados lá chegam direto na sua biblioteca do Memora.',
+  lead: 'Ligue o Memora ao Claude, ao ChatGPT ou ao Cursor pelo protocolo MCP. Na conversa, peça um mapa mental, flashcards ou um resumo: a IA busca o conteúdo, estrutura e envia para você aprovar.',
+  setup: {
+    label: 'Configuração em três passos',
+    state: { done: 'concluído', current: 'próximo passo', todo: 'a fazer' },
+    token: { title: 'Gere um token', text: 'Dê um nome à conexão. O token aparece uma vez só.' },
+    paste: { title: 'Cole no seu assistente', text: 'Escolha o app e copie a configuração pronta.' },
+    ask: { title: 'Peça o primeiro material', text: '"Faz um mapa mental disso e salva no Memora."' }
+  },
+  clients: {
+    label: 'Onde você vai usar',
+    worksWith: 'Funciona com',
+    claudeCode: { name: 'Claude Code', text: 'Rode este comando no terminal. O Memora aparece na lista de ferramentas do Claude Code.' },
+    desktop: { name: 'Claude Desktop / Cursor', text: 'Abra as configurações de MCP do app e cole este bloco no arquivo de servidores.' },
+    chatgpt: { name: 'ChatGPT', text: 'Em Configurações › Conectores › Adicionar conector, cole o endereço abaixo e use o token como chave de acesso.' }
+  },
+  endpointHint: 'Use este endereço em qualquer cliente compatível',
+  toNoa: {
+    title: 'Veja o que pedir para a sua IA',
+    text: 'Comandos prontos por formato: mapa mental, flashcards, resumo e mais.'
+  },
   how: {
     title: 'Como funciona',
-    steps: [
-      'Crie uma conexão e copie o token. Ele aparece uma vez só.',
-      'Adicione o Memora como servidor MCP no outro sistema, com o endereço e o token.',
-      'Lá, peça: "transforma isso em flashcards e salva no Memora".',
-      'O deck chega em Meus decks. Você decide se programa para estudo ou publica na comunidade.'
-    ]
+    steps: ['Crie uma conexão e copie o token. Ele aparece uma vez só.', 'Adicione o Memora como servidor MCP no outro sistema, com o endereço e o token.', 'Lá, peça: "transforma isso em flashcards e salva no Memora".', 'O deck chega em Meus decks. Você decide se programa para estudo ou publica na comunidade.']
   },
   endpoint: 'Endereço do servidor MCP',
   copy: 'Copiar',
   copied: 'Copiado',
   create: {
     title: 'Nova conexão',
+    lead: 'Cada assistente ganha o próprio token. Assim você revoga um sem afetar os outros.',
     name: 'Nome da conexão',
     namePlaceholder: 'Claude Desktop, ChatGPT, Cursor…',
     submit: 'Gerar token',
@@ -118,7 +153,8 @@ export const mcp = {
   tools: {
     title: 'O que a sua IA pode fazer',
     write: 'Salva',
-    read: 'Consulta'
+    read: 'Consulta',
+    group: { write: 'Salva no Memora', read: 'Consulta o Memora' }
   },
   activity: {
     title: 'Atividade recente',

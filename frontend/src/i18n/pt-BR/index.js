@@ -13,5 +13,6 @@ import { b2b } from './b2b.js'
 import { admin } from './admin.js'
 import { mcp } from './mcp.js'
 import { noa } from './noa.js'
+import { ai } from './ai.js'
 
-export const ptBR = { common, auth, study, create, decks, community, wallet, profile, proto, parental, partner, b2b, admin, mcp, noa }
+export const ptBR = { common, auth, study, create, decks, community, wallet, profile, proto, parental, partner, b2b, admin, mcp, noa, ai }

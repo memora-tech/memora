@@ -1,19 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import styles from './community.module.css'
-import { Avatar, Badge, Banner, Button, Icon, Input, Skeleton } from '../../design-system/index.js'
+import home from './home.module.css'
+import { Avatar, Badge, Banner, Button, Icon, Input, Segmented, Skeleton } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
 import { studentApi } from '../../lib/api.js'
 import { fmtNumber, fmtTime } from '../../lib/format.js'
-import { KindTabs } from './KindTabs.jsx'
+import { useSession } from '../../state/SessionContext.jsx'
 import { MyContents } from './MyContents.jsx'
 import { Timeline, dateOf } from './Timeline.jsx'
 import { BlogList } from './BlogList.jsx'
 import { KIND_ICON } from './kinds.jsx'
+import { CreatorFeature, PulseBar, Spotlight, TopicCloud, pulseOf } from './CommunityPulse.jsx'
+import { TransformSheet } from '../noa/AiFormats.jsx'
 
-const TAB_VALUES = ['all', 'flashcards', 'resumo', 'mapa', 'noticia', 'mine']
+const TAB_VALUES = ['all', 'flashcards', 'resumo', 'mapa', 'quiz', 'linha', 'noticia', 'mine']
+
+const engagement = (i) => {
+  const reactions = Object.values(i.reactions || {}).reduce((s, n) => s + n, 0)
+  return reactions + (i.commentCount || 0) * 8 + (i.stats?.studiedWeek || 0) + (i.stats?.views || 0) / 4 + (i.stats?.favorites || 0)
+}
 
 export function SearchField({ value, onChange, onSubmit, autoFocus }) {
   const t = useT()
@@ -34,53 +42,185 @@ export function SearchField({ value, onChange, onSubmit, autoFocus }) {
   )
 }
 
-function SideRail({ data }) {
+function FilterTabs({ tabs, value, onChange }) {
+  const t = useT()
+  const refs = useRef({})
+  const move = (index) => {
+    const tab = tabs[(index + tabs.length) % tabs.length]
+    onChange(tab.value)
+    refs.current[tab.value]?.focus()
+  }
+  return (
+    <div role="tablist" aria-label={t('community.kindTabsLabel')} className={home.chips}>
+      {tabs.map((tab, i) => {
+        const selected = tab.value === value
+        return (
+          <button
+            key={tab.value}
+            ref={(el) => {
+              refs.current[tab.value] = el
+            }}
+            type="button"
+            role="tab"
+            id={`comunidade-tab-${tab.value}`}
+            aria-selected={selected ? 'true' : 'false'}
+            aria-controls="comunidade-panel"
+            tabIndex={selected ? 0 : -1}
+            className={home.chip}
+            data-kind={tab.value === 'all' || tab.value === 'mine' ? undefined : tab.value}
+            onClick={() => onChange(tab.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight') move(i + 1)
+              else if (e.key === 'ArrowLeft') move(i - 1)
+              else if (e.key === 'Home') move(0)
+              else if (e.key === 'End') move(tabs.length - 1)
+              else return
+              e.preventDefault()
+            }}
+          >
+            <Icon name={tab.icon} size={16} />
+            <span>{tab.label}</span>
+            {tab.count !== undefined ? <span className={home.chipCount}>{tab.count}</span> : null}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ShareBox() {
+  const t = useT()
+  const session = useSession()
+  return (
+    <div className={home.share}>
+      <Avatar name={session.user?.name} />
+      <Link to="/app/perfil/blog/novo" className={home.shareField}>
+        {t('community.feed.sharePrompt', {
+          name: session.user?.name?.split(' ')[0] || ''
+        })}
+      </Link>
+      <div className={home.shareActions}>
+        <Link to="/app/perfil/blog/novo" className={home.shareAction} data-kind="noticia">
+          <Icon name="edit" size={16} /> <span>{t('community.feed.shareBlog')}</span>
+        </Link>
+        <Link to="/app/decks" className={home.shareAction} data-kind="flashcards">
+          <Icon name="layers" size={16} /> <span>{t('community.feed.shareDeck')}</span>
+        </Link>
+        <Link to="/app/noa" className={home.shareAction} data-kind="quiz">
+          <Icon name="sparkle" size={16} /> <span>{t('community.feed.shareAi')}</span>
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function GroupsCard({ groups }) {
+  const t = useT()
+  return (
+    <section className={home.railCard} aria-labelledby="rail-groups">
+      <div className={home.railHead}>
+        <h2 id="rail-groups" className={home.railTitle}>
+          <Icon name="users" size={16} /> {t('community.groups.navTitle')}
+        </h2>
+        <Link to="/app/comunidade/grupos" className={home.railLink}>
+          {t('community.feed.seeAll')}
+        </Link>
+      </div>
+      {groups.length ? (
+        <ul className={home.groupList}>
+          {groups.map((g) => (
+            <li key={g.id}>
+              <Link to={`/app/comunidade/grupos/${g.id}`} className={home.groupRow} data-color={g.color}>
+                <span className={home.groupMark} aria-hidden="true">
+                  {g.name.slice(0, 1)}
+                </span>
+                <span className={home.groupText}>
+                  <span className={home.groupName}>{g.name}</span>
+                  <span className={home.groupMeta}>
+                    {t('community.groups.membersCount', {
+                      value: fmtNumber(g.memberCount)
+                    })}
+                  </span>
+                </span>
+                <Icon name="chevronRight" size={16} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={home.railText}>{t('community.feed.noGroups')}</p>
+      )}
+      <Button variant="soft" size="small" icon="plus" to="/app/comunidade/grupos" block>
+        {t('community.groups.explore')}
+      </Button>
+    </section>
+  )
+}
+
+function SideRail({ data, allItems, groups }) {
   const t = useT()
   const [rulesOpen, setRulesOpen] = useState(false)
   const recommended = (data.recommendations || []).slice(0, 3)
   return (
-    <aside className={styles.tlRail} aria-label={t('community.railLabel')}>
-      <section className={styles.railCard} aria-labelledby="rail-ranking">
-        <h2 id="rail-ranking" className={styles.railTitle}>
+    <aside className={home.rail} aria-label={t('community.railLabel')}>
+      <GroupsCard groups={groups} />
+      <CreatorFeature creator={data.creatorOfMonth} />
+      <section className={home.railCard} aria-labelledby="rail-ranking">
+        <h2 id="rail-ranking" className={home.railTitle}>
           <Icon name="trophy" size={16} /> {t('community.rankingWeek')}
         </h2>
-        <ol className={styles.railList}>
+        <ol className={home.rank}>
           {data.rankingWeek.slice(0, 5).map((r) => (
             <li key={r.deckId}>
-              <Link to={`/app/comunidade/deck/${r.deckId}`} className={styles.railRow}>
-                <span className={styles.rankPos} data-top={r.position === 1 ? 'true' : 'false'}>
+              <Link to={`/app/comunidade/deck/${r.deckId}`} className={home.rankRow}>
+                <span className={home.rankPos} data-top={r.position <= 3 ? String(r.position) : 'no'}>
                   {r.position}
                 </span>
-                <span className={styles.rankBody}>
-                  <span className={styles.railName}>{r.name}</span>
-                  <span className={styles.rankMeta}>{t('community.studiedWeek', { count: r.studiedWeek, value: fmtNumber(r.studiedWeek) })}</span>
+                <span className={home.groupText}>
+                  <span className={home.groupName}>{r.name}</span>
+                  <span className={home.groupMeta}>
+                    {t('community.studiedWeek', {
+                      count: r.studiedWeek,
+                      value: fmtNumber(r.studiedWeek)
+                    })}
+                  </span>
                 </span>
               </Link>
             </li>
           ))}
         </ol>
-        <p className={styles.meta}>{t('community.materialized', { time: fmtTime(data.materializedAt) })}</p>
-        <Button variant="text" size="small" iconRight={rulesOpen ? 'chevronUp' : 'chevronDown'} onClick={() => setRulesOpen((v) => !v)} aria-expanded={rulesOpen ? 'true' : 'false'}>
-          {t('community.rankingRulesToggle')}
-        </Button>
-        {rulesOpen ? <p className={styles.meta}>{t('community.rankingRules')}</p> : null}
+        <button type="button" className={home.rulesToggle} onClick={() => setRulesOpen((v) => !v)} aria-expanded={rulesOpen ? 'true' : 'false'}>
+          {t('community.rankingRulesToggle')} <Icon name={rulesOpen ? 'chevronUp' : 'chevronDown'} size={14} />
+        </button>
+        {rulesOpen ? (
+          <p className={home.railText}>
+            {t('community.rankingRules')}{' '}
+            {t('community.materialized', {
+              time: fmtTime(data.materializedAt)
+            })}
+          </p>
+        ) : null}
       </section>
 
       {recommended.length ? (
-        <section className={styles.railCard} aria-labelledby="rail-noa">
-          <h2 id="rail-noa" className={styles.railTitle}>
+        <section className={home.railCard} aria-labelledby="rail-noa">
+          <h2 id="rail-noa" className={home.railTitle}>
             <Badge tone="noa">{t('study.session.noaLabel')}</Badge> {t('community.recommended')}
           </h2>
-          <ul className={styles.railList}>
+          <ul className={home.groupList}>
             {recommended.map((d) => (
               <li key={d.id}>
-                <Link to={`/app/comunidade/deck/${d.id}`} className={styles.railRow}>
-                  <span className={styles.rankKind} data-kind="flashcards" aria-hidden="true">
+                <Link to={`/app/comunidade/deck/${d.id}`} className={home.groupRow}>
+                  <span className={home.kindMark} data-kind="flashcards" aria-hidden="true">
                     <Icon name="layers" size={16} />
                   </span>
-                  <span className={styles.rankBody}>
-                    <span className={styles.railName}>{d.name}</span>
-                    <span className={styles.rankMeta}>{t('community.recommendedBecause', { deck: d.becauseDeck })}</span>
+                  <span className={home.groupText}>
+                    <span className={home.groupName}>{d.name}</span>
+                    <span className={home.groupMeta}>
+                      {t('community.recommendedBecause', {
+                        deck: d.becauseDeck
+                      })}
+                    </span>
                   </span>
                 </Link>
               </li>
@@ -90,20 +230,20 @@ function SideRail({ data }) {
       ) : null}
 
       {data.following.length ? (
-        <section className={styles.railCard} aria-labelledby="rail-following">
-          <h2 id="rail-following" className={styles.railTitle}>
-            <Icon name="users" size={16} /> {t('community.following')}
+        <section className={home.railCard} aria-labelledby="rail-following">
+          <h2 id="rail-following" className={home.railTitle}>
+            <Icon name="user" size={16} /> {t('community.following')}
           </h2>
-          <ul className={styles.railList}>
+          <ul className={home.groupList}>
             {data.following.slice(0, 4).map((item) => (
               <li key={`${item.kind}-${item.id}`}>
-                <Link to={item.kind === 'flashcards' ? `/app/comunidade/deck/${item.id}` : `/app/comunidade/conteudo/${item.id}`} className={styles.railRow}>
-                  <span className={styles.rankKind} data-kind={item.kind} aria-hidden="true">
+                <Link to={item.kind === 'flashcards' ? `/app/comunidade/deck/${item.id}` : `/app/comunidade/conteudo/${item.id}`} className={home.groupRow}>
+                  <span className={home.kindMark} data-kind={item.kind} aria-hidden="true">
                     <Icon name={KIND_ICON[item.kind]} size={16} />
                   </span>
-                  <span className={styles.rankBody}>
-                    <span className={styles.railName}>{item.name || item.title}</span>
-                    <span className={styles.rankMeta}>{item.author?.name}</span>
+                  <span className={home.groupText}>
+                    <span className={home.groupName}>{item.name || item.title}</span>
+                    <span className={home.groupMeta}>{item.author?.name}</span>
                   </span>
                 </Link>
               </li>
@@ -111,6 +251,8 @@ function SideRail({ data }) {
           </ul>
         </section>
       ) : null}
+
+      <TopicCloud items={allItems} />
     </aside>
   )
 }
@@ -120,15 +262,19 @@ export function CommunityHome() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState('')
+  const [transforming, setTransforming] = useState(null)
   const feed = useAsync(() => studentApi.get('/community/feed'), [])
+  const groupList = useAsync(() => studentApi.get('/community/groups'), [])
+  const myGroups = (groupList.data?.groups || []).filter((g) => g.joined)
   useDocumentTitle(t('community.title'))
   const data = feed.data
   const tab = TAB_VALUES.includes(params.get('tipo')) ? params.get('tipo') : 'all'
   const category = params.get('categoria') || ''
+  const sort = params.get('ordem') === 'alta' ? 'alta' : 'recentes'
 
   const setParam = (key, value) => {
     const next = new URLSearchParams(params)
-    if (!value || value === 'all') next.delete(key)
+    if (!value || value === 'all' || value === 'recentes') next.delete(key)
     else next.set(key, value)
     setParams(next, { replace: true })
   }
@@ -142,120 +288,152 @@ export function CommunityHome() {
     value,
     label: t(`community.kindsPlural.${value}`),
     icon: value === 'all' ? 'home' : KIND_ICON[value],
-    count: value === 'all' ? (counts.flashcards || 0) + (counts.resumo || 0) + (counts.mapa || 0) + (counts.noticia || 0) : counts[value]
+    count: value === 'all' ? TAB_VALUES.filter((k) => k !== 'all' && k !== 'mine').reduce((s, k) => s + (counts[k] || 0), 0) : counts[value]
   }))
-  const tabs = [...kindTabs, { value: 'mine', label: t('community.mine.title'), icon: 'user', count: counts.mine }]
+  const tabs = [
+    ...kindTabs,
+    {
+      value: 'mine',
+      label: t('community.mine.title'),
+      icon: 'user',
+      count: counts.mine
+    }
+  ]
 
-  const items = useMemo(() => {
-    if (!data || tab === 'mine') return []
+  const allItems = useMemo(() => {
+    if (!data) return []
     const decks = data.highlights.map((d) => ({ kind: 'flashcards', ...d }))
     const materials = Object.values(data.materials || {}).flat()
     return [...decks, ...materials]
-      .filter((i) => tab === 'all' || i.kind === tab)
-      .filter((i) => !category || i.categoryId === category)
-      .sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
-  }, [data, tab, category])
+  }, [data])
+  const pulse = useMemo(() => pulseOf(allItems), [allItems])
 
-  const categoryName = data?.categories?.find((c) => c.id === category)?.name
+  const items = useMemo(() => {
+    if (!data || tab === 'mine') return []
+    const list = allItems.filter((i) => tab === 'all' || i.kind === tab).filter((i) => !category || i.categoryId === category)
+    return sort === 'alta' ? list.sort((a, b) => engagement(b) - engagement(a)) : list.sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+  }, [data, allItems, tab, category, sort])
+
   const heading = tab === 'all' ? t('community.timeline.title') : t(`community.kindsPlural.${tab}`)
 
   return (
-    <div className={styles.workspace}>
-      <header className={styles.wsHead}>
-        <div className={styles.wsHeadText}>
-          <span className={styles.eyebrow}>{t('community.eyebrow')}</span>
-          <h1 className={styles.screenTitle}>{t('community.title')}</h1>
-          <p className={styles.heroLead}>{t('community.subtitle')}</p>
+    <div className={home.page}>
+      <header className={home.head}>
+        <div className={home.headText}>
+          <span className={home.eyebrow}>{t('community.eyebrow')}</span>
+          <h1 className={home.title}>{t('community.title')}</h1>
+          <p className={home.lead}>{t('community.subtitle')}</p>
         </div>
-        <div className={styles.wsSearch}>
-          <SearchField
-            value={q}
-            onChange={(v) => {
-              setQ(v)
-              if (v.trim().length >= 3) goSearch(v, true)
-            }}
-            onSubmit={goSearch}
-          />
+        <div className={home.headRight}>
+          <div className={home.search}>
+            <SearchField
+              value={q}
+              onChange={(v) => {
+                setQ(v)
+                if (v.trim().length >= 3) goSearch(v, true)
+              }}
+              onSubmit={goSearch}
+            />
+          </div>
+          <Button icon="edit" to="/app/perfil/blog/novo">
+            {t('community.blog.write')}
+          </Button>
         </div>
       </header>
 
-      <div className={styles.wsBody}>
-        <nav className={styles.wsNav} aria-label={t('community.navLabel')}>
-          <div className={styles.wsNavGroup}>
-            <span className={styles.wsNavLabel}>{t('community.kindTabsLabel')}</span>
-            <KindTabs tabs={tabs} value={tab} onChange={(v) => setParam('tipo', v)} label={t('community.kindTabsLabel')} idBase="comunidade" orientation="vertical" />
-          </div>
+      {data ? <PulseBar pulse={pulse} /> : null}
 
-          {data?.categories ? (
-            <div className={styles.wsNavGroup}>
-              <span className={styles.wsNavLabel} id="cat-label">
-                {t('community.filters.category')}
-              </span>
-              <ul className={styles.catList} aria-labelledby="cat-label">
-                <li>
-                  <button type="button" className={styles.catItem} aria-pressed={!category ? 'true' : 'false'} onClick={() => setParam('categoria', '')}>
-                    {t('community.filters.all')}
-                  </button>
-                </li>
-                {data.categories.map((c) => (
-                  <li key={c.id}>
-                    <button type="button" className={styles.catItem} aria-pressed={category === c.id ? 'true' : 'false'} onClick={() => setParam('categoria', category === c.id ? '' : c.id)}>
+      <div className={home.toolbar}>
+        <FilterTabs tabs={tabs} value={tab} onChange={(v) => setParam('tipo', v)} />
+        {tab !== 'mine' ? (
+          <div className={home.tools}>
+            {data?.categories ? (
+              <label className={home.select}>
+                <span className="sr-only">{t('community.filters.category')}</span>
+                <Icon name="filter" size={16} />
+                <select value={category} onChange={(e) => setParam('categoria', e.target.value)}>
+                  <option value="">{t('community.feed.allCategories')}</option>
+                  {data.categories.map((c) => (
+                    <option key={c.id} value={c.id}>
                       {c.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+                    </option>
+                  ))}
+                </select>
+                <Icon name="chevronDown" size={14} />
+              </label>
+            ) : null}
+            <Segmented
+              label={t('community.feed.sortLabel')}
+              value={sort}
+              onChange={(v) => setParam('ordem', v)}
+              options={[
+                {
+                  value: 'recentes',
+                  label: t('community.feed.recent'),
+                  icon: 'clock'
+                },
+                {
+                  value: 'alta',
+                  label: t('community.feed.hot'),
+                  icon: 'flame'
+                }
+              ]}
+            />
+          </div>
+        ) : null}
+      </div>
 
-          {data?.creatorOfMonth ? (
-            <Link to={`/app/comunidade/autor/${data.creatorOfMonth.id}`} className={styles.creatorMini}>
-              <Avatar name={data.creatorOfMonth.name} />
-              <span className={styles.creatorMiniText}>
-                <span className={styles.wsNavLabel}>{t('community.creatorOfMonth')}</span>
-                <span className={styles.rankName}>{data.creatorOfMonth.name}</span>
-                <span className={styles.rankMeta}>{t('community.deck.followers', { count: data.creatorOfMonth.followers })}</span>
-              </span>
-            </Link>
-          ) : null}
-        </nav>
-
-        <div role="tabpanel" id="comunidade-panel" aria-labelledby={`comunidade-tab-${tab}`} tabIndex={0} className={styles.wsContent}>
+      <div className={home.layout}>
+        <div role="tabpanel" id="comunidade-panel" aria-labelledby={`comunidade-tab-${tab}`} tabIndex={-1} className={home.main}>
           {tab === 'mine' ? (
             <MyContents onChanged={() => feed.run().catch(() => {})} />
           ) : (
             <>
-              {feed.loading && !data ? <Skeleton height={96} count={4} /> : null}
+              {feed.loading && !data ? <Skeleton height={180} count={3} /> : null}
               {feed.error && !data ? (
-                <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={() => feed.run()}>{t('common.actions.retry')}</Button>}>
+                <Banner
+                  tone="danger"
+                  icon="alert"
+                  action={
+                    <Button size="small" variant="soft" onClick={() => feed.run()}>
+                      {t('common.actions.retry')}
+                    </Button>
+                  }
+                >
                   {t('common.state.error')}
                 </Banner>
               ) : null}
-              {data ? (
-                <div className={styles.tlLayout}>
-                  {tab === 'noticia' ? (
-                    <div className={styles.tlMain}>
-                      <BlogList posts={items} />
-                    </div>
-                  ) : (
-                    <div className={styles.tlMain}>
-                      <div className={styles.tlHeader}>
-                        <h2 className={styles.tlHeading}>
-                          {heading}
-                          {categoryName ? <span className={styles.meta}> · {categoryName}</span> : null}
-                        </h2>
-                        <span className={styles.meta}>{t('community.timeline.count', { count: items.length })}</span>
-                      </div>
-                      <Timeline items={items} emptyText={category ? t('community.categoryEmpty') : t('community.kindEmpty', { kind: heading.toLowerCase() })} />
-                    </div>
-                  )}
-                  <SideRail data={data} />
-                </div>
+              {data && tab === 'all' && !category ? <Spotlight items={allItems} onTransform={setTransforming} /> : null}
+              {data ? <ShareBox /> : null}
+              {data && tab === 'noticia' ? <BlogList posts={items} /> : null}
+              {data && tab !== 'noticia' ? (
+                <section className={home.feedSection} aria-labelledby="feed-title">
+                  <div className={home.feedHead}>
+                    <h2 id="feed-title" className={home.feedTitle}>
+                      {sort === 'alta' ? t('community.feed.hotTitle') : heading}
+                    </h2>
+                    <span className={home.feedCount}>{t('community.timeline.count', { count: items.length })}</span>
+                  </div>
+                  <Timeline
+                    items={items}
+                    grouped={sort !== 'alta'}
+                    onTransform={setTransforming}
+                    emptyText={
+                      category
+                        ? t('community.categoryEmpty')
+                        : t('community.kindEmpty', {
+                            kind: heading.toLowerCase()
+                          })
+                    }
+                  />
+                </section>
               ) : null}
             </>
           )}
         </div>
+        {data ? <SideRail data={data} allItems={allItems} groups={myGroups} /> : null}
       </div>
+      <TransformSheet open={Boolean(transforming)} item={transforming} onClose={() => setTransforming(null)} />
     </div>
   )
 }

@@ -44,7 +44,7 @@
 }
 
 .pulse::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: -6px;
   border-radius: 20px;
@@ -225,7 +225,7 @@
   border-radius: 10px;
 }
 
-.journeyStep[data-state="current"] {
+.journeyStep[data-state='current'] {
   background: var(--color-surface-raised);
   color: var(--color-text);
 }
@@ -243,12 +243,12 @@
   color: var(--white);
 }
 
-.journeyStep[data-state="done"] .journeyDot {
+.journeyStep[data-state='done'] .journeyDot {
   background: var(--color-success);
   border-color: var(--color-success);
 }
 
-.journeyStep[data-state="current"] .journeyDot {
+.journeyStep[data-state='current'] .journeyDot {
   background: var(--brand-900);
   border-color: var(--brand-900);
 }
@@ -269,7 +269,7 @@
   color: var(--brand-100);
 }
 
-.journeyStep[data-state="current"] .journeyHelp {
+.journeyStep[data-state='current'] .journeyHelp {
   color: var(--color-text-secondary);
 }
 
@@ -328,11 +328,11 @@
   box-shadow: var(--shadow-xs);
 }
 
-.req[data-status="aprovado"] {
+.req[data-status='aprovado'] {
   border-left-color: var(--color-success);
 }
 
-.req[data-status="recusado"] {
+.req[data-status='recusado'] {
   border-left-color: var(--gray-400);
   background: var(--color-surface-sunken);
   box-shadow: none;
@@ -363,12 +363,12 @@
   color: var(--amber-700);
 }
 
-.reqStatus[data-status="aprovado"] {
+.reqStatus[data-status='aprovado'] {
   background: var(--green-100);
   color: var(--green-700);
 }
 
-.reqStatus[data-status="recusado"] {
+.reqStatus[data-status='recusado'] {
   background: var(--gray-200);
   color: var(--gray-600);
 }
@@ -400,13 +400,13 @@
   border: 1px solid var(--color-border-soft);
 }
 
-.reqText[data-expanded="false"] {
+.reqText[data-expanded='false'] {
   max-height: 180px;
   overflow: hidden;
 }
 
-.reqText[data-expanded="false"]::after {
-  content: "";
+.reqText[data-expanded='false']::after {
+  content: '';
   position: absolute;
   inset: auto 0 0 0;
   height: 70px;
@@ -443,7 +443,7 @@
   color: var(--green-700);
 }
 
-.reqOutcome[data-tone="muted"] {
+.reqOutcome[data-tone='muted'] {
   color: var(--color-text-secondary);
 }
 
@@ -481,7 +481,7 @@
   border-color: var(--brand-700);
 }
 
-.destination[aria-checked="true"] {
+.destination[aria-checked='true'] {
   border-color: var(--brand-900);
   background: var(--color-surface-brand);
   box-shadow: inset 0 0 0 1px var(--brand-900);
@@ -525,7 +525,7 @@
   color: transparent;
 }
 
-.destination[aria-checked="true"] .destinationCheck {
+.destination[aria-checked='true'] .destinationCheck {
   background: var(--brand-900);
   border-color: var(--brand-900);
   color: var(--white);
@@ -538,4 +538,187 @@
 
 .footNote a {
   color: var(--color-text-brand);
+}
+
+.flipRow {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-3);
+}
+
+.flip {
+  display: block;
+  width: 100%;
+  height: 150px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  perspective: 900px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.flip:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: 16px;
+}
+
+.flipInner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 520ms var(--ease-both);
+}
+
+.flip[data-flipped='true'] .flipInner {
+  transform: rotateY(180deg);
+}
+
+.flipFace {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: 16px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-card);
+  backface-visibility: hidden;
+}
+
+.flipBack {
+  transform: rotateY(180deg);
+  background: linear-gradient(150deg, var(--brand-900), #0b5276);
+  border-color: transparent;
+  color: var(--white);
+}
+
+.flipLabel {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-brand);
+}
+
+.flipBack .flipLabel {
+  color: var(--brand-200);
+}
+
+.flipText {
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.flipCue {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--size-micro);
+  color: var(--color-text-secondary);
+}
+
+.mapBand {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 16px;
+  background: var(--kind-mapa-soft);
+  color: var(--kind-mapa-ink);
+}
+
+.mapBand svg {
+  width: 100%;
+  height: auto;
+}
+
+.select {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--size-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.select input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-700);
+  cursor: pointer;
+}
+
+.req[data-selected='true'] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-focus-halo);
+}
+
+.bulkBar {
+  position: sticky;
+  top: var(--space-2);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--color-border-soft);
+  box-shadow: var(--shadow-raised);
+  backdrop-filter: blur(10px);
+}
+
+.bulkCount {
+  font-size: var(--size-meta);
+  color: var(--color-text-secondary);
+}
+
+.bulkActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.bulkList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  font-weight: 600;
+}
+
+.bulkList li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .mapBand {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flipInner {
+    transition: none;
+  }
 }

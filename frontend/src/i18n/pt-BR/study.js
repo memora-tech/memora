@@ -1,5 +1,52 @@
 export const study = {
   home: {
+    hero: {
+      label: 'Sessão de hoje',
+      title: '{cards} para hoje',
+      decks: { one: '{count} deck', other: '{count} decks' },
+      composition: 'Cards de hoje por deck',
+      share: { one: '{deck}: {count} card', other: '{deck}: {count} cards' },
+      firstCard: 'Primeira pergunta',
+      fromDeck: 'de {deck}',
+      adjust: 'Ajustar plano'
+    },
+    pulse: {
+      title: 'Seu ritmo',
+      goalLeft: { one: 'Falta {count} card para a meta', other: 'Faltam {count} cards para a meta' },
+      goalHit: 'Meta batida hoje',
+      goalRing: 'Meta do dia: {done} de {goal} cards',
+      streak: { one: '{count} dia seguido', other: '{count} dias seguidos' },
+      streakPending: 'Estude hoje e chegue a {next}',
+      streakSafe: 'Hoje já conta para a sequência',
+      week: 'Últimos 7 dias',
+      dayDone: '{day}: estudou',
+      dayPending: '{day}: hoje, ainda pendente',
+      dayOff: '{day}: sem estudo',
+      objective: 'Próxima prova',
+      objectiveIn: { one: '{name} em {count} dia', other: '{name} em {count} dias' },
+      objectiveOn: 'Prova em {date}',
+      objectiveTrack: '{pct}% do caminho até a prova',
+      noObjective: 'Marque a data da sua prova e a Nôa ajusta o ritmo.',
+      addObjective: 'Marcar prova'
+    },
+    queue: {
+      title: 'Fila de hoje',
+      lead: { one: '{count} deck programado, na ordem sugerida pela Nôa.', other: '{count} decks programados, na ordem sugerida pela Nôa.' },
+      todayUnit: 'hoje',
+      masteredPct: '{pct}% dominado',
+      upToDateUnit: 'em dia'
+    },
+    next: {
+      title: 'Para depois da sessão',
+      lead: 'O que a Nôa e a comunidade separaram para você.',
+      studying: '{count} estudando na semana',
+      views: '{count} leituras',
+      shortcutsLabel: 'Ir direto para'
+    },
+    leadObjective: { one: 'Falta {count} dia para {name}. Uma sessão curta hoje vale mais que uma maratona amanhã.', other: 'Faltam {count} dias para {name}. Uma sessão curta hoje vale mais que uma maratona amanhã.' },
+    leadDefault: 'Sessões curtas e diárias fixam mais que maratonas. A sua de hoje já está montada.',
+    leadDone: 'Meta batida. O que vier agora é revisão antecipada.',
+    eyebrowDate: 'Estudo de hoje · {date}',
     greeting: 'Oi, {name}',
     eyebrow: 'Estudo de hoje',
     lead: 'Sua sessão do dia sai dos decks que você programou na aba Decks.',
@@ -90,6 +137,8 @@ export const study = {
     title: 'Nôa hoje',
     howItWorks: 'Nôa acompanha seus acertos, horários e decks. Ela nunca interrompe: sugere dentro da sessão e age só em ações reversíveis do catálogo.',
     pending: 'Tem uma sugestão para a sua próxima sessão',
+    suggests: 'Nôa sugere',
+    open: 'Ver o que ela fez',
     pendingBadge: 'Sugestão pendente',
     pendingWhere: 'Ela aparece como um card durante a sessão, uma vez por dia.',
     idle: 'Sem novidades. Ela avisa quando notar um padrão.',

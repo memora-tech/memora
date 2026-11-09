@@ -8,6 +8,7 @@ export const common = {
     create: 'Criar deck',
     noa: 'Nôa',
     requests: 'Recebidos (MCP)',
+    connections: 'Conexões de IA',
     pendingRequests: { one: 'solicitação pendente', other: 'solicitações pendentes' },
     wallet: 'Carteira',
     groups: { study: 'Estudo', community: 'Comunidade', ai: 'Inteligência' },

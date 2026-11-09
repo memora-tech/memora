@@ -1,7 +1,7 @@
 export const noa = {
   eyebrow: 'Inteligência',
   title: 'Nôa',
-  lead: 'Sua assistente de estudo. Ela acompanha acertos, erros e horários, sugere ajustes e explica cada decisão. Tudo o que ela faz pode ser desfeito.',
+  lead: 'Sua assistente de estudo e a ponte com as IAs que você já usa. Ela acompanha seu estudo, sugere ajustes e recebe o que o Claude, o ChatGPT e outros assistentes montam para você. Tudo pode ser desfeito.',
   budget: '{used} de {limit} sugestões hoje',
   briefing: {
     title: 'Oi, {name}. Olhei seu estudo de hoje.',
@@ -34,6 +34,11 @@ export const noa = {
     generate: { title: 'Gerar flashcards', text: 'De um texto, PDF, foto ou de outro sistema conectado.' },
     plan: { title: 'Planejar até a prova', text: 'Defina a data e veja o ritmo diário necessário.' },
     goal: { title: 'Ajustar minha meta', text: 'Hoje: {done} de {goal} cards. Mude a meta ou pause.' }
+  },
+  ai: {
+    eyebrow: 'Nôa + suas IAs',
+    tipTitle: 'Dica para pedir',
+    tipText: 'Diga o formato, o assunto e para que serve: "mapa mental de Revolução Francesa para o ENEM, com causas e consequências". Quanto mais claro, melhor a estrutura.'
   },
   tabsLabel: 'Detalhes da Nôa',
   tabs: {

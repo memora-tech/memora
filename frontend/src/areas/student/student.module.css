@@ -13,7 +13,9 @@
   backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--color-hairline);
   padding-top: var(--safe-top);
-  transition: transform var(--t-base) var(--ease-both), opacity var(--t-base) var(--ease-both);
+  transition:
+    transform var(--t-base) var(--ease-both),
+    opacity var(--t-base) var(--ease-both);
 }
 
 .toplineInner {
@@ -78,7 +80,7 @@
   color: var(--color-reward-ink);
 }
 
-.metricNeuron[data-redeemable="true"] {
+.metricNeuron[data-redeemable='true'] {
   background: linear-gradient(180deg, color-mix(in srgb, var(--color-reward-soft) 70%, var(--white)), var(--color-reward-soft));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-reward) 34%, transparent);
   animation: glow 3.2s var(--ease-both) infinite;
@@ -185,19 +187,21 @@
   width: 46px;
   height: 30px;
   border-radius: var(--radius-bubble);
-  transition: background-color var(--t-base) var(--ease-both), transform var(--t-base) var(--ease-out);
+  transition:
+    background-color var(--t-base) var(--ease-both),
+    transform var(--t-base) var(--ease-out);
 }
 
 .tab:hover {
   color: var(--color-text-brand);
 }
 
-.tab[aria-current="page"] {
+.tab[aria-current='page'] {
   color: var(--color-text-brand);
   font-weight: 600;
 }
 
-.tab[aria-current="page"] .tabIcon {
+.tab[aria-current='page'] .tabIcon {
   background: var(--color-surface-brand);
   color: var(--color-accent);
 }
@@ -219,7 +223,9 @@
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-soft);
-  transition: transform var(--t-fast) var(--ease-both), opacity var(--t-base) var(--ease-both);
+  transition:
+    transform var(--t-fast) var(--ease-both),
+    opacity var(--t-base) var(--ease-both);
 }
 
 .fab:hover {
@@ -259,7 +265,7 @@
 }
 
 .edge::after {
-  content: "";
+  content: '';
   position: absolute;
   left: 50%;
   top: 6px;
@@ -435,7 +441,9 @@
     font-weight: 500;
     color: var(--color-text-secondary);
     text-decoration: none;
-    transition: background-color var(--t-fast) var(--ease-both), color var(--t-fast) var(--ease-both);
+    transition:
+      background-color var(--t-fast) var(--ease-both),
+      color var(--t-fast) var(--ease-both);
   }
 
   .railTab:hover {
@@ -443,14 +451,14 @@
     color: var(--color-text);
   }
 
-  .railTab[aria-current="page"] {
+  .railTab[aria-current='page'] {
     background: var(--color-surface-brand);
     color: var(--brand-900);
     font-weight: 600;
   }
 
-  .railTab[aria-current="page"]::before {
-    content: "";
+  .railTab[aria-current='page']::before {
+    content: '';
     position: absolute;
     left: 0;
     top: 10px;
@@ -584,8 +592,8 @@
   flex: 1;
 }
 
-.userMenuWrap .railUser[aria-expanded="true"],
-.userMenuWrap .railUser[data-active="true"] {
+.userMenuWrap .railUser[aria-expanded='true'],
+.userMenuWrap .railUser[data-active='true'] {
   border-color: var(--brand-200);
   background: var(--color-surface-brand);
 }
@@ -655,7 +663,7 @@
   background: var(--color-surface-sunken);
 }
 
-.userMenuItem[aria-current="page"] {
+.userMenuItem[aria-current='page'] {
   background: var(--color-surface-brand);
   font-weight: 600;
 }
@@ -675,4 +683,13 @@
   font-size: 11px;
   font-weight: 700;
   text-align: center;
+}
+
+.railLive {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-soft);
 }

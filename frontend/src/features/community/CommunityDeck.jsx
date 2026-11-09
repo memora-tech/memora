@@ -10,7 +10,7 @@ import { studentApi } from '../../lib/api.js'
 import { fmtNumber } from '../../lib/format.js'
 import { useStudy } from '../../state/StudyContext.jsx'
 import { useSession } from '../../state/SessionContext.jsx'
-import { CommentsSheet } from './CommentsSheet.jsx'
+import { CommentsPanel } from './Comments.jsx'
 
 export function CommunityDeck() {
   const t = useT()
@@ -20,13 +20,16 @@ export function CommunityDeck() {
   const session = useSession()
   const { deckId } = useParams()
   const detail = useAsync(() => studentApi.get(`/community/decks/${deckId}`), [deckId])
-  const [commentsOpen, setCommentsOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
   const [reportDetail, setReportDetail] = useState('')
-  const [translation, setTranslation] = useState({ on: false, lang: session.user?.locale || 'pt-BR', cards: null })
+  const [translation, setTranslation] = useState({
+    on: false,
+    lang: session.user?.locale || 'pt-BR',
+    cards: null
+  })
   const [showAll, setShowAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const data = detail.data
@@ -36,8 +39,19 @@ export function CommunityDeck() {
   const refresh = () => detail.run()
 
   const guardianToast = (err, fallback) => {
-    if (err.code === 'guardian_required') toast.show({ message: `${t('common.guardian.required')} ${t('common.guardian.requestSent')}`, icon: 'shield', duration: 6000 })
-    else if (err.code === 'verification_required') toast.show({ message: t('common.verification.required', { action: t('common.verification.actions.comment') }), tone: 'danger' })
+    if (err.code === 'guardian_required')
+      toast.show({
+        message: `${t('common.guardian.required')} ${t('common.guardian.requestSent')}`,
+        icon: 'shield',
+        duration: 6000
+      })
+    else if (err.code === 'verification_required')
+      toast.show({
+        message: t('common.verification.required', {
+          action: t('common.verification.actions.comment')
+        }),
+        tone: 'danger'
+      })
     else toast.show({ message: fallback || err.message, tone: 'danger' })
   }
 
@@ -47,7 +61,10 @@ export function CommunityDeck() {
       toast.show({
         message: res.favorited ? t('community.deck.favoriteToast') : t('community.deck.unfavoriteToast'),
         icon: 'heart',
-        action: { label: t('common.actions.undo'), onClick: () => studentApi.post(`/community/decks/${deckId}/favorite`).then(refresh) },
+        action: {
+          label: t('common.actions.undo'),
+          onClick: () => studentApi.post(`/community/decks/${deckId}/favorite`).then(refresh)
+        },
         duration: 3000
       })
       refresh()
@@ -61,7 +78,15 @@ export function CommunityDeck() {
     try {
       const res = await studentApi.post(`/community/decks/${deckId}/clone`)
       setCloneOpen(false)
-      toast.show({ message: t('community.deck.cloneDone'), icon: 'copy', action: { label: t('community.deck.openClone'), onClick: () => navigate(`/app/decks/${res.deckId}`) }, duration: 5000 })
+      toast.show({
+        message: t('community.deck.cloneDone'),
+        icon: 'copy',
+        action: {
+          label: t('community.deck.openClone'),
+          onClick: () => navigate(`/app/decks/${res.deckId}`)
+        },
+        duration: 5000
+      })
       refresh()
     } catch (err) {
       guardianToast(err)
@@ -75,7 +100,15 @@ export function CommunityDeck() {
       await studentApi.post(`/community/decks/${deckId}/vote`)
       refresh()
     } catch (err) {
-      if (err.code === 'vote_not_allowed') toast.show({ message: t('community.deck.voteLocked', { pct: 30, min: 20, answered: err.body.answered, total: err.body.total }) })
+      if (err.code === 'vote_not_allowed')
+        toast.show({
+          message: t('community.deck.voteLocked', {
+            pct: 30,
+            min: 20,
+            answered: err.body.answered,
+            total: err.body.total
+          })
+        })
       else guardianToast(err)
     }
   }
@@ -91,13 +124,18 @@ export function CommunityDeck() {
 
   const share = async (channel) => {
     try {
-      const res = await studentApi.post(`/community/decks/${deckId}/share`, { channel })
+      const res = await studentApi.post(`/community/decks/${deckId}/share`, {
+        channel
+      })
       const url = `${window.location.origin}${res.url}`
       if (channel === 'whatsapp') window.open(`https://wa.me/?text=${encodeURIComponent(`${deck.name} · ${url}`)}`, '_blank', 'noopener')
       else if (channel === 'copy' || channel === 'instagram') {
         try {
           await navigator.clipboard.writeText(url)
-          toast.show({ message: t('community.deck.shareCopied'), icon: 'copy' })
+          toast.show({
+            message: t('community.deck.shareCopied'),
+            icon: 'copy'
+          })
         } catch {
           toast.show({ message: url })
         }
@@ -105,17 +143,29 @@ export function CommunityDeck() {
       setShareOpen(false)
     } catch (err) {
       setShareOpen(false)
-      if (err.code === 'guardian_required') toast.show({ message: t('community.deck.shareMinor'), icon: 'shield', duration: 6000 })
+      if (err.code === 'guardian_required')
+        toast.show({
+          message: t('community.deck.shareMinor'),
+          icon: 'shield',
+          duration: 6000
+        })
       else guardianToast(err)
     }
   }
 
   const report = async (reason) => {
     try {
-      await studentApi.post(`/community/decks/${deckId}/report`, { reason, detail: reportDetail })
+      await studentApi.post(`/community/decks/${deckId}/report`, {
+        reason,
+        detail: reportDetail
+      })
       setReportOpen(false)
       setReportDetail('')
-      toast.show({ message: t('community.deck.reportSent'), icon: 'flag', duration: 6000 })
+      toast.show({
+        message: t('community.deck.reportSent'),
+        icon: 'flag',
+        duration: 6000
+      })
     } catch (err) {
       guardianToast(err)
     }
@@ -128,19 +178,36 @@ export function CommunityDeck() {
     }
     try {
       const res = await studentApi.post(`/community/decks/${deckId}/translate`, { lang })
-      setTranslation({ on: true, lang, cards: Object.fromEntries(res.cards.map((c) => [c.id, c.translated])) })
+      setTranslation({
+        on: true,
+        lang,
+        cards: Object.fromEntries(res.cards.map((c) => [c.id, c.translated]))
+      })
     } catch (err) {
       toast.show({ message: err.message, tone: 'danger' })
     }
   }
 
-  const translateHold = useLongPress({ onLongPress: () => setLangOpen(true), onTap: () => translateAll(translation.lang, !translation.on) })
+  const translateHold = useLongPress({
+    onLongPress: () => setLangOpen(true),
+    onTap: () => translateAll(translation.lang, !translation.on)
+  })
 
   const startStudy = async () => {
     try {
       const res = await studentApi.post(`/community/decks/${deckId}/study-start`)
       const cards = res.cards.map((c) => ({ ...c, deckName: deck.name }))
-      if (study.start({ mode: 'community', deckId, deckName: deck.name, cards, translationAvailable: data.translation.available, lang: session.user?.locale || 'pt-BR' })) navigate('/app/estudar')
+      if (
+        study.start({
+          mode: 'community',
+          deckId,
+          deckName: deck.name,
+          cards,
+          translationAvailable: data.translation.available,
+          lang: session.user?.locale || 'pt-BR'
+        })
+      )
+        navigate('/app/estudar')
     } catch (err) {
       toast.show({ message: err.message, tone: 'danger' })
     }
@@ -149,7 +216,15 @@ export function CommunityDeck() {
   if (detail.loading && !data) return <Skeleton height={140} count={3} />
   if (detail.error && !data) {
     return (
-      <Banner tone="danger" icon="alert" action={<Button size="small" variant="soft" onClick={refresh}>{t('common.actions.retry')}</Button>}>
+      <Banner
+        tone="danger"
+        icon="alert"
+        action={
+          <Button size="small" variant="soft" onClick={refresh}>
+            {t('common.actions.retry')}
+          </Button>
+        }
+      >
         {detail.error.status === 404 ? t('community.deck.notFound') : t('common.state.error')}
       </Banner>
     )
@@ -171,8 +246,21 @@ export function CommunityDeck() {
           <OverflowMenu
             label={t('common.actions.more')}
             items={[
-              canTranslate ? { key: 'translate', icon: 'translate', label: t('community.deck.translateAll'), onSelect: () => translateAll(translation.lang, true) } : null,
-              { key: 'report', icon: 'flag', label: t('community.deck.report'), danger: true, onSelect: () => setReportOpen(true) }
+              canTranslate
+                ? {
+                    key: 'translate',
+                    icon: 'translate',
+                    label: t('community.deck.translateAll'),
+                    onSelect: () => translateAll(translation.lang, true)
+                  }
+                : null,
+              {
+                key: 'report',
+                icon: 'flag',
+                label: t('community.deck.report'),
+                danger: true,
+                onSelect: () => setReportOpen(true)
+              }
             ]}
           />
         }
@@ -182,7 +270,13 @@ export function CommunityDeck() {
         <Chip tone="brand">{deck.categoryName}</Chip>
         <Chip tone="neutral">{t(`common.difficulty.${deck.difficulty}`)}</Chip>
         <Chip tone="neutral">{t('community.cards', { count: deck.cardCount })}</Chip>
-        {deck.lang !== 'pt-BR' ? <Chip tone="brand" icon="globe">{t('community.lang', { lang: t(`community.langNames.${deck.lang}`) })}</Chip> : null}
+        {deck.lang !== 'pt-BR' ? (
+          <Chip tone="brand" icon="globe">
+            {t('community.lang', {
+              lang: t(`community.langNames.${deck.lang}`)
+            })}
+          </Chip>
+        ) : null}
       </div>
 
       <div className={styles.primaryRow}>
@@ -209,12 +303,22 @@ export function CommunityDeck() {
         </div>
       </div>
       <p id="vote-hint" className={styles.meta}>
-        {v.canVote ? t('community.deck.voteUnlocked') : t('community.deck.voteLocked', { pct: v.voteRule.minPct, min: v.voteRule.minCards, answered: v.answered, total: v.total })}
+        {v.canVote
+          ? t('community.deck.voteUnlocked')
+          : t('community.deck.voteLocked', {
+              pct: v.voteRule.minPct,
+              min: v.voteRule.minCards,
+              answered: v.answered,
+              total: v.total
+            })}
       </p>
 
       {data.newVersionNotice ? (
         <Banner tone="brand" icon="info">
-          {t('community.deck.newVersionShort', { current: data.newVersionNotice.current, studied: data.newVersionNotice.studiedVersion })}
+          {t('community.deck.newVersionShort', {
+            current: data.newVersionNotice.current,
+            studied: data.newVersionNotice.studiedVersion
+          })}
         </Banner>
       ) : null}
 
@@ -223,7 +327,12 @@ export function CommunityDeck() {
           <Avatar name={deck.author.name} />
           <span className={styles.authorBody}>
             <span className={styles.authorName}>{deck.author.name}</span>
-            <span className={styles.authorMeta}>{t('community.author.level', { level: deck.author.level, topic: deck.author.topic })}</span>
+            <span className={styles.authorMeta}>
+              {t('community.author.level', {
+                level: deck.author.level,
+                topic: deck.author.topic
+              })}
+            </span>
           </span>
         </Link>
         <Button
@@ -247,7 +356,19 @@ export function CommunityDeck() {
       <Surface>
         <div className={styles.sectionTitle} style={{ marginBottom: 12 }}>
           <span>{t('community.deck.reactions')}</span>
-          <Button size="small" variant="text" icon="message" onClick={() => setCommentsOpen(true)}>
+          <Button
+            size="small"
+            variant="text"
+            icon="message"
+            onClick={() => {
+              const el = document.getElementById('comentarios')
+              el?.scrollIntoView({
+                behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+                block: 'start'
+              })
+              el?.querySelector('textarea')?.focus({ preventScroll: true })
+            }}
+          >
             {t('community.deck.comments', { count: deck.commentCount })}
           </Button>
         </div>
@@ -276,7 +397,11 @@ export function CommunityDeck() {
         </div>
         {canTranslate ? (
           <p id="translate-hint" className={styles.meta}>
-            {translation.on ? t('community.deck.translated', { from: t(`community.langNames.${deck.lang}`) }) : t('community.deck.translateHold')}
+            {translation.on
+              ? t('community.deck.translated', {
+                  from: t(`community.langNames.${deck.lang}`)
+                })
+              : t('community.deck.translateHold')}
           </p>
         ) : null}
         <div className={styles.cardList}>
@@ -294,7 +419,9 @@ export function CommunityDeck() {
         ) : null}
       </div>
 
-      <CommentsSheet open={commentsOpen} onClose={() => setCommentsOpen(false)} deckId={deckId} onChanged={refresh} />
+      <Surface id="comentarios" className={styles.commentsBlock}>
+        <CommentsPanel basePath={`/community/decks/${deckId}`} authorId={deck.authorId} />
+      </Surface>
 
       <ConfirmDialog open={cloneOpen} onClose={() => setCloneOpen(false)} onConfirm={clone} title={t('community.deck.cloneTitle')} confirmLabel={t('community.deck.clone')} loading={busy}>
         <p>{t('community.deck.cloneText', { author: deck.author.name })}</p>
@@ -333,7 +460,11 @@ export function CommunityDeck() {
             setLangOpen(false)
             translateAll(lang, true)
           }}
-          options={SUPPORTED_LOCALES.map((l) => ({ value: l.code, label: l.label, disabled: !l.available }))}
+          options={SUPPORTED_LOCALES.map((l) => ({
+            value: l.code,
+            label: l.label,
+            disabled: !l.available
+          }))}
         />
       </Sheet>
     </div>
