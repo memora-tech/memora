@@ -39,8 +39,10 @@ tags:
     description: Feed, busca, votos, reações, comentários, denúncias e ranking de decks públicos.
   - name: Conteúdos
     description: >
-      Resumos, mapas mentais e posts de blog (materiais) — leitura e interação na comunidade,
-      e o blog do próprio aluno (criar, editar, publicar para a comunidade ou só para seguidores).
+      Resumos, mapas mentais (layout `mapa` ou `diagrama`), quizzes, linhas do tempo e posts de
+      blog (materiais) — leitura e interação na comunidade, tentativas de quiz e revisão das
+      erradas com flashcards, e o blog do próprio aluno (criar, editar, publicar para a comunidade
+      ou só para seguidores).
   - name: MCP
     description: >
       Conexões de IAs externas via Model Context Protocol, caixa de "Recebidos" (tudo o que chega
@@ -383,6 +385,9 @@ components:
         author: { $ref: '#/components/schemas/Author' }
         cardCount: { type: integer }
         commentCount: { type: integer }
+        commentPreview: { $ref: '#/components/schemas/CommentPreview' }
+        remixOf: { $ref: '#/components/schemas/RemixOf' }
+        remixCount: { type: integer, description: "Remixes aprovados que citam este deck como original." }
         viewer:
           type: object
           properties:
@@ -411,16 +416,85 @@ components:
 
     Comment:
       type: object
+      description: "`commentView()` em `backend/src/lib/helpers.js`. Respostas não trazem `replies`, `deckId` nem `materialId`."
       properties:
         id: { type: string }
-        deckId: { type: string }
+        deckId: { type: string, nullable: true }
+        materialId: { type: string, nullable: true }
         authorId: { type: string }
         authorName: { type: string }
         text: { type: string }
         createdAt: { type: string, format: date-time }
+        likeCount: { type: integer, description: "Curtidas do comentário ou da resposta." }
+        liked: { type: boolean, description: "Se o aluno logado curtiu." }
+        isMine: { type: boolean, description: "Se o comentário é do aluno logado." }
         replies:
           type: array
           items: { $ref: '#/components/schemas/Comment' }
+
+    CommentPreview:
+      type: object
+      nullable: true
+      description: >
+        Comentário em destaque de um deck ou material (mais curtidas + respostas × 2; empate pelo
+        mais recente), sem as respostas. `null` quando não há comentários.
+      properties:
+        id: { type: string }
+        authorId: { type: string }
+        authorName: { type: string }
+        text: { type: string }
+        createdAt: { type: string, format: date-time }
+        likeCount: { type: integer }
+        liked: { type: boolean }
+        isMine: { type: boolean }
+        deckId: { type: string, nullable: true }
+        materialId: { type: string, nullable: true }
+        replyCount: { type: integer }
+
+    RemixOf:
+      type: object
+      description: >
+        Crédito ao original quando o conteúdo é um remix (argumento `remix_de` das ferramentas de
+        escrita MCP). Só é gravado se o id existir e for visível ao aluno; o original exibe a
+        lista de remixes aprovados.
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [flashcards, resumo, mapa, noticia, quiz, linha] }
+        title: { type: string }
+        authorId: { type: string, nullable: true }
+        authorName: { type: string, nullable: true }
+
+    QuizQuestion:
+      type: object
+      properties:
+        id: { type: string, example: q1 }
+        prompt: { type: string, maxLength: 600 }
+        options: { type: array, minItems: 2, maxItems: 5, items: { type: string, maxLength: 200 } }
+        answer: { type: integer, minimum: 0, description: "Índice da alternativa correta." }
+        explanation: { type: string, maxLength: 400 }
+
+    TimelineEvent:
+      type: object
+      properties:
+        id: { type: string, example: e1 }
+        when: { type: string, maxLength: 40, example: '1953' }
+        label: { type: string, maxLength: 120 }
+        note: { type: string, maxLength: 280 }
+
+    QuizViewer:
+      type: object
+      description: Histórico do aluno logado no quiz.
+      properties:
+        best: { type: integer, nullable: true, description: "Maior número de acertos; `null` sem tentativas." }
+        attempts: { type: integer }
+        last:
+          type: object
+          nullable: true
+          properties:
+            score: { type: integer }
+            total: { type: integer }
+            wrong: { type: array, items: { type: string }, description: "Ids das questões erradas." }
+            at: { type: string, format: date-time }
 
     Publication:
       type: object
@@ -586,11 +660,11 @@ components:
     Material:
       type: object
       description: >
-        Resumo, mapa mental ou post de blog — retorno de `materialPublic()` em
-        `backend/src/lib/materials.js`. `body` só vem no detalhe (`full`).
+        Resumo, mapa mental, quiz, linha do tempo ou post de blog — retorno de `materialPublic()`
+        em `backend/src/lib/materials.js`. `body` só vem no detalhe (`full`).
       properties:
         id: { type: string }
-        kind: { type: string, enum: [resumo, mapa, noticia], description: "`noticia` = post de blog." }
+        kind: { type: string, enum: [resumo, mapa, noticia, quiz, linha], description: "`noticia` = post de blog; `linha` = linha do tempo." }
         kindLabel: { type: string, example: Post de blog }
         ownerId: { type: string }
         authorId: { type: string }
@@ -629,20 +703,24 @@ components:
         excerpt: { type: string }
         preview:
           type: object
-          description: "Mapa: `{ root, branches, nodes }` · blog: `{ outlet, url }` · resumo: `{ sections }`."
+          description: "Mapa: `{ root, branches, nodes, layout }` · quiz: `{ questions, sample, options }` · linha: `{ events, from, to, marks }` · blog: `{ outlet, url }` · resumo: `{ sections }`."
           additionalProperties: true
         isMine: { type: boolean }
         commentCount: { type: integer }
+        commentPreview: { $ref: '#/components/schemas/CommentPreview' }
+        remixOf: { $ref: '#/components/schemas/RemixOf' }
+        remixCount: { type: integer, description: "Remixes aprovados que citam este material como original." }
         viewer:
           type: object
           properties:
             favorited: { type: boolean }
             myReactions: { type: array, items: { type: string } }
+            quiz: { $ref: '#/components/schemas/QuizViewer' }
         body: { $ref: '#/components/schemas/MaterialBody' }
 
     MaterialBody:
       type: object
-      description: "Resumo/blog: `markdown` (+ `url`/`outlet` no blog) e `sources`; mapa: `root`."
+      description: "Resumo/blog: `markdown` (+ `url`/`outlet` no blog) e `sources`; mapa: `root` e `layout`; quiz: `questions`; linha do tempo: `events`."
       properties:
         markdown: { type: string, maxLength: 20000 }
         url: { type: string, nullable: true, description: "Link da publicação original (blog)." }
@@ -652,6 +730,9 @@ components:
           maxItems: 10
           items: { type: object, properties: { title: { type: string }, url: { type: string, nullable: true } } }
         root: { $ref: '#/components/schemas/MindMapNode' }
+        layout: { type: string, enum: [mapa, diagrama], description: "Mapa mental radial (padrão) ou diagrama de etapas/fluxo." }
+        questions: { type: array, maxItems: 40, items: { $ref: '#/components/schemas/QuizQuestion' } }
+        events: { type: array, minItems: 2, maxItems: 60, items: { $ref: '#/components/schemas/TimelineEvent' } }
 
     MindMapNode:
       type: object
@@ -723,7 +804,7 @@ components:
         source: { type: string, description: "Nome da conexão MCP." }
         status: { type: string, enum: [pendente, aprovado, recusado] }
         decidedAt: { type: string, format: date-time, nullable: true }
-        kind: { type: string, enum: [flashcards, resumo, mapa, noticia] }
+        kind: { type: string, enum: [flashcards, resumo, mapa, noticia, quiz, linha] }
         target:
           type: object
           properties:
@@ -1546,8 +1627,10 @@ paths:
         (motivo em `becauseDeck`). Além dos decks, o feed traz os materiais publicados visíveis ao
         aluno (resumos, mapas mentais e posts de blog; os com `audience: seguidores` só para quem
         segue o autor): `latest` (linha do tempo mista, 8 itens), `trending` (6 por engajamento),
-        `materials` (agrupados por `kind`), `counts` (por tipo + `mine`) e `sources` (contagem por
-        IA de origem). `following` passa a incluir materiais dos autores seguidos.
+        `materials` (agrupados por `kind`: resumo, mapa, noticia, quiz, linha), `counts` (por tipo
+        + `mine`) e `sources` (contagem por IA de origem). `following` passa a incluir materiais dos
+        autores seguidos. Cada deck e material traz `commentPreview` (comentário em destaque, com
+        `replyCount`).
       responses:
         "200":
           description: OK
@@ -1587,12 +1670,12 @@ paths:
       tags: [Comunidade]
       summary: Busca de decks e materiais públicos
       description: >
-        `results` mistura decks (`kind: flashcards`) e materiais (`resumo`, `mapa`, `noticia`);
+        `results` mistura decks (`kind: flashcards`) e materiais (`resumo`, `mapa`, `noticia`, `quiz`, `linha`);
         filtre com `kind`. `difficulty` só se aplica a decks; em materiais, `sort=rating` usa
         favoritos em vez de votos.
       parameters:
         - { name: q, in: query, schema: { type: string } }
-        - { name: kind, in: query, schema: { type: string, enum: [flashcards, resumo, mapa, noticia] } }
+        - { name: kind, in: query, schema: { type: string, enum: [flashcards, resumo, mapa, noticia, quiz, linha] } }
         - { name: category, in: query, schema: { type: string } }
         - { name: difficulty, in: query, schema: { type: string, enum: [facil, medio, dificil] } }
         - { name: sort, in: query, schema: { type: string, enum: [relevance, recent, rating] } }
@@ -1620,6 +1703,7 @@ paths:
     get:
       tags: [Comunidade]
       summary: Detalhe do deck público, cards, tradução e versões
+      description: "`deck` traz `commentPreview` (comentário em destaque, com `replyCount`) e `remixes` lista os remixes aprovados."
       parameters: [{ $ref: '#/components/parameters/deckId' }]
       responses:
         "200": { description: OK }
@@ -1688,6 +1772,7 @@ paths:
     get:
       tags: [Comunidade]
       summary: Lista comentários (com respostas aninhadas)
+      description: "Cada thread e cada resposta trazem `likeCount`, `liked` e `isMine`."
       parameters: [{ $ref: '#/components/parameters/deckId' }]
       responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { threads: { type: array, items: { $ref: '#/components/schemas/Comment' } } } } } } } }
     post:
@@ -1700,12 +1785,70 @@ paths:
         "403": { description: "verification_required · guardian_required" }
         "422": { $ref: '#/components/responses/Validation' }
 
+  /community/comments/{id}/like:
+    post:
+      tags: [Comunidade]
+      summary: Alterna a curtida do aluno em um comentário ou resposta (de deck ou de material)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: "O comentário atualizado, com `likeCount` e `liked`.", content: { application/json: { schema: { $ref: '#/components/schemas/Comment' } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+
   /community/comments/{id}/report:
     post:
       tags: [Comunidade]
       summary: Denuncia um comentário (vai para análise automática)
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses: { "201": { description: OK } }
+
+  /community/groups:
+    get:
+      tags: [Comunidade]
+      summary: Lista os grupos de estudo com membros, materiais, meta coletiva e participação do aluno
+      responses:
+        "200": { description: OK }
+
+  /community/groups/{id}:
+    get:
+      tags: [Comunidade]
+      summary: Detalhe do grupo com materiais do tema, ranking por criador e mural
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/groups/{id}/join:
+    post:
+      tags: [Comunidade]
+      summary: Entra no grupo ou sai dele (alterna)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/groups/{id}/posts:
+    post:
+      tags: [Comunidade]
+      summary: Publica no mural do grupo (só membros; exige verificação e liberação do responsável se menor)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string, minLength: 3, maxLength: 600 } } }
+      responses:
+        "201": { description: Criado }
+        "403": { description: Não é membro, não verificado ou sem liberação do responsável }
+        "422": { description: Texto curto demais }
+
+  /community/group-posts/{id}/like:
+    post:
+      tags: [Comunidade]
+      summary: Curte ou descurte um post do mural (uma vez por aluno)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK }
+        "404": { $ref: '#/components/responses/NotFound' }
 
   /community/authors/{id}:
     get:
@@ -1743,11 +1886,14 @@ paths:
   /community/materials/{id}:
     get:
       tags: [Conteúdos]
-      summary: Detalhe de um resumo, mapa mental ou post de blog (com corpo completo)
+      summary: Detalhe de um resumo, mapa mental, quiz, linha do tempo ou post de blog (com corpo completo)
       description: >
         Visível se publicado para a comunidade, publicado para seguidores e o aluno segue o autor,
         ou se é do próprio aluno. Conta +1 visualização quando aprovado e de outro autor.
-        `moderation` só vem para o dono com publicação submetida.
+        `moderation` só vem para o dono com publicação submetida. Em quizzes,
+        `material.viewer.quiz` traz a melhor nota, o total de tentativas e a última tentativa do
+        aluno. `material.commentPreview` traz o comentário em destaque e `remixes` os remixes
+        aprovados.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         "200":
@@ -1760,6 +1906,7 @@ paths:
                   material: { $ref: '#/components/schemas/Material' }
                   reactionsList: { type: array, items: { type: string } }
                   related: { type: array, maxItems: 3, items: { $ref: '#/components/schemas/Material' } }
+                  remixes: { type: array, items: { $ref: '#/components/schemas/Material' } }
                   moderation:
                     type: object
                     nullable: true
@@ -1770,6 +1917,53 @@ paths:
                       submittedAt: { type: string, format: date-time }
                   notice: { type: string, nullable: true, description: "Aviso exibido em conteúdo gerado por IA." }
         "404": { $ref: '#/components/responses/NotFound' }
+
+  /community/materials/{id}/quiz-attempts:
+    post:
+      tags: [Conteúdos]
+      summary: Envia uma tentativa de quiz; o servidor corrige e guarda
+      description: >
+        Grava em `state.community.quizAttempts`. Questão sem resposta ou com índice fora das
+        alternativas conta como errada. É preciso responder pelo menos uma questão.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answers]
+              properties:
+                answers: { type: object, additionalProperties: { type: integer, minimum: 0 }, description: "`{ [questionId]: índiceDaAlternativa }`.", example: { q1: 2, q2: 0 } }
+      responses:
+        "201":
+          description: Tentativa corrigida e guardada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score: { type: integer }
+                  total: { type: integer }
+                  wrong: { type: array, items: { type: string }, description: "Ids das questões erradas." }
+                  best: { type: integer, description: "Melhor nota do aluno neste quiz, já contando esta tentativa." }
+                  attempts: { type: integer }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { description: "`not_quiz` (o material não é quiz) · `validation` (respostas ausentes ou fora do formato)" }
+
+  /community/materials/{id}/quiz-review:
+    post:
+      tags: [Conteúdos]
+      summary: Transforma as erradas da última tentativa em um deck de flashcards
+      description: >
+        Cria em `state.decks`/`state.cards` o deck "Revisão: <título do quiz>", já programado
+        (`scheduled: true`) e fora da fila de Recebidos. Cada questão errada vira um card: frente é
+        o enunciado; verso é a alternativa correta e a explicação.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "201": { description: Deck criado, content: { application/json: { schema: { type: object, properties: { deckId: { type: string }, cards: { type: integer } } } } } }
+        "404": { $ref: '#/components/responses/NotFound' }
+        "422": { description: "`nothing_to_review` (sem tentativa ou sem erradas na última) · `not_quiz`" }
 
   /community/materials/{id}/favorite:
     post:
@@ -1806,6 +2000,7 @@ paths:
     get:
       tags: [Conteúdos]
       summary: Lista comentários do material (com respostas aninhadas)
+      description: "Cada thread e cada resposta trazem `likeCount`, `liked` e `isMine`."
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: object, properties: { threads: { type: array, items: { $ref: '#/components/schemas/Comment' } }, total: { type: integer, description: "Comentários + respostas." } } } } } }
@@ -2155,7 +2350,10 @@ paths:
 
         Ferramentas (`backend/src/lib/mcpTools.js`):
         - Escrita (até 50 por dia; tudo chega como solicitação **pendente** em Recebidos):
-          `salvar_flashcards`, `salvar_resumo`, `salvar_mapa_mental`, `salvar_noticia`.
+          `salvar_flashcards`, `salvar_resumo`, `salvar_mapa_mental` (`layout`: `mapa` ou
+          `diagrama`), `salvar_quiz`, `salvar_linha_do_tempo`, `salvar_noticia`. Todas aceitam
+          `remix_de` (id de um conteúdo da comunidade usado como base): o original ganha crédito
+          visível em `remixOf`.
         - Leitura: `buscar_comunidade`, `ler_conteudo`, `meus_conteudos`, `listar_categorias`.
 
         Erro de entrada de ferramenta não é erro JSON-RPC: volta como `result` com `isError: true`

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/memora-tech/memora/actions/workflows/ci.yml/badge.svg)](https://github.com/memora-tech/memora/actions/workflows/ci.yml)
 
-**Comunidade de estudos com IA.** Flashcards com repetição espaçada, resumos, mapas mentais e posts de blog, criados com IA e compartilhados entre estudantes. A **Nôa** é a assistente da casa, e o **servidor MCP** conecta o Memora a outras IAs e plataformas de ensino.
+**Comunidade de estudos com IA.** Flashcards com repetição espaçada, resumos, mapas mentais, quizzes, linhas do tempo e posts de blog, criados com IA e compartilhados entre estudantes. A **Nôa** é a assistente da casa, e o **servidor MCP** conecta o Memora a outras IAs e plataformas de ensino.
 
 Este repositório é o **mock navegável v1**: app do aluno completo, entrada na conta e quatro painéis web, com uma API mock em Node que reproduz as regras de negócio. Ele foi construído a partir do *Escopo Consolidado v2* e do *Mapa de Telas e Contagem de Toques* (09/09/2026).
 
@@ -14,7 +14,9 @@ Este repositório é o **mock navegável v1**: app do aluno completo, entrada na
 |---|---|
 | **Estudar** | Sessão do dia a partir dos decks que o aluno programou, com repetição espaçada (FSRS simplificado), meta diária com alvo visual, sequência e próxima prova |
 | **Meus decks** | Biblioteca com pastas. O aluno escolhe quais decks entram no estudo. No deck: perguntas e respostas, três modos de estudo (vencidos, deck inteiro, pontos fracos) e publicação na comunidade |
-| **Comunidade** | Linha do tempo de flashcards, resumos, mapas mentais e posts, área de **Blog**, comentários, reações, ranking e **Minhas publicações** |
+| **Comunidade** | Linha do tempo de flashcards, resumos, mapas mentais (em mapa ou diagrama), quizzes, linhas do tempo e posts, área de **Blog**, comentários, reações, ranking, remixes com crédito ao original e **Minhas publicações** |
+| **Quiz** | Correção comentada e gabarito. O servidor guarda cada tentativa, mostra a melhor nota e transforma as questões erradas em um deck de revisão já programado |
+| **Grupos de estudo** | Grupos por prova ou tema, com os materiais da comunidade que combinam com o grupo, ranking de criadores, meta semanal coletiva e mural |
 | **Meu blog** | O aluno escreve posts e compartilha com toda a comunidade (com moderação) ou só com seus seguidores |
 | **Nôa** | Leitura do estudo do dia, sugestões, histórico de decisões com "desfazer" e transparência sobre o que ela analisa |
 | **Recebidos (MCP)** | Tudo o que outra IA envia chega aqui primeiro. O aluno revisa, aprova (escolhendo o destino) ou recusa |
@@ -84,12 +86,16 @@ A IA nunca publica sozinha.
 |---|---|
 | `salvar_flashcards` | Envia um deck de perguntas e respostas |
 | `salvar_resumo` | Envia um resumo em Markdown com fontes |
-| `salvar_mapa_mental` | Envia um mapa mental (árvore de até 5 níveis) |
+| `salvar_mapa_mental` | Envia um mapa mental (árvore de até 5 níveis). Com `layout: "diagrama"`, vira um diagrama de etapas |
+| `salvar_quiz` | Envia um quiz de múltipla escolha (até 40 questões, 2 a 5 alternativas, com explicação) |
+| `salvar_linha_do_tempo` | Envia uma linha do tempo (2 a 60 marcos, cada um com quando, título e nota) |
 | `salvar_noticia` | Envia um post de blog, com link e veículo de origem |
 | `buscar_comunidade` | Procura conteúdo publicado na comunidade |
 | `ler_conteudo` | Traz o conteúdo completo de um item para a conversa |
 | `meus_conteudos` | Lista o que o aluno tem no Memora |
 | `listar_categorias` | Lista categorias e tipos aceitos |
+
+Toda ferramenta de escrita aceita `remix_de`, o id de um conteúdo da comunidade usado como base (vem de `buscar_comunidade`). O conteúdo novo mostra o crédito ao autor original, e o original lista seus remixes.
 
 Sem um cliente MCP à mão, use **"Simular envio do Claude"** ou **"Simular post de blog do Claude"**, que ficam em Recebidos, em Conexões e no botão Protótipo. A simulação chama o mesmo servidor MCP.
 
