@@ -2,8 +2,8 @@ import { Router } from 'express'
 import { FEATURES } from '../config/features.js'
 import { requireStudent } from '../lib/auth.js'
 import { fail, requireVerified } from '../lib/helpers.js'
-import { balanceOf, ledgerOf, debit } from '../lib/ledger.js'
-import { id, nowIso, daysFromNow, couponCode } from '../lib/ids.js'
+import { balanceOf, debit, ledgerOf } from '../lib/ledger.js'
+import { couponCode, daysFromNow, id, nowIso } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 
 export const REDEEM_MIN_STUDY_DAYS = 10
@@ -13,10 +13,27 @@ const positioningRank = { primeira_posicao: 0, destaque: 1 }
 export function walletSummary(state, user, features = FEATURES) {
   const balance = balanceOf(state, user.id)
   const study = state.study[user.id]
-  const coupons = features.coupons ? state.coupons.slice().sort((a, b) => (positioningRank[a.positioning] ?? 2) - (positioningRank[b.positioning] ?? 2) || a.costNeurons - b.costNeurons) : []
+  const coupons = features.coupons
+    ? state.coupons
+        .slice()
+        .sort(
+          (a, b) =>
+            (positioningRank[a.positioning] ?? 2) - (positioningRank[b.positioning] ?? 2) ||
+            a.costNeurons - b.costNeurons
+        )
+    : []
   const affordable = coupons.filter((c) => c.stock > 0 && c.costNeurons <= balance)
-  const nextUnaffordable = coupons.filter((c) => c.stock > 0 && c.costNeurons > balance).sort((a, b) => a.costNeurons - b.costNeurons)[0] || null
-  const canRedeem = { ok: Boolean(features.coupons) && study.studyDays >= REDEEM_MIN_STUDY_DAYS && Boolean(user.verified?.email && user.verified?.phone), studyDays: study.studyDays, required: REDEEM_MIN_STUDY_DAYS, verified: Boolean(user.verified?.email && user.verified?.phone) }
+  const nextUnaffordable =
+    coupons
+      .filter((c) => c.stock > 0 && c.costNeurons > balance)
+      .sort((a, b) => a.costNeurons - b.costNeurons)[0] || null
+  const verified = Boolean(user.verified?.email && (!features.phoneVerification || user.verified?.phone))
+  const canRedeem = {
+    ok: Boolean(features.coupons) && study.studyDays >= REDEEM_MIN_STUDY_DAYS && verified,
+    studyDays: study.studyDays,
+    required: REDEEM_MIN_STUDY_DAYS,
+    verified
+  }
   const accountDays = Math.round((Date.now() - new Date(user.createdAt).getTime()) / 86400000)
   const reviewsCount = state.reviews.filter((r) => r.userId === user.id).length + study.studyDays
   return {
@@ -24,12 +41,28 @@ export function walletSummary(state, user, features = FEATURES) {
     ledger: ledgerOf(state, user.id),
     redeemable: Boolean(features.coupons) && affordable.length > 0 && canRedeem.ok,
     redeemableCount: features.coupons ? affordable.length : 0,
-    nextCoupon: features.coupons && nextUnaffordable ? { coupon: nextUnaffordable, missing: nextUnaffordable.costNeurons - balance } : null,
+    nextCoupon:
+      features.coupons && nextUnaffordable
+        ? { coupon: nextUnaffordable, missing: nextUnaffordable.costNeurons - balance }
+        : null,
     cheapest: features.coupons ? coupons.filter((c) => c.stock > 0)[0] || null : null,
     canRedeem,
     abuseFlag: accountDays >= 7 && reviewsCount === 0,
-    myCoupons: features.coupons ? state.myCoupons.filter((m) => m.userId === user.id).sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt)) : [],
-    referral: canRedeem.verified ? { code: `MEM-${user.name.toUpperCase().replace(/\s+/g, '').slice(0, 6)}`, bonus: 20, rule: 'O indicado precisa concluir a verificação e estudar em ao menos 3 dos primeiros 7 dias. Indicações do mesmo aparelho ou IP não pontuam.' } : null,
+    myCoupons: features.coupons
+      ? state.myCoupons
+          .filter((m) => m.userId === user.id)
+          .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
+      : [],
+    referral: canRedeem.verified
+      ? {
+          code: `MEM-${user.name
+            .toUpperCase()
+            .replace(/\s+/g, '')
+            .slice(0, 6)}`,
+          bonus: 20,
+          rule: 'O indicado precisa concluir a verificação e estudar em ao menos 3 dos primeiros 7 dias. Indicações do mesmo aparelho ou IP não pontuam.'
+        }
+      : null,
     rules: { dailyAccess: 1, goalBonus: 5, neverPurchasable: true, expiryRefund: true }
   }
 }
@@ -37,8 +70,16 @@ export function walletSummary(state, user, features = FEATURES) {
 export function walletRoutes(features = FEATURES) {
   const r = Router()
 
-  r.get('/wallet', requireStudent, (req, res) => {
-    res.json(walletSummary(req.store.state, req.user, features))
+  r.get('/wallet', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const summary = await req.data.ledger.getWallet(req.db, req.user)
+        return res.json(summary)
+      }
+      return res.json(walletSummary(req.store.state, req.user, features))
+    } catch (err) {
+      return next(err)
+    }
   })
 
   if (features.coupons) {
@@ -47,8 +88,17 @@ export function walletRoutes(features = FEATURES) {
       const balance = balanceOf(state, req.user.id)
       const coupons = state.coupons
         .slice()
-        .sort((a, b) => (positioningRank[a.positioning] ?? 2) - (positioningRank[b.positioning] ?? 2) || a.costNeurons - b.costNeurons)
-        .map((c) => ({ ...c, affordable: c.costNeurons <= balance, soldOut: c.stock <= 0, lastUnits: c.stock > 0 && c.stock <= 3 }))
+        .sort(
+          (a, b) =>
+            (positioningRank[a.positioning] ?? 2) - (positioningRank[b.positioning] ?? 2) ||
+            a.costNeurons - b.costNeurons
+        )
+        .map((c) => ({
+          ...c,
+          affordable: c.costNeurons <= balance,
+          soldOut: c.stock <= 0,
+          lastUnits: c.stock > 0 && c.stock <= 3
+        }))
       res.json({ coupons, balance })
     })
 
@@ -58,7 +108,19 @@ export function walletRoutes(features = FEATURES) {
       if (!coupon) return fail(res, 404, 'not_found', 'Cupom não encontrado.')
       const balance = balanceOf(state, req.user.id)
       const partner = state.partner.partners.find((p) => p.id === coupon.partnerId)
-      res.json({ coupon: { ...coupon, affordable: coupon.costNeurons <= balance, soldOut: coupon.stock <= 0, lastUnits: coupon.stock > 0 && coupon.stock <= 3 }, partner: partner ? { name: partner.name, category: partner.category, verified: partner.verified } : null, balance, canRedeem: walletSummary(state, req.user, features).canRedeem })
+      return res.json({
+        coupon: {
+          ...coupon,
+          affordable: coupon.costNeurons <= balance,
+          soldOut: coupon.stock <= 0,
+          lastUnits: coupon.stock > 0 && coupon.stock <= 3
+        },
+        partner: partner
+          ? { name: partner.name, category: partner.category, verified: partner.verified }
+          : null,
+        balance,
+        canRedeem: walletSummary(state, req.user, features).canRedeem
+      })
     })
 
     r.post('/coupons/:id/redeem', requireStudent, (req, res) => {
@@ -68,14 +130,40 @@ export function walletRoutes(features = FEATURES) {
       const key = req.body?.idempotencyKey
       if (key) {
         const existing = state.myCoupons.find((m) => m.idempotencyKey === key)
-        if (existing) return res.json({ myCoupon: existing, balance: balanceOf(state, req.user.id), duplicate: true })
+        if (existing) {
+          return res.json({
+            myCoupon: existing,
+            balance: balanceOf(state, req.user.id),
+            duplicate: true
+          })
+        }
       }
       const unverified = requireVerified(req.user)
-      if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para resgatar.', unverified)
+      if (unverified) {
+        return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para resgatar.', unverified)
+      }
       const summary = walletSummary(state, req.user, features)
-      if (!summary.canRedeem.ok) return fail(res, 422, 'study_days_required', `Resgates exigem ao menos ${REDEEM_MIN_STUDY_DAYS} dias com estudo registrado.`, summary.canRedeem)
-      if (coupon.stock <= 0) return fail(res, 409, 'sold_out', 'Este cupom acabou de esgotar.', { stock: 0 })
-      if (summary.balance < coupon.costNeurons) return fail(res, 422, 'insufficient_balance', `Faltam ${coupon.costNeurons - summary.balance} Neurônios.`, { missing: coupon.costNeurons - summary.balance })
+      if (!summary.canRedeem.ok) {
+        return fail(
+          res,
+          422,
+          'study_days_required',
+          `Resgates exigem ao menos ${REDEEM_MIN_STUDY_DAYS} dias com estudo registrado.`,
+          summary.canRedeem
+        )
+      }
+      if (coupon.stock <= 0) {
+        return fail(res, 409, 'sold_out', 'Este cupom acabou de esgotar.', { stock: 0 })
+      }
+      if (summary.balance < coupon.costNeurons) {
+        return fail(
+          res,
+          422,
+          'insufficient_balance',
+          `Faltam ${coupon.costNeurons - summary.balance} Neurônios.`,
+          { missing: coupon.costNeurons - summary.balance }
+        )
+      }
 
       coupon.stock -= 1
       const myCoupon = {
@@ -92,16 +180,43 @@ export function walletRoutes(features = FEATURES) {
         usedAt: null,
         idempotencyKey: key || null
       }
-      debit(state, req.user.id, coupon.costNeurons, 'coupon_redeem', { couponId: coupon.id, partner: coupon.partnerName, myCouponId: myCoupon.id, title: coupon.title })
+      debit(state, req.user.id, coupon.costNeurons, 'coupon_redeem', {
+        couponId: coupon.id,
+        partner: coupon.partnerName,
+        myCouponId: myCoupon.id,
+        title: coupon.title
+      })
       state.myCoupons.push(myCoupon)
-      state.partner.redemptions.unshift({ id: id('rd'), partnerId: coupon.partnerId, code: myCoupon.code, redeemedAt: myCoupon.redeemedAt, validUntil: myCoupon.validUntil, status: 'emitido', campaignId: coupon.id })
-      appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'coupon_redeemed', target: coupon.id, details: { cost: coupon.costNeurons, stockAfter: coupon.stock } })
-      res.status(201).json({ myCoupon, balance: balanceOf(state, req.user.id), stockLeft: coupon.stock })
+      state.partner.redemptions.unshift({
+        id: id('rd'),
+        partnerId: coupon.partnerId,
+        code: myCoupon.code,
+        redeemedAt: myCoupon.redeemedAt,
+        validUntil: myCoupon.validUntil,
+        status: 'emitido',
+        campaignId: coupon.id
+      })
+      appendAudit(state, {
+        actor: req.user.id,
+        actorRole: 'student',
+        action: 'coupon_redeemed',
+        target: coupon.id,
+        details: { cost: coupon.costNeurons, stockAfter: coupon.stock }
+      })
+      return res.status(201).json({
+        myCoupon,
+        balance: balanceOf(state, req.user.id),
+        stockLeft: coupon.stock
+      })
     })
 
     r.get('/wallet/coupons', requireStudent, (req, res) => {
       const state = req.store.state
-      res.json({ myCoupons: state.myCoupons.filter((m) => m.userId === req.user.id).sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt)) })
+      res.json({
+        myCoupons: state.myCoupons
+          .filter((m) => m.userId === req.user.id)
+          .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
+      })
     })
 
     r.get('/wallet/coupons/:id', requireStudent, (req, res) => {
@@ -109,7 +224,7 @@ export function walletRoutes(features = FEATURES) {
       const mine = state.myCoupons.find((m) => m.id === req.params.id && m.userId === req.user.id)
       if (!mine) return fail(res, 404, 'not_found', 'Cupom não encontrado.')
       const coupon = state.coupons.find((c) => c.id === mine.couponId)
-      res.json({ myCoupon: mine, coupon, qrPayload: `memora://coupon/${mine.code}` })
+      return res.json({ myCoupon: mine, coupon, qrPayload: `memora://coupon/${mine.code}` })
     })
   }
 

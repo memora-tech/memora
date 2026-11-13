@@ -339,6 +339,210 @@ describe('conta e acesso', () => {
     const after = await request(app).get('/v1/me/sessions').set(auth(token))
     expect(after.body.sessions.length).toBe(1)
   })
+
+  it('etapa 4: /v1/me credita +1 Neurônio idempotente no dia, persiste settings/consents e /v1/wallet reflete o ledger', async () => {
+    const fakeUserId = '22222222-3333-4444-8555-666666666666'
+    const dbState = {
+      profile: {
+        id: fakeUserId,
+        role: 'student',
+        name: 'Carlos Teste',
+        email: 'carlos@exemplo.com',
+        birth_date: '1995-07-20',
+        plan: 'free',
+        locale: 'pt-BR',
+        timezone: 'America/Sao_Paulo',
+        onboarding_done: true,
+        settings: {},
+        notifications: {
+          intensity: 'padrao',
+          reminderTime: '19:00',
+          push: true,
+          quietWindow: { start: '23:00', end: '07:30', learned: true, lockedForMinor: false },
+          limits: { whatsappPerDay: 3, pushPerDay: 8 },
+          sentToday: { whatsapp: 0, push: 0 }
+        }
+      },
+      study: {
+        user_id: fakeUserId,
+        goal: 20,
+        goal_suggested: 20,
+        done_today: 0,
+        day_key: '2026-11-13',
+        streak: 4,
+        study_days: 12,
+        reschedules_week_key: '2026-W46',
+        reschedules_used: 0,
+        reschedules_limit: 3,
+        fatigue_detection: true
+      },
+      consents: {
+        user_id: fakeUserId,
+        school_share: false,
+        whatsapp: { lembretes: true, conquistas: false, conta: true, informativo: false },
+        content_policy_accepted_version: null,
+        content_policy_accepted_at: null
+      },
+      ledger: [],
+      audit: [],
+      passwordUpdates: []
+    }
+
+    const fakeServiceClient = {
+      rpc: async (fn, args) => {
+        if (fn === 'append_neuron_ledger_entry') {
+          const existing = dbState.ledger.find(
+            (e) => e.user_id === args.p_user_id && args.p_idempotency_key && e.idempotency_key === args.p_idempotency_key
+          )
+          if (existing) return { data: existing, error: null }
+          const prevBalance = dbState.ledger.length ? dbState.ledger[0].balance_after : 0
+          const nextBalance = prevBalance + args.p_amount
+          if (nextBalance < 0) {
+            return { data: null, error: { message: 'insufficient_balance', code: 'P0001' } }
+          }
+          const entry = {
+            id: `led_${dbState.ledger.length + 1}`,
+            seq: dbState.ledger.length + 1,
+            user_id: args.p_user_id,
+            amount: args.p_amount,
+            balance_after: nextBalance,
+            type: args.p_type,
+            meta: args.p_meta || {},
+            idempotency_key: args.p_idempotency_key || null,
+            created_at: new Date().toISOString()
+          }
+          dbState.ledger.unshift(entry)
+          return { data: entry, error: null }
+        }
+        if (fn === 'append_audit_entry') {
+          const auditEntry = { seq: dbState.audit.length + 1, ...args }
+          dbState.audit.push(auditEntry)
+          return { data: auditEntry, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_etapa4_token') {
+            return { data: { user: { id: fakeUserId, email: dbState.profile.email } }, error: null }
+          }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        },
+        async updateUser({ password }) {
+          dbState.passwordUpdates.push(password)
+          return { data: { user: { id: fakeUserId } }, error: null }
+        }
+      },
+      from(table) {
+        const filters = {}
+        const builder = {
+          select() {
+            return builder
+          },
+          eq(col, val) {
+            filters[col] = val
+            return builder
+          },
+          order() {
+            return builder
+          },
+          async limit(n) {
+            if (table === 'neuron_ledger') {
+              return { data: dbState.ledger.slice(0, n), error: null }
+            }
+            return { data: [], error: null }
+          },
+          async maybeSingle() {
+            if (table === 'profiles') return { data: { ...dbState.profile }, error: null }
+            if (table === 'study_settings') return { data: { ...dbState.study }, error: null }
+            if (table === 'user_consents') return { data: { ...dbState.consents }, error: null }
+            if (table === 'neuron_ledger') {
+              const found = dbState.ledger.find(
+                (e) =>
+                  (!filters.user_id || e.user_id === filters.user_id) &&
+                  (!filters.idempotency_key || e.idempotency_key === filters.idempotency_key)
+              )
+              return { data: found || null, error: null }
+            }
+            return { data: null, error: null }
+          },
+          update(patch) {
+            if (table === 'profiles') Object.assign(dbState.profile, patch)
+            if (table === 'study_settings') Object.assign(dbState.study, patch)
+            if (table === 'user_consents') Object.assign(dbState.consents, patch)
+            return builder
+          },
+          then(resolve) {
+            if (table === 'neuron_ledger') {
+              return Promise.resolve({ data: [...dbState.ledger], error: null }).then(resolve)
+            }
+            return Promise.resolve({ data: [], error: null }).then(resolve)
+          }
+        }
+        return builder
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const firstMe = await request(sbApp).get('/v1/me').set(auth('jwt_etapa4_token'))
+    expect(firstMe.status).toBe(200)
+    expect(firstMe.body.dailyCredit).toBeTruthy()
+    expect(firstMe.body.dailyCredit.amount).toBe(1)
+    expect(firstMe.body.dailyCredit.type).toBe('daily_access')
+    expect(firstMe.body.user.balance).toBe(1)
+
+    const secondMe = await request(sbApp).get('/v1/me').set(auth('jwt_etapa4_token'))
+    expect(secondMe.status).toBe(200)
+    expect(secondMe.body.dailyCredit).toBeNull()
+    expect(secondMe.body.user.balance).toBe(1)
+
+    const settingsRes = await request(sbApp)
+      .patch('/v1/me/settings')
+      .set(auth('jwt_etapa4_token'))
+      .send({
+        dailyGoal: 35,
+        fatigueDetection: false,
+        intensity: 'intenso',
+        reminderTime: '20:30',
+        accessibility: { reduceMotion: true }
+      })
+    expect(settingsRes.status).toBe(200)
+    expect(settingsRes.body.study.goal).toBe(35)
+    expect(settingsRes.body.study.fatigueDetection).toBe(false)
+    expect(settingsRes.body.notifications.intensity).toBe('intenso')
+    expect(settingsRes.body.notifications.reminderTime).toBe('20:30')
+    expect(settingsRes.body.user.settings.accessibility.reduceMotion).toBe(true)
+
+    const consentsRes = await request(sbApp)
+      .patch('/v1/me/consents')
+      .set(auth('jwt_etapa4_token'))
+      .send({ schoolShare: true, whatsapp: { conquistas: true } })
+    expect(consentsRes.status).toBe(200)
+    expect(consentsRes.body.consents.schoolShare).toBe(true)
+    expect(consentsRes.body.consents.whatsapp.conquistas).toBe(true)
+
+    const pwRes = await request(sbApp)
+      .post('/v1/me/password')
+      .set(auth('jwt_etapa4_token'))
+      .send({ current: 'antiga123', next: 'novaSenhaForte123' })
+    expect(pwRes.status).toBe(200)
+    expect(dbState.passwordUpdates).toEqual(['novaSenhaForte123'])
+
+    const walletRes = await request(sbApp).get('/v1/wallet').set(auth('jwt_etapa4_token'))
+    expect(walletRes.status).toBe(200)
+    expect(walletRes.body.balance).toBe(1)
+    expect(walletRes.body.ledger.length).toBe(1)
+    expect(walletRes.body.ledger[0].type).toBe('daily_access')
+    expect(walletRes.body.redeemable).toBe(false)
+  })
 })
 
 describe('estudo', () => {
