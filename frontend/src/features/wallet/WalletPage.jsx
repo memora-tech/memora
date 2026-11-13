@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import styles from './wallet.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Banner, Button, Chip, Icon, NeuronCounter, ProgressBar, Screen, ScreenHeader, Sheet, Skeleton, Surface, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -108,13 +109,13 @@ export function WalletPage() {
   const session = useSession()
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const wallet = useAsync(() => studentApi.get('/wallet'), [session.user?.balance])
-  const store = useAsync(() => studentApi.get('/coupons'), [session.user?.balance])
+  const store = useAsync(() => (FEATURES.coupons ? studentApi.get('/coupons') : Promise.resolve({ coupons: [] })), [session.user?.balance])
   useDocumentTitle(t('wallet.title'))
 
   useEffect(() => {
     const handler = () => {
       wallet.run()
-      store.run()
+      if (FEATURES.coupons) store.run()
     }
     window.addEventListener('memora:wallet-changed', handler)
     window.addEventListener('memora:proto-changed', handler)
@@ -162,94 +163,100 @@ export function WalletPage() {
         <span className={styles.balanceValue}>
           <NeuronCounter value={w.balance} size={36} />
         </span>
-        {w.redeemable ? (
-          <span className={styles.balanceNext}>{t('wallet.redeemableNow', { count: w.redeemableCount })}</span>
-        ) : next ? (
-          <>
-            <span className={styles.balanceNext}>{t('wallet.nextCoupon', { count: next.missing, title: next.coupon.title })}</span>
-            <div className={styles.progressWrap}>
-              <ProgressBar value={w.balance} max={next.coupon.costNeurons} tone="reward" label={t('wallet.nextCoupon', { count: next.missing, title: next.coupon.title })} />
-            </div>
-          </>
-        ) : (
-          <span className={styles.balanceNext}>{t('wallet.allAffordable')}</span>
-        )}
+        {FEATURES.coupons ? (
+          w.redeemable ? (
+            <span className={styles.balanceNext}>{t('wallet.redeemableNow', { count: w.redeemableCount })}</span>
+          ) : next ? (
+            <>
+              <span className={styles.balanceNext}>{t('wallet.nextCoupon', { count: next.missing, title: next.coupon.title })}</span>
+              <div className={styles.progressWrap}>
+                <ProgressBar value={w.balance} max={next.coupon.costNeurons} tone="reward" label={t('wallet.nextCoupon', { count: next.missing, title: next.coupon.title })} />
+              </div>
+            </>
+          ) : (
+            <span className={styles.balanceNext}>{t('wallet.allAffordable')}</span>
+          )
+        ) : null}
       </Surface>
 
-      {!w.canRedeem.verified ? (
-        <Banner tone="warning" icon="shield" action={<Button size="small" variant="soft" to="/confirmar">{t('common.verification.cta')}</Button>}>
-          {t('wallet.verifyRequired')}
-        </Banner>
-      ) : !w.canRedeem.ok ? (
-        <Banner tone="warning" icon="clock">
-          {t('wallet.studyDaysRequired', { required: w.canRedeem.required, count: w.canRedeem.studyDays })}
-        </Banner>
-      ) : null}
-      {w.abuseFlag ? (
-        <Banner tone="neutral" icon="alert">
-          {t('wallet.abuseFlag')}
-        </Banner>
-      ) : null}
+      {FEATURES.coupons ? (
+        <>
+          {!w.canRedeem.verified ? (
+            <Banner tone="warning" icon="shield" action={<Button size="small" variant="soft" to="/confirmar">{t('common.verification.cta')}</Button>}>
+              {t('wallet.verifyRequired')}
+            </Banner>
+          ) : !w.canRedeem.ok ? (
+            <Banner tone="warning" icon="clock">
+              {t('wallet.studyDaysRequired', { required: w.canRedeem.required, count: w.canRedeem.studyDays })}
+            </Banner>
+          ) : null}
+          {w.abuseFlag ? (
+            <Banner tone="neutral" icon="alert">
+              {t('wallet.abuseFlag')}
+            </Banner>
+          ) : null}
 
-      <section className={styles.section} aria-labelledby="sec-loja">
-        <h2 id="sec-loja" className={styles.sectionTitle}>
-          {t('wallet.store')}
-        </h2>
-        {affordable.length ? (
-          <div className={styles.grid}>
-            {affordable.map((c) => (
-              <CouponListItem key={c.id} coupon={c} balance={w.balance} />
-            ))}
-          </div>
-        ) : (
-          <p className={styles.meta}>{t('wallet.noneAffordable')}</p>
-        )}
-        {tooExpensive.length ? (
-          <details className={styles.group}>
-            <summary className={styles.groupSummary}>{t('wallet.groupLocked', { count: tooExpensive.length })}</summary>
-            <div className={styles.grid}>
-              {tooExpensive.map((c) => (
-                <CouponListItem key={c.id} coupon={c} balance={w.balance} />
-              ))}
-            </div>
-          </details>
-        ) : null}
-        {soldOut.length ? (
-          <details className={styles.group}>
-            <summary className={styles.groupSummary}>{t('wallet.groupSoldOut', { count: soldOut.length })}</summary>
-            <div className={styles.grid}>
-              {soldOut.map((c) => (
-                <CouponListItem key={c.id} coupon={c} balance={w.balance} />
-              ))}
-            </div>
-          </details>
-        ) : null}
-      </section>
+          <section className={styles.section} aria-labelledby="sec-loja">
+            <h2 id="sec-loja" className={styles.sectionTitle}>
+              {t('wallet.store')}
+            </h2>
+            {affordable.length ? (
+              <div className={styles.grid}>
+                {affordable.map((c) => (
+                  <CouponListItem key={c.id} coupon={c} balance={w.balance} />
+                ))}
+              </div>
+            ) : (
+              <p className={styles.meta}>{t('wallet.noneAffordable')}</p>
+            )}
+            {tooExpensive.length ? (
+              <details className={styles.group}>
+                <summary className={styles.groupSummary}>{t('wallet.groupLocked', { count: tooExpensive.length })}</summary>
+                <div className={styles.grid}>
+                  {tooExpensive.map((c) => (
+                    <CouponListItem key={c.id} coupon={c} balance={w.balance} />
+                  ))}
+                </div>
+              </details>
+            ) : null}
+            {soldOut.length ? (
+              <details className={styles.group}>
+                <summary className={styles.groupSummary}>{t('wallet.groupSoldOut', { count: soldOut.length })}</summary>
+                <div className={styles.grid}>
+                  {soldOut.map((c) => (
+                    <CouponListItem key={c.id} coupon={c} balance={w.balance} />
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </section>
 
-      <section className={styles.section} aria-labelledby="sec-meus">
-        <h2 id="sec-meus" className={styles.sectionTitle}>
-          {t('wallet.myCoupons')}
-        </h2>
-        {active.length ? (
-          <div className={styles.grid}>
-            {active.map((m) => (
-              <MyCouponRow key={m.id} mine={m} />
-            ))}
-          </div>
-        ) : (
-          <p className={styles.meta}>{t('wallet.mine.noneActive')}</p>
-        )}
-        {archived.length ? (
-          <details className={styles.group}>
-            <summary className={styles.groupSummary}>{t('wallet.mine.archived', { count: archived.length })}</summary>
-            <div className={styles.grid}>
-              {archived.map((m) => (
-                <MyCouponRow key={m.id} mine={m} />
-              ))}
-            </div>
-          </details>
-        ) : null}
-      </section>
+          <section className={styles.section} aria-labelledby="sec-meus">
+            <h2 id="sec-meus" className={styles.sectionTitle}>
+              {t('wallet.myCoupons')}
+            </h2>
+            {active.length ? (
+              <div className={styles.grid}>
+                {active.map((m) => (
+                  <MyCouponRow key={m.id} mine={m} />
+                ))}
+              </div>
+            ) : (
+              <p className={styles.meta}>{t('wallet.mine.noneActive')}</p>
+            )}
+            {archived.length ? (
+              <details className={styles.group}>
+                <summary className={styles.groupSummary}>{t('wallet.mine.archived', { count: archived.length })}</summary>
+                <div className={styles.grid}>
+                  {archived.map((m) => (
+                    <MyCouponRow key={m.id} mine={m} />
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </section>
+        </>
+      ) : null}
 
       <section className={styles.section} aria-labelledby="sec-mov">
         <h2 id="sec-mov" className={styles.sectionTitle}>

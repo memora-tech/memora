@@ -14,10 +14,28 @@ const review = (materialId = 'm10') => request(app).post(`/v1/community/material
 const ALL_RIGHT = { q1: 2, q2: 1, q3: 0, q4: 1, q5: 0, q6: 1 }
 const TWO_WRONG = { ...ALL_RIGHT, q1: 0, q4: 3 }
 
+const ALL_FEATURES = {
+  proto: true,
+  mcp: true,
+  materials: true,
+  studyGroups: true,
+  rankings: true,
+  coupons: true,
+  subscriptions: true,
+  supportTickets: true,
+  panels: true,
+  guardian: true,
+  ageVerification: true,
+  phoneVerification: true,
+  folderSharing: true,
+  publicationAppeals: true,
+  deviceSessionsManagement: true
+}
+
 beforeEach(async () => {
   store = createStore()
-  app = createApp(store)
-  token = (await request(app).post('/v1/auth/login').send({ provider: 'google' })).body.token
+  app = createApp(store, { features: ALL_FEATURES })
+  token = (await request(app).post('/v1/auth/login').send({ provider: 'email', email: 'manoel@exemplo.com', password: 'senha-segura' })).body.token
 })
 
 describe('tentativas de quiz', () => {

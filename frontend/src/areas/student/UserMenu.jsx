@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styles from './student.module.css'
+import { FEATURES } from '../../config/features.js'
 import { ConfirmDialog, Icon } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
@@ -8,10 +9,10 @@ import { useSession } from '../../state/SessionContext.jsx'
 const ITEMS = [
   { key: 'profile', icon: 'user', to: '/app/perfil' },
   { key: 'settings', icon: 'settings', to: '/app/perfil/configuracoes' },
-  { key: 'connections', icon: 'plug', to: '/app/perfil/conexoes' },
+  ...(FEATURES.mcp ? [{ key: 'connections', icon: 'plug', to: '/app/perfil/conexoes' }] : []),
   { key: 'wallet', icon: 'wallet', to: '/app/carteira' },
-  { key: 'subscription', icon: 'zap', to: '/app/perfil/assinatura' },
-  { key: 'support', icon: 'help', to: '/app/perfil/suporte' }
+  ...(FEATURES.subscriptions ? [{ key: 'subscription', icon: 'zap', to: '/app/perfil/assinatura' }] : []),
+  ...(FEATURES.supportTickets ? [{ key: 'support', icon: 'help', to: '/app/perfil/suporte' }] : [])
 ]
 
 export function UserMenu() {

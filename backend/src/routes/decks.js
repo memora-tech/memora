@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { FEATURES } from '../config/features.js'
 import { requireStudent } from '../lib/auth.js'
 import { fail, ownDecksOf, cardsOfDeck, deckProgress, categoryName, PLAN_LIMITS, guardianGate, communityDeckPublic } from '../lib/helpers.js'
 import { id, nowIso, hoursFromNow } from '../lib/ids.js'
@@ -21,7 +22,7 @@ export function deckSummary(state, deck) {
   return { ...deck, scheduled: deck.scheduled !== false, categoryName: categoryName(state, deck.categoryId), progress: deckProgress(state, deck), cardCount: cardsOfDeck(state, deck.id).length }
 }
 
-export function deckRoutes() {
+export function deckRoutes(features = FEATURES) {
   const r = Router()
 
   r.get('/decks', requireStudent, (req, res) => {
@@ -58,7 +59,8 @@ export function deckRoutes() {
     if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
     const publication = deck.publication?.publicationId ? state.publications.find((p) => p.id === deck.publication.publicationId) : null
     const folder = deck.folderId ? state.folders.find((f) => f.id === deck.folderId) : null
-    res.json({ deck: deckSummary(state, deck), cards: cardsOfDeck(state, deck.id), publication, folder: folder ? { id: folder.id, name: folder.name, shared: folder.shared, members: folder.members } : null, menu: ['difficult', 'focus', 'complementary', 'share_folder', 'export', deck.publication?.status === 'aprovado' ? 'publish_version' : 'publish'] })
+    const menu = ['difficult', 'focus', 'complementary', ...(features.folderSharing ? ['share_folder'] : []), 'export', deck.publication?.status === 'aprovado' ? 'publish_version' : 'publish']
+    res.json({ deck: deckSummary(state, deck), cards: cardsOfDeck(state, deck.id), publication, folder: folder ? { id: folder.id, name: folder.name, shared: folder.shared, members: folder.members } : null, menu })
   })
 
   r.patch('/decks/:id', requireStudent, (req, res) => {
@@ -132,22 +134,24 @@ export function deckRoutes() {
     res.status(201).json({ publication: result.publication, deck: deckSummary(state, deck), sla: result.sla })
   })
 
-  r.post('/publications/:id/appeal', requireStudent, (req, res) => {
-    const state = req.store.state
-    const pub = state.publications.find((p) => p.id === req.params.id && p.authorId === req.user.id)
-    if (!pub) return fail(res, 404, 'not_found', 'Publicação não encontrada.')
-    if (pub.status !== 'rejeitado') return fail(res, 409, 'not_rejected', 'Só publicações rejeitadas podem ser contestadas.')
-    if (pub.decision?.appealDeadline && new Date(pub.decision.appealDeadline).getTime() < Date.now()) return fail(res, 409, 'appeal_window_closed', 'O prazo de 30 dias para contestar terminou.')
-    if (state.appeals.some((a) => a.publicationId === pub.id && a.status === 'em_analise')) return fail(res, 409, 'appeal_exists', 'Já existe uma contestação em análise.')
-    const { text } = req.body || {}
-    if (!text?.trim()) return fail(res, 422, 'validation', 'Explique por que discorda da decisão.')
-    const reviewers = state.admin.users.filter((u) => u.role === 'moderador' && u.id !== pub.decision?.by)
-    const appeal = { id: id('ap'), publicationId: pub.id, authorName: req.user.name, filedAt: nowIso(), deadline: pub.decision?.appealDeadline || hoursFromNow(24 * 30), text: text.trim(), status: 'em_analise', reviewer: reviewers[0]?.id || null, originalReviewer: pub.decision?.by || null }
-    state.appeals.unshift(appeal)
-    pub.appealId = appeal.id
-    appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'appeal_filed', target: pub.id, details: { appealId: appeal.id } })
-    res.status(201).json({ appeal })
-  })
+  if (features.publicationAppeals) {
+    r.post('/publications/:id/appeal', requireStudent, (req, res) => {
+      const state = req.store.state
+      const pub = state.publications.find((p) => p.id === req.params.id && p.authorId === req.user.id)
+      if (!pub) return fail(res, 404, 'not_found', 'Publicação não encontrada.')
+      if (pub.status !== 'rejeitado') return fail(res, 409, 'not_rejected', 'Só publicações rejeitadas podem ser contestadas.')
+      if (pub.decision?.appealDeadline && new Date(pub.decision.appealDeadline).getTime() < Date.now()) return fail(res, 409, 'appeal_window_closed', 'O prazo de 30 dias para contestar terminou.')
+      if (state.appeals.some((a) => a.publicationId === pub.id && a.status === 'em_analise')) return fail(res, 409, 'appeal_exists', 'Já existe uma contestação em análise.')
+      const { text } = req.body || {}
+      if (!text?.trim()) return fail(res, 422, 'validation', 'Explique por que discorda da decisão.')
+      const reviewers = state.admin.users.filter((u) => u.role === 'moderador' && u.id !== pub.decision?.by)
+      const appeal = { id: id('ap'), publicationId: pub.id, authorName: req.user.name, filedAt: nowIso(), deadline: pub.decision?.appealDeadline || hoursFromNow(24 * 30), text: text.trim(), status: 'em_analise', reviewer: reviewers[0]?.id || null, originalReviewer: pub.decision?.by || null }
+      state.appeals.unshift(appeal)
+      pub.appealId = appeal.id
+      appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'appeal_filed', target: pub.id, details: { appealId: appeal.id } })
+      res.status(201).json({ appeal })
+    })
+  }
 
   r.post('/decks/:id/export', requireStudent, (req, res) => {
     const state = req.store.state
@@ -178,29 +182,31 @@ export function deckRoutes() {
     res.json({ folder })
   })
 
-  r.post('/folders/:id/members', requireStudent, (req, res) => {
-    const state = req.store.state
-    const folder = state.folders.find((f) => f.id === req.params.id && f.ownerId === req.user.id)
-    if (!folder) return fail(res, 404, 'not_found', 'Pasta não encontrada.')
-    const { name, contact } = req.body || {}
-    if (!contact?.trim()) return fail(res, 422, 'validation', 'Informe e-mail ou telefone.')
-    if (folder.members.length >= LIMITS.membersPerFolder) return fail(res, 409, 'members_limit', 'Uma pasta compartilhada aceita até 50 membros.')
-    const gate = guardianGate(state, req.user, 'externalMembers', `O aluno quer adicionar ${contact} à pasta "${folder.name}".`)
-    if (gate) return fail(res, 403, gate.code, 'Adicionar membros depende da liberação do seu responsável.', gate)
-    const member = { id: id('m'), name: name?.trim() || contact.trim(), contact: contact.trim(), role: 'membro', since: nowIso() }
-    folder.members.push(member)
-    folder.shared = true
-    res.status(201).json({ folder })
-  })
+  if (features.folderSharing) {
+    r.post('/folders/:id/members', requireStudent, (req, res) => {
+      const state = req.store.state
+      const folder = state.folders.find((f) => f.id === req.params.id && f.ownerId === req.user.id)
+      if (!folder) return fail(res, 404, 'not_found', 'Pasta não encontrada.')
+      const { name, contact } = req.body || {}
+      if (!contact?.trim()) return fail(res, 422, 'validation', 'Informe e-mail ou telefone.')
+      if (folder.members.length >= LIMITS.membersPerFolder) return fail(res, 409, 'members_limit', 'Uma pasta compartilhada aceita até 50 membros.')
+      const gate = guardianGate(state, req.user, 'externalMembers', `O aluno quer adicionar ${contact} à pasta "${folder.name}".`)
+      if (gate) return fail(res, 403, gate.code, 'Adicionar membros depende da liberação do seu responsável.', gate)
+      const member = { id: id('m'), name: name?.trim() || contact.trim(), contact: contact.trim(), role: 'membro', since: nowIso() }
+      folder.members.push(member)
+      folder.shared = true
+      res.status(201).json({ folder })
+    })
 
-  r.delete('/folders/:id/members/:memberId', requireStudent, (req, res) => {
-    const state = req.store.state
-    const folder = state.folders.find((f) => f.id === req.params.id && f.ownerId === req.user.id)
-    if (!folder) return fail(res, 404, 'not_found', 'Pasta não encontrada.')
-    folder.members = folder.members.filter((m) => m.id !== req.params.memberId)
-    folder.shared = folder.members.length > 0
-    res.json({ folder })
-  })
+    r.delete('/folders/:id/members/:memberId', requireStudent, (req, res) => {
+      const state = req.store.state
+      const folder = state.folders.find((f) => f.id === req.params.id && f.ownerId === req.user.id)
+      if (!folder) return fail(res, 404, 'not_found', 'Pasta não encontrada.')
+      folder.members = folder.members.filter((m) => m.id !== req.params.memberId)
+      folder.shared = folder.members.length > 0
+      res.json({ folder })
+    })
+  }
 
   return r
 }

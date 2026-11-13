@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { FEATURES } from '../config/features.js'
 import { AppProviders, AppRoutes } from '../app/App.jsx'
 import { startLiveServer } from './liveServer.js'
 
@@ -26,7 +27,7 @@ afterEach(async () => {
   await live.close()
 })
 
-describe('comunidade com vários tipos de conteúdo', () => {
+describe.runIf(FEATURES.materials)('comunidade com vários tipos de conteúdo', () => {
   it('abas por tipo funcionam por setas e filtram o conteúdo', async () => {
     renderAt('/app/comunidade')
     const tablist = await screen.findByRole('tablist', { name: 'Tipo de conteúdo' })
@@ -98,7 +99,7 @@ describe('comunidade com vários tipos de conteúdo', () => {
   })
 })
 
-describe('meu blog', () => {
+describe.runIf(FEATURES.materials)('meu blog', () => {
   it('escreve um post e compartilha só com seguidores', async () => {
     live.store.state.consents.u1.contentPolicyAcceptedVersion = live.store.state.admin.policy.version
     renderAt('/app/perfil/blog/novo')
@@ -123,27 +124,54 @@ describe('meu blog', () => {
 })
 
 describe('estrutura do app', () => {
-  it('a comunidade não mostra nada de MCP', async () => {
+  it('a comunidade não mostra nada de MCP, grupos ou materiais fora do escopo', async () => {
     renderAt('/app/comunidade')
     expect(await screen.findByRole('heading', { name: 'Linha do tempo' }, { timeout: 4000 })).toBeInTheDocument()
     expect(within(screen.getByRole('main')).queryByText(/MCP/)).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Conectar IA/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Escrever post/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Grupos de estudo/ })).not.toBeInTheDocument()
+    expect(live.notFoundCalls).toEqual([])
   })
 
-  it('o card do usuário abre o menu da conta com Conexões, e Perfil não fica no menu lateral', async () => {
+  it('o card do usuário abre o menu da conta enxuto para o MVP, e Perfil não fica no menu lateral', async () => {
     renderAt('/app')
     const [nav] = await screen.findAllByRole('navigation', { name: 'Navegação principal' }, { timeout: 4000 })
     expect(within(nav).queryByRole('link', { name: /^Perfil$/ })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: /Conexões/ })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: /Recebidos/ })).not.toBeInTheDocument()
     const userButton = within(nav).getByRole('button', { name: /Manoel/ })
     expect(userButton).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(userButton)
     const menu = await screen.findByRole('menu', { name: 'Menu da conta' })
     expect(within(menu).getByRole('menuitem', { name: /Perfil/ })).toHaveFocus()
+    expect(within(menu).queryByRole('menuitem', { name: /Conexões/ })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: /Assinatura/ })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: /Suporte/ })).not.toBeInTheDocument()
     await userEvent.keyboard('{ArrowDown}{ArrowDown}')
-    expect(within(menu).getByRole('menuitem', { name: /Conexões/ })).toHaveFocus()
+    expect(within(menu).getByRole('menuitem', { name: /Carteira/ })).toHaveFocus()
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
     expect(userButton).toHaveFocus()
+  })
+
+  it('nenhuma tela do MVP quebra com rotas desligadas ou faz requisição 404', async () => {
+    const routes = [
+      ['/app/criar', 'Criar deck'],
+      ['/app/noa', 'Nôa'],
+      ['/app/perfil', 'Perfil'],
+      ['/app/perfil/dispositivos', 'Dispositivos'],
+      ['/app/carteira', 'Carteira'],
+      ['/app/pastas/f1', 'Concurso TRF'],
+      ['/entrar', 'Entrar']
+    ]
+    for (const [path, heading] of routes) {
+      cleanup()
+      renderAt(path)
+      expect(await screen.findByRole('heading', { name: new RegExp(heading, 'i') }, { timeout: 4000 })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('button', { name: /Entrar direto no app de demonstração/ })).not.toBeInTheDocument()
+    expect(live.notFoundCalls).toEqual([])
   })
 
   it('a aba Estudar mostra os decks programados na aba Decks', async () => {
@@ -196,7 +224,7 @@ describe('deck e objetivos', () => {
   })
 })
 
-describe('comentários na comunidade', () => {
+describe.runIf(FEATURES.materials)('comentários na comunidade', () => {
   it('a página do conteúdo mostra os comentários, curte e responde sem abrir janela', async () => {
     renderAt('/app/comunidade/conteudo/m10')
     const region = await screen.findByRole('region', { name: /Comentários/ }, { timeout: 4000 })
@@ -219,7 +247,7 @@ describe('comentários na comunidade', () => {
   })
 })
 
-describe('quiz e linha do tempo', () => {
+describe.runIf(FEATURES.materials)('quiz e linha do tempo', () => {
   it('responde o quiz com correção comentada e abre o gabarito', async () => {
     renderAt('/app/comunidade/conteudo/m10')
     expect(await screen.findByText('Questão 1 de 6', {}, { timeout: 4000 })).toBeInTheDocument()
@@ -258,7 +286,7 @@ describe('quiz e linha do tempo', () => {
   })
 })
 
-describe('recebidos via MCP', () => {
+describe.runIf(FEATURES.mcp)('recebidos via MCP', () => {
   it('pendente aparece em Recebidos, com contador no menu, e aprovar para o meu blog tira da fila', async () => {
     renderAt('/app/recebidos')
     expect(await screen.findByRole('heading', { name: 'Recebidos via MCP', level: 1 }, { timeout: 4000 })).toBeInTheDocument()
@@ -284,7 +312,7 @@ describe('recebidos via MCP', () => {
   })
 })
 
-describe('conexões MCP no perfil', () => {
+describe.runIf(FEATURES.mcp)('conexões MCP no perfil', () => {
   it('gera token uma vez, mostra a configuração e lista ferramentas', async () => {
     renderAt('/app/comunidade/conectar')
     expect(await screen.findByRole('heading', { name: 'Conexões', level: 1 }, { timeout: 4000 })).toBeInTheDocument()
@@ -304,7 +332,7 @@ describe('conexões MCP no perfil', () => {
   })
 })
 
-describe('grupos de estudo', () => {
+describe.runIf(FEATURES.studyGroups)('grupos de estudo', () => {
   it('entra no grupo, posta no mural e vê o pódio do ranking', async () => {
     renderAt('/app/comunidade/grupos/g_saude')
     expect(await screen.findByRole('heading', { level: 1, name: 'Medicina e Saúde' }, { timeout: 4000 })).toBeInTheDocument()

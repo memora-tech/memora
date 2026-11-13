@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import styles from './decks.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Banner, Button, Chip, Icon, OverflowMenu, Panel, ProgressBar, QACard, Screen, ScreenHeader, Segmented, Sheet, Skeleton, Textarea, Toggle, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -147,7 +148,7 @@ export function DeckDetail() {
     { key: 'difficult', icon: 'zap', label: deck.difficult ? t('decks.detail.menu.undifficult') : t('decks.detail.menu.difficult'), active: deck.difficult, onSelect: () => patch({ difficult: !deck.difficult }) },
     { key: 'focus', icon: 'target', label: deck.focus ? t('decks.detail.menu.unfocus') : t('decks.detail.menu.focus'), active: deck.focus, onSelect: () => patch({ focus: !deck.focus }) },
     { key: 'complementary', icon: 'layers', label: deck.complementary ? t('decks.detail.menu.uncomplementary') : t('decks.detail.menu.complementary'), active: deck.complementary, onSelect: () => patch({ complementary: !deck.complementary }) },
-    { key: 'share', icon: 'users', label: t('decks.detail.menu.shareFolder'), onSelect: shareFolder },
+    ...(FEATURES.folderSharing ? [{ key: 'share', icon: 'users', label: t('decks.detail.menu.shareFolder'), onSelect: shareFolder }] : []),
     { key: 'export', icon: 'download', label: t('decks.detail.menu.export'), onSelect: () => doExport('pdf') }
   ]
   const crumbs = [{ label: t('decks.title'), to: '/app/decks' }, ...(data.folder ? [{ label: data.folder.name, to: `/app/pastas/${data.folder.id}` }] : []), { label: deck.name }]
@@ -333,14 +334,18 @@ export function DeckDetail() {
               <>
                 <strong>{t('decks.publish.statusRejected', { category: t(`decks.publish.categories.${deck.publication.lastRejection?.reasonCategory || pub?.decision?.reasonCategory}`) })}</strong>
                 <span className={styles.meta}>{t('decks.publish.excerpt', { excerpt: deck.publication.lastRejection?.excerpt || pub?.decision?.excerpt })}</span>
-                <span className={styles.meta}>{t('decks.publish.appeal', { date: fmtDate(deck.publication.lastRejection?.appealDeadline || pub?.decision?.appealDeadline) })}</span>
-                {pub?.appealId ? (
-                  <Badge tone="warning">{t('decks.publish.appealPending')}</Badge>
-                ) : (
-                  <Button size="small" variant="soft" onClick={() => setAppealOpen(true)} disabled={!pub}>
-                    {t('decks.publish.appealAction')}
-                  </Button>
-                )}
+                {FEATURES.publicationAppeals ? (
+                  <>
+                    <span className={styles.meta}>{t('decks.publish.appeal', { date: fmtDate(deck.publication.lastRejection?.appealDeadline || pub?.decision?.appealDeadline) })}</span>
+                    {pub?.appealId ? (
+                      <Badge tone="warning">{t('decks.publish.appealPending')}</Badge>
+                    ) : (
+                      <Button size="small" variant="soft" onClick={() => setAppealOpen(true)} disabled={!pub}>
+                        {t('decks.publish.appealAction')}
+                      </Button>
+                    )}
+                  </>
+                ) : null}
               </>
             ) : null}
           </Panel>

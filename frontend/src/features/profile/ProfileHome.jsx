@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './profile.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Avatar, Badge, Banner, Button, Chip, ConfirmDialog, ListItem, Panel, Screen, ScreenHeader, Skeleton, StatRow, StatTile, Surface, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
@@ -12,15 +13,19 @@ import { NoaCard } from '../study/NoaCard.jsx'
 import { MyBlogPanel } from './MyBlogPanel.jsx'
 
 const SHORTCUTS = [
-  { key: 'requests', icon: 'archive', to: '/app/recebidos' },
-  { key: 'connections', icon: 'plug', to: '/app/perfil/conexoes' },
+  ...(FEATURES.mcp
+    ? [
+        { key: 'requests', icon: 'archive', to: '/app/recebidos' },
+        { key: 'connections', icon: 'plug', to: '/app/perfil/conexoes' }
+      ]
+    : []),
   { key: 'wallet', icon: 'wallet', to: '/app/carteira' },
   { key: 'objectives', icon: 'target', to: '/app/perfil/objetivos' },
-  { key: 'subscription', icon: 'zap', to: '/app/perfil/assinatura' },
+  ...(FEATURES.subscriptions ? [{ key: 'subscription', icon: 'zap', to: '/app/perfil/assinatura' }] : []),
   { key: 'devices', icon: 'device', to: '/app/perfil/dispositivos' },
   { key: 'privacy', icon: 'shield', to: '/app/perfil/privacidade' },
   { key: 'settings', icon: 'settings', to: '/app/perfil/configuracoes' },
-  { key: 'support', icon: 'help', to: '/app/perfil/suporte' }
+  ...(FEATURES.supportTickets ? [{ key: 'support', icon: 'help', to: '/app/perfil/suporte' }] : [])
 ]
 
 export function ProfileHome() {
@@ -87,7 +92,7 @@ export function ProfileHome() {
             </div>
           </Surface>
 
-          <MyBlogPanel />
+          {FEATURES.materials ? <MyBlogPanel /> : null}
 
           {user.isMinor ? (
             <Surface tone="brand">

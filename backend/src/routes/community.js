@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { FEATURES } from '../config/features.js'
 import { requireStudent } from '../lib/auth.js'
 import { fail, communityDeckPublic, authorPublic, materializedAt, guardianGate, requireVerified, categoryName, ownDecksOf, commentView } from '../lib/helpers.js'
 import { id, nowIso } from '../lib/ids.js'
@@ -14,7 +15,7 @@ function withAuthor(state, deck, viewerId) {
 const engagement = (item) => (item.kind === 'flashcards' ? item.stats.studiedWeek + item.stats.votes * 2 : item.stats.views / 2 + item.stats.favorites * 2)
 const dateOf = (item) => item.publishedAt || item.createdAt
 
-export function communityRoutes() {
+export function communityRoutes(features = FEATURES) {
   const r = Router()
 
   r.get('/community/feed', requireStudent, (req, res) => {
@@ -24,12 +25,14 @@ export function communityRoutes() {
     const highlights = decks.slice().sort((a, b) => b.stats.studiedWeek + b.stats.votes * 2 - (a.stats.studiedWeek + a.stats.votes * 2))
     const followed = state.community.follows.filter((f) => f.userId === viewer).map((f) => f.authorId)
     const following = decks.filter((d) => followed.includes(d.authorId)).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
-    const rankingWeek = decks
-      .slice()
-      .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
-      .slice(0, 5)
-      .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
-    const creator = state.community.authors.find((a) => a.creatorOfMonth)
+    const rankingWeek = features.rankings
+      ? decks
+          .slice()
+          .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
+          .slice(0, 5)
+          .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
+      : []
+    const creator = features.rankings ? state.community.authors.find((a) => a.creatorOfMonth) : null
     const creatorOfMonth = creator
       ? {
           ...authorPublic(state, creator, viewer),
@@ -50,13 +53,13 @@ export function communityRoutes() {
       })
       .filter(Boolean)
       .slice(0, 4)
-    const materials = publishedMaterials(state, viewer).map((m) => materialPublic(state, m, viewer))
+    const materials = features.materials ? publishedMaterials(state, viewer).map((m) => materialPublic(state, m, viewer)) : []
     const byKind = Object.fromEntries(KINDS.map((k) => [k, materials.filter((m) => m.kind === k).sort((a, b) => dateOf(b).localeCompare(dateOf(a)))]))
     const latest = [...decks, ...materials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))).slice(0, 8)
     const trending = [...decks, ...materials].sort((a, b) => engagement(b) - engagement(a)).slice(0, 6)
     const followingMaterials = materials.filter((m) => followed.includes(m.authorId))
-    const mine = state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt && m.mcpReview !== 'pendente')
-    const counts = { flashcards: decks.length, ...Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])), mine: mine.length + own.filter((d) => d.mcpReview !== 'pendente').length }
+    const mine = features.materials ? state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt && m.mcpReview !== 'pendente') : []
+    const counts = { flashcards: decks.length, ...(features.materials ? Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])) : {}), mine: mine.length + own.filter((d) => d.mcpReview !== 'pendente').length }
     const sourceCounts = {}
     materials.forEach((m) => {
       const client = m.source?.client || 'IA'
@@ -76,9 +79,10 @@ export function communityRoutes() {
     const category = req.query.category ? String(req.query.category) : null
     const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
     const sort = String(req.query.sort || 'relevance')
-    const kind = ['flashcards', ...KINDS].includes(req.query.kind) ? String(req.query.kind) : null
+    const allowedKinds = features.materials ? ['flashcards', ...KINDS] : ['flashcards']
+    const kind = allowedKinds.includes(req.query.kind) ? String(req.query.kind) : null
     const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
-    const materials = publishedMaterials(state, req.user.id).map((m) => materialPublic(state, m, req.user.id))
+    const materials = features.materials ? publishedMaterials(state, req.user.id).map((m) => materialPublic(state, m, req.user.id)) : []
     let results = [...decks, ...materials]
     if (kind) results = results.filter((d) => d.kind === kind)
     if (q) {
@@ -98,7 +102,7 @@ export function communityRoutes() {
     if (sort === 'recent') results.sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
     else if (sort === 'rating') results.sort((a, b) => rating(b) - rating(a))
     else results.sort((a, b) => (b.score || 0) - (a.score || 0) || engagement(b) - engagement(a))
-    res.json({ results, total: results.length, q, filters: { categories: state.categories, kinds: ['flashcards', ...KINDS], difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
+    res.json({ results, total: results.length, q, filters: { categories: state.categories, kinds: allowedKinds, difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
   })
 
   r.get('/community/decks/:id', requireStudent, (req, res) => {
@@ -297,67 +301,69 @@ export function communityRoutes() {
     res.status(201).json({ report, message: 'Comentário enviado para análise automática.' })
   })
 
-  r.get('/community/groups', requireStudent, (req, res) => {
-    const state = req.store.state
-    const groups = state.community.groups.map((g) => groupSummary(state, g, req.user.id))
-    res.json({ groups, joined: groups.filter((g) => g.joined).map((g) => g.id) })
-  })
+  if (features.studyGroups) {
+    r.get('/community/groups', requireStudent, (req, res) => {
+      const state = req.store.state
+      const groups = state.community.groups.map((g) => groupSummary(state, g, req.user.id))
+      res.json({ groups, joined: groups.filter((g) => g.joined).map((g) => g.id) })
+    })
 
-  r.get('/community/groups/:id', requireStudent, (req, res) => {
-    const state = req.store.state
-    const group = state.community.groups.find((g) => g.id === req.params.id)
-    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
-    const items = groupItems(state, group, req.user.id).sort((a, b) => (b.publishedAt || b.createdAt || '').localeCompare(a.publishedAt || a.createdAt || ''))
-    const liked = new Set(state.community.groupPostLikes.filter((l) => l.userId === req.user.id).map((l) => l.postId))
-    const posts = state.community.groupPosts
-      .filter((p) => p.groupId === group.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((p) => ({ ...p, liked: liked.has(p.id), isMine: p.authorId === req.user.id }))
-    res.json({ group: { ...groupSummary(state, group, req.user.id), rules: group.rules, tags: group.tags }, items, ranking: groupRanking(items).slice(0, 10), posts })
-  })
+    r.get('/community/groups/:id', requireStudent, (req, res) => {
+      const state = req.store.state
+      const group = state.community.groups.find((g) => g.id === req.params.id)
+      if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+      const items = groupItems(state, group, req.user.id).sort((a, b) => (b.publishedAt || b.createdAt || '').localeCompare(a.publishedAt || a.createdAt || ''))
+      const liked = new Set(state.community.groupPostLikes.filter((l) => l.userId === req.user.id).map((l) => l.postId))
+      const posts = state.community.groupPosts
+        .filter((p) => p.groupId === group.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((p) => ({ ...p, liked: liked.has(p.id), isMine: p.authorId === req.user.id }))
+      res.json({ group: { ...groupSummary(state, group, req.user.id), rules: group.rules, tags: group.tags }, items, ranking: groupRanking(items).slice(0, 10), posts })
+    })
 
-  r.post('/community/groups/:id/join', requireStudent, (req, res) => {
-    const state = req.store.state
-    const group = state.community.groups.find((g) => g.id === req.params.id)
-    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
-    const idx = state.community.groupMembers.findIndex((m) => m.groupId === group.id && m.userId === req.user.id)
-    if (idx >= 0) state.community.groupMembers.splice(idx, 1)
-    else state.community.groupMembers.push({ userId: req.user.id, groupId: group.id, joinedAt: nowIso() })
-    res.json({ group: groupSummary(state, group, req.user.id) })
-  })
+    r.post('/community/groups/:id/join', requireStudent, (req, res) => {
+      const state = req.store.state
+      const group = state.community.groups.find((g) => g.id === req.params.id)
+      if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+      const idx = state.community.groupMembers.findIndex((m) => m.groupId === group.id && m.userId === req.user.id)
+      if (idx >= 0) state.community.groupMembers.splice(idx, 1)
+      else state.community.groupMembers.push({ userId: req.user.id, groupId: group.id, joinedAt: nowIso() })
+      res.json({ group: groupSummary(state, group, req.user.id) })
+    })
 
-  r.post('/community/groups/:id/posts', requireStudent, (req, res) => {
-    const state = req.store.state
-    const group = state.community.groups.find((g) => g.id === req.params.id)
-    if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
-    if (!state.community.groupMembers.some((m) => m.groupId === group.id && m.userId === req.user.id)) return fail(res, 403, 'not_member', 'Entre no grupo para postar no mural.')
-    const unverified = requireVerified(req.user)
-    if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para postar.', unverified)
-    const gate = guardianGate(state, req.user, 'community', 'O aluno quer postar no mural de um grupo de estudos.')
-    if (gate) return fail(res, 403, gate.code, 'Postar depende da liberação do seu responsável.', gate)
-    const text = String(req.body?.text || '')
-      .trim()
-      .slice(0, 600)
-    if (text.length < 3) return fail(res, 422, 'validation', 'Escreva algo antes de enviar.')
-    const post = { id: id('gp'), groupId: group.id, authorId: req.user.id, authorName: req.user.name, text, createdAt: nowIso(), likes: 0 }
-    state.community.groupPosts.push(post)
-    res.status(201).json({ post: { ...post, liked: false, isMine: true } })
-  })
+    r.post('/community/groups/:id/posts', requireStudent, (req, res) => {
+      const state = req.store.state
+      const group = state.community.groups.find((g) => g.id === req.params.id)
+      if (!group) return fail(res, 404, 'not_found', 'Grupo não encontrado.')
+      if (!state.community.groupMembers.some((m) => m.groupId === group.id && m.userId === req.user.id)) return fail(res, 403, 'not_member', 'Entre no grupo para postar no mural.')
+      const unverified = requireVerified(req.user)
+      if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para postar.', unverified)
+      const gate = guardianGate(state, req.user, 'community', 'O aluno quer postar no mural de um grupo de estudos.')
+      if (gate) return fail(res, 403, gate.code, 'Postar depende da liberação do seu responsável.', gate)
+      const text = String(req.body?.text || '')
+        .trim()
+        .slice(0, 600)
+      if (text.length < 3) return fail(res, 422, 'validation', 'Escreva algo antes de enviar.')
+      const post = { id: id('gp'), groupId: group.id, authorId: req.user.id, authorName: req.user.name, text, createdAt: nowIso(), likes: 0 }
+      state.community.groupPosts.push(post)
+      res.status(201).json({ post: { ...post, liked: false, isMine: true } })
+    })
 
-  r.post('/community/group-posts/:id/like', requireStudent, (req, res) => {
-    const state = req.store.state
-    const post = state.community.groupPosts.find((p) => p.id === req.params.id)
-    if (!post) return fail(res, 404, 'not_found', 'Post não encontrado.')
-    const idx = state.community.groupPostLikes.findIndex((l) => l.postId === post.id && l.userId === req.user.id)
-    if (idx >= 0) {
-      state.community.groupPostLikes.splice(idx, 1)
-      post.likes = Math.max(0, post.likes - 1)
-    } else {
-      state.community.groupPostLikes.push({ postId: post.id, userId: req.user.id })
-      post.likes += 1
-    }
-    res.json({ likes: post.likes, liked: idx < 0 })
-  })
+    r.post('/community/group-posts/:id/like', requireStudent, (req, res) => {
+      const state = req.store.state
+      const post = state.community.groupPosts.find((p) => p.id === req.params.id)
+      if (!post) return fail(res, 404, 'not_found', 'Post não encontrado.')
+      const idx = state.community.groupPostLikes.findIndex((l) => l.postId === post.id && l.userId === req.user.id)
+      if (idx >= 0) {
+        state.community.groupPostLikes.splice(idx, 1)
+        post.likes = Math.max(0, post.likes - 1)
+      } else {
+        state.community.groupPostLikes.push({ postId: post.id, userId: req.user.id })
+        post.likes += 1
+      }
+      res.json({ likes: post.likes, liked: idx < 0 })
+    })
+  }
 
   r.get('/community/authors/:id', requireStudent, (req, res) => {
     const state = req.store.state
@@ -384,19 +390,21 @@ export function communityRoutes() {
     res.json({ following: true, followers: author.followers })
   })
 
-  r.get('/community/rankings', requireStudent, (req, res) => {
-    const state = req.store.state
-    const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
-    res.json({
-      week: decks
-        .slice()
-        .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
-        .slice(0, 10)
-        .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: categoryName(state, d.categoryId) })),
-      creatorOfMonth: state.community.authors.find((a) => a.creatorOfMonth) || null,
-      materializedAt: materializedAt()
+  if (features.rankings) {
+    r.get('/community/rankings', requireStudent, (req, res) => {
+      const state = req.store.state
+      const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
+      res.json({
+        week: decks
+          .slice()
+          .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
+          .slice(0, 10)
+          .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: categoryName(state, d.categoryId) })),
+        creatorOfMonth: state.community.authors.find((a) => a.creatorOfMonth) || null,
+        materializedAt: materializedAt()
+      })
     })
-  })
+  }
 
   r.post('/community/decks/:id/study-start', requireStudent, (req, res) => {
     const state = req.store.state

@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { FEATURES } from '../config/features.js'
 import { requireStudent } from '../lib/auth.js'
 import { fail, publicUser, ensureDay, addParentalRequest, GUARDIAN_LABELS } from '../lib/helpers.js'
 import { credit } from '../lib/ledger.js'
 import { dayKey } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 
-export function meRoutes() {
+export function meRoutes(features = FEATURES) {
   const r = Router()
 
   r.get('/me', requireStudent, (req, res) => {
@@ -100,16 +101,18 @@ export function meRoutes() {
     res.json({ consents })
   })
 
-  r.get('/me/guardian-requests', requireStudent, (req, res) => {
-    res.json({ requests: req.user.isMinor ? req.store.state.parental.requests : [] })
-  })
+  if (features.guardian) {
+    r.get('/me/guardian-requests', requireStudent, (req, res) => {
+      res.json({ requests: req.user.isMinor ? req.store.state.parental.requests : [] })
+    })
 
-  r.post('/me/guardian-requests', requireStudent, (req, res) => {
-    const { type, detail } = req.body || {}
-    if (!GUARDIAN_LABELS[type]) return fail(res, 422, 'validation', 'Tipo de solicitação inválido.')
-    const request = addParentalRequest(req.store.state, { type, title: GUARDIAN_LABELS[type], detail: detail || '' })
-    res.status(201).json({ request })
-  })
+    r.post('/me/guardian-requests', requireStudent, (req, res) => {
+      const { type, detail } = req.body || {}
+      if (!GUARDIAN_LABELS[type]) return fail(res, 422, 'validation', 'Tipo de solicitação inválido.')
+      const request = addParentalRequest(req.store.state, { type, title: GUARDIAN_LABELS[type], detail: detail || '' })
+      res.status(201).json({ request })
+    })
+  }
 
   return r
 }

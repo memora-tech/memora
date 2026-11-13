@@ -11,14 +11,16 @@ e do próprio código-fonte. Nenhuma foi tomada nesta reconstrução; a numeraç
 
 | ADR | Título |
 |---|---|
-| [0001](./0001-backend-mock-em-memoria.md) | Backend mock em memória, sem banco de dados |
+| [0001](./0001-backend-mock-em-memoria.md) | Backend mock em memória, sem banco de dados *(substituída por 0012)* |
 | [0002](./0002-monorepo-com-npm-workspaces.md) | Monorepo com npm workspaces |
 | [0003](./0003-fsrs-simplificado.md) | Agendador de repetição espaçada FSRS simplificado |
 | [0004](./0004-ledger-imutavel-de-neuronios.md) | Ledger imutável para a moeda virtual Neurônios |
 | [0005](./0005-auditoria-com-cadeia-de-hash.md) | Log de auditoria com cadeia de hash |
 | [0006](./0006-pt-br-unico-com-strings-externalizadas.md) | PT-BR único, com strings externalizadas por domínio |
 | [0007](./0007-sem-comentarios-de-codigo.md) | Sem comentários inline no código |
-| [0008](./0008-autenticacao-por-sessao-simples.md) | Autenticação por sessão simples (token opaco) |
+| [0008](./0008-autenticacao-por-sessao-simples.md) | Autenticação por sessão simples (token opaco) *(substituída por 0013)* |
 | [0009](./0009-tema-claro-travado.md) | Tema claro travado |
 | [0010](./0010-orcamento-de-toques.md) | Orçamento de toques (tap-count budget) como restrição de UX |
 | [0011](./0011-servidor-mcp-e-conteudos-gerados-por-ia.md) | Servidor MCP e conteúdos gerados por IA na comunidade |
+| [0012](./0012-persistencia-postgres-supabase-e-rls.md) | Persistência em Postgres (Supabase) com RLS e camada de dados na API |
+| [0013](./0013-autenticacao-supabase-auth-jwt-adultos.md) | Autenticação via Supabase Auth (JWT) exclusiva para maiores de 18 anos |

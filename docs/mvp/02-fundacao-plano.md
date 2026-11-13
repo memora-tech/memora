@@ -13,7 +13,8 @@
 ### 0.1 Fluxo de Arquitetura
 ```
 [Frontend React/Vite (Vercel Static)]
-   │  1. signUp / signInWithPassword / resetPasswordForEmail
+   │  1a. Cadastro: POST /v1/auth/register (com inviteCode + birthDate; signup público do Supabase DESLIGADO)
+   │  1b. Login / Recuperação: signInWithPassword / resetPasswordForEmail (ou via /v1/auth/*)
    ▼
 [Supabase Auth] ──► Emite JWT (access_token + refresh_token)
    │
@@ -21,20 +22,22 @@
    │     Header: Authorization: Bearer <JWT>
    ▼
 [API Express 5 (Vercel Function: api/index.js)]
-   │  3. Middleware requireStudent valida JWT no Supabase Auth e carrega perfil (≥ 18 anos)
-   │  4. Rotas chamam a camada de dados (backend/src/data/*.repo.js)
+   │  3. Hardening: Security Headers, CORS restrito, JSON limit (100kb) e Rate Limit (Postgres RPC)
+   │  4. Middleware requireStudent valida JWT no Supabase Auth e carrega perfil (≥ 18 anos)
+   │  5. Rotas chamam a camada de dados (backend/src/data/*.repo.js)
    ├─────────────────────────────────────────────────────────────────┐
    │ Regra geral: Cliente Supabase com JWT do usuário (RLS ativa)    │ Exceções explícitas: Cliente service_role
    ▼                                                                 ▼
-[Supabase Postgres (RLS = 2ª camada) + Supabase Storage]    [RPC Ledger / Jobs IA / Audit / Moderação]
+[Supabase Postgres (RLS = 2ª camada) + Supabase Storage]    [Cadastro Admin / Ledger / Cotas & IA / Rate Limit / Audit / Moderação]
 ```
 
 ### 0.2 Pontos Explícitos e Exclusivos de Uso da `service_role`
-A chave `SUPABASE_SERVICE_ROLE_KEY` **jamais** existe no frontend e, no backend, é encapsulada exclusivamente em `backend/src/data/supabase.js` (`createServiceClient()`), sendo chamada apenas em **4 pontos**:
-1. **Ledger de Neurônios (`backend/src/data/ledger.repo.js`):** invocação da função RPC `public.append_neuron_ledger_entry` para creditar/debitar Neurônios de forma atômica, já que os usuários autenticados têm apenas permissão de `SELECT` em `neuron_ledger`.
-2. **Jobs de IA e Cota Diária (`backend/src/data/generation.repo.js` e `backend/src/data/noa.repo.js`):** gravação do resultado processado pela IA, atualização de contadores de orçamento/cota diária e estorno de cota em caso de erro do provedor de IA.
-3. **Auditoria Mínima (`backend/src/data/audit.repo.js`):** inserção na tabela `public.audit_log` via `public.append_audit_entry`, pois `audit_log` não aceita escrita nem leitura direta de `authenticated`.
-4. **Rotina de Moderação e Criação Inicial de Perfil (`backend/src/data/moderation.repo.js` e `backend/src/data/profiles.repo.js`):** ocultação administrativa de conteúdo (`hidden_at`) quando acionada pelo sistema e provisionamento transacional do perfil inicial após validação de idade ≥ 18 anos.
+A chave `SUPABASE_SERVICE_ROLE_KEY` **jamais** existe no frontend e, no backend, é encapsulada exclusivamente em `backend/src/data/supabase.js` (`createServiceClient()`), sendo chamada apenas em **5 pontos**:
+1. **Cadastro de Usuário no Servidor (`backend/src/routes/auth.js` + `backend/src/data/profiles.repo.js`):** como o signup público do Supabase Auth fica desligado, apenas `POST /v1/auth/register` (após validar o `INVITE_CODE` e idade ≥ 18 anos) chama `auth.admin.createUser({ email, password, email_confirm: true })` e provisiona o perfil inicial.
+2. **Ledger de Neurônios (`backend/src/data/ledger.repo.js`):** invocação da função RPC `public.append_neuron_ledger_entry` para creditar/debitar Neurônios de forma atômica, já que os usuários autenticados têm apenas permissão de `SELECT` em `neuron_ledger`.
+3. **Jobs de IA e Tabelas de Cota/Orçamento (`backend/src/data/generation.repo.js` e `backend/src/data/noa.repo.js`):** escrita em `generation_daily_usage` e `noa_daily_budget` (que não aceitam `INSERT`/`UPDATE` via `authenticated`), gravação do resultado processado pelo Gemini Flash e estorno de cota em caso de falha.
+4. **Rate Limit e Auditoria Mínima (`backend/src/lib/rateLimit.js` e `backend/src/data/audit.repo.js`):** invocação das RPCs `public.check_rate_limit` (contador atômico em `public.rate_limits`) e `public.append_audit_entry` (inserção encadeada em `public.audit_log`).
+5. **Rotina de Moderação (`backend/src/data/community.repo.js`):** ocultação administrativa de conteúdo (`hidden_at`) quando acionada pelo sistema.
 
 ### 0.3 Lista Completa de Arquivos a Criar e Alterar
 
@@ -43,14 +46,18 @@ A chave `SUPABASE_SERVICE_ROLE_KEY` **jamais** existe no frontend e, no backend,
 - `vercel.json` — configuração de build do frontend e rewrite de `/v1/(.*)` para a função serverless da API.
 - `api/index.js` — entrypoint serverless da Vercel exportando o `createApp()` do backend.
 - `supabase/migrations/20261112000100_extensions_and_helpers.sql` — extensões (`pgcrypto`), função `set_updated_at()` e helper de cálculo de maioridade.
-- `supabase/migrations/20261112000200_profiles_and_consents.sql` — tabelas `profiles`, `user_consents`, `study_settings` e `objectives`.
+- `supabase/migrations/20261112000200_profiles_and_consents.sql` — tabelas `profiles` (com trigger `protect_profile_columns`), `user_consents`, `study_settings` e `objectives`.
 - `supabase/migrations/20261112000300_decks_cards_reviews.sql` — tabelas `folders`, `decks`, `cards` (com colunas FSRS) e `reviews`.
 - `supabase/migrations/20261112000400_generation_and_noa.sql` — tabelas `generation_daily_usage`, `generation_jobs`, `noa_daily_budget`, `noa_suggestions`, `noa_decisions` e `noa_chat_messages`.
 - `supabase/migrations/20261112000500_community_and_moderation.sql` — tabelas `deck_publications`, `deck_comments`, `comment_likes`, `deck_reactions`, `deck_favorites`, `deck_votes`, `author_follows`, `moderation_reports`, view `v_moderation_queue` e função `moderate_hide_target`.
-- `supabase/migrations/20261112000600_ledger_and_audit.sql` — tabelas `neuron_ledger` e `audit_log`, triggers de imutabilidade (bloqueio de `UPDATE`/`DELETE`) e funções RPC `append_neuron_ledger_entry` e `append_audit_entry`.
-- `supabase/migrations/20261112000700_rls_policies.sql` — ativação de RLS (`ENABLE` + `FORCE`) e políticas tabela por tabela.
+- `supabase/migrations/20261112000600_ledger_and_audit.sql` — tabelas `neuron_ledger`, `audit_log` e `rate_limits`, triggers de imutabilidade (bloqueio de `UPDATE`/`DELETE`) e funções RPC `append_neuron_ledger_entry`, `append_audit_entry` e `check_rate_limit`.
+- `supabase/migrations/20261112000700_rls_policies.sql` — ativação de RLS (`ENABLE` + `FORCE`) e políticas tabela por tabela (incluindo bloqueio de escrita direta em `generation_daily_usage` e `noa_daily_budget`).
 - `supabase/migrations/20261112000800_storage_buckets.sql` — criação dos buckets `card-media` e `generation-uploads` e políticas de Storage.
+- `supabase/full_migration.sql` — script consolidado para execução manual única no SQL Editor do Supabase.
 - `backend/src/config/features.js` — flags de escopo do MVP no servidor.
+- `backend/src/lib/security.js` — middlewares nativos de cabeçalhos de segurança e validação de origem CORS restrita.
+- `backend/src/lib/rateLimit.js` — middleware de rate limit compatível com serverless (via RPC `check_rate_limit` no Postgres, com fallback em memória apenas nos testes unitários sem banco).
+- `backend/src/lib/gemini.js` — cliente HTTP para a API Google Gemini Flash (geração de cards por texto, tema e PDF até 50 páginas + chat da Nôa).
 - `backend/src/data/supabase.js` — fábrica de clientes Supabase (`createUserClient(jwt)` e `createServiceClient()`).
 - `backend/src/data/mappers.js` — conversão entre linhas `snake_case` do Postgres e os contratos JSON `camelCase` da API.
 - `backend/src/data/profiles.repo.js` — acesso a dados de `profiles` e `user_consents`.
@@ -63,7 +70,7 @@ A chave `SUPABASE_SERVICE_ROLE_KEY` **jamais** existe no frontend e, no backend,
 - `backend/src/data/audit.repo.js` — acesso ao `audit_log`.
 - `backend/src/data/index.js` — agregador dos repositórios injetado em `req.data`.
 - `frontend/src/config/features.js` — flags de escopo do MVP no frontend.
-- `frontend/src/lib/supabase.js` — cliente `@supabase/supabase-js` no navegador para Auth.
+- `frontend/src/lib/supabase.js` — cliente `@supabase/supabase-js` no navegador para Auth e upload ao Storage.
 - `docs/adr/0012-persistencia-postgres-supabase-e-rls.md` — nova ADR substituindo a ADR-0001.
 - `docs/adr/0013-autenticacao-supabase-auth-jwt-adultos.md` — nova ADR substituindo a ADR-0008.
 
@@ -494,6 +501,17 @@ Todas as tabelas residem no schema `public`. Os identificadores de usuário (`us
 
 - **Índices:** `idx_audit_target (target, seq DESC)`, `idx_audit_actor (actor, seq DESC)`.
 
+### 1.16 `public.rate_limits` (Contador de Rate Limit Compatível com Serverless)
+| Coluna | Tipo | Restrições / Default | Descrição |
+|---|---|---|---|
+| `key` | `text` | `NOT NULL` | Chave composta `<bucket>:<userId_ou_ip>` |
+| `window_start` | `timestamptz` | `NOT NULL` | Início truncado da janela de tempo |
+| `count` | `integer` | `NOT NULL DEFAULT 1 CHECK (count >= 1)` | Requisições acumuladas na janela |
+| `updated_at` | `timestamptz` | `NOT NULL DEFAULT now()` | Último incremento |
+
+- **Chave Primária:** `PRIMARY KEY (key, window_start)`.
+- **Índice de limpeza:** `idx_rate_limits_window (window_start)`.
+
 ---
 
 ## 2. Ledger de Neurônios Só-Inserção (Imutabilidade e Gravação Atômica)
@@ -585,22 +603,22 @@ GRANT EXECUTE ON FUNCTION public.append_neuron_ledger_entry(uuid, integer, text,
 
 ---
 
-## 3. Políticas de RLS Tabela por Tabela
+## 3. Políticas de RLS Tabela por Tabela e Proteção de Colunas
 
 Todas as tabelas terão `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` e `ALTER TABLE ... FORCE ROW LEVEL SECURITY;`. O papel `anon` não possui permissão em nenhuma tabela (o preview público `/v1/public/decks/:publicId` é servido pela API Express via consulta controlada que filtra `status = 'aprovado' AND hidden_at IS NULL`).
 
 | Tabela | Quem Lê (`SELECT`) | Quem Cria (`INSERT`) | Quem Atualiza (`UPDATE`) | Quem Apaga (`DELETE`) |
 |---|---|---|---|---|
-| `profiles` | Próprio usuário (`auth.uid() = id`). Dados públicos de autores vêm de `deck_publications` ou view `v_public_authors` (sem `email`/`phone`/`birth_date`). | Próprio usuário (`auth.uid() = id`) ou `service_role`. | Próprio usuário (`auth.uid() = id`). | Ninguém (desativação lógica via `deactivated_at`). |
-| `user_consents` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
+| `profiles` | Próprio usuário (`auth.uid() = id`). Dados públicos de autores vêm de `deck_publications` ou view `v_public_authors` (sem `email`/`phone`/`birth_date`). | **Apenas `service_role`** (no `POST /v1/auth/register`). | Próprio usuário (`auth.uid() = id`), **com colunas sensíveis bloqueadas por trigger** (`plan`, `role`, `email`, `birth_date`, `deactivated_at`, `public_profile`). | Ninguém (desativação lógica via `deactivated_at`). |
+| `user_consents` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
 | `folders` | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). |
 | `decks` | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). |
 | `cards` | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). | Próprio dono (`auth.uid() = owner_id`). |
 | `reviews` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Ninguém (histórico imutável). | Ninguém. |
-| `study_settings` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
+| `study_settings` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
 | `objectives` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). |
-| `generation_daily_usage` | Próprio dono (`auth.uid() = user_id`). | `service_role` / dono (`auth.uid() = user_id`). | `service_role` / dono (`auth.uid() = user_id`). | Ninguém. |
-| `generation_jobs` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Ninguém. |
+| `generation_daily_usage` | Próprio dono (`auth.uid() = user_id`). | **Apenas `service_role`** (negado para `authenticated`). | **Apenas `service_role`** (negado para `authenticated`). | Ninguém. |
+| `generation_jobs` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Ninguém. |
 | `deck_publications` | Qualquer autenticado se `status = 'aprovado' AND hidden_at IS NULL`; ou o próprio autor (`auth.uid() = author_id`). | Próprio autor (`auth.uid() = author_id AND hidden_at IS NULL`). | Próprio autor (`auth.uid() = author_id AND hidden_at IS NULL`) ou `service_role` (moderação). | Próprio autor (`auth.uid() = author_id`). |
 | `deck_comments` | Qualquer autenticado se `hidden_at IS NULL` e a publicação pai estiver visível (`status = 'aprovado' AND hidden_at IS NULL`); ou o próprio autor (`auth.uid() = author_id`). | Autenticado onde `auth.uid() = author_id AND hidden_at IS NULL`. | `service_role` (para preencher `hidden_at`). | Próprio autor (`auth.uid() = author_id`). |
 | `comment_likes` | Qualquer autenticado. | Próprio usuário (`auth.uid() = user_id`). | Ninguém. | Próprio usuário (`auth.uid() = user_id`). |
@@ -609,12 +627,47 @@ Todas as tabelas terão `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` e `ALTER TA
 | `deck_votes` | Qualquer autenticado. | Próprio usuário (`auth.uid() = user_id`). | Ninguém. | Próprio usuário (`auth.uid() = user_id`). |
 | `author_follows` | Qualquer autenticado. | Próprio seguidor (`auth.uid() = follower_id`). | Ninguém. | Próprio seguidor (`auth.uid() = follower_id`). |
 | `moderation_reports` | Próprio denunciante (`auth.uid() = reporter_id`) e `service_role` / painel Supabase. | Autenticado onde `auth.uid() = reporter_id`. | Apenas `service_role` / painel Supabase. | Ninguém. |
-| `noa_daily_budget` | Próprio dono (`auth.uid() = user_id`). | Próprio dono / `service_role`. | Próprio dono / `service_role`. | Ninguém. |
+| `noa_daily_budget` | Próprio dono (`auth.uid() = user_id`). | **Apenas `service_role`** (negado para `authenticated`). | **Apenas `service_role`** (negado para `authenticated`). | Ninguém. |
 | `noa_suggestions` | Próprio dono (`auth.uid() = user_id`). | `service_role` / dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
 | `noa_decisions` | Próprio dono (`auth.uid() = user_id`). | `service_role` / dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`). | Ninguém. |
 | `noa_chat_messages` | Próprio dono (`auth.uid() = user_id`). | Próprio dono (`auth.uid() = user_id`) ou `service_role`. | Ninguém. | Ninguém. |
 | `neuron_ledger` | Próprio dono (`auth.uid() = user_id`). | **Apenas `service_role` via RPC** (negado para `authenticated`). | **Bloqueado por trigger**. | **Bloqueado por trigger**. |
 | `audit_log` | **Apenas `service_role` / painel Supabase** (negado para `authenticated`). | **Apenas `service_role` via RPC**. | **Bloqueado por trigger**. | **Bloqueado por trigger**. |
+| `rate_limits` | **Apenas `service_role` via RPC** (negado para `authenticated`). | **Apenas `service_role` via RPC**. | **Apenas `service_role` via RPC**. | **Apenas `service_role`**. |
+
+### 3.1 Proteção por Coluna em `public.profiles` e Teste de Segurança
+Para impedir que um usuário autenticado use a `SUPABASE_ANON_KEY` + seu próprio JWT diretamente contra o PostgREST do Supabase para elevar seu plano (`plan`), alterar `role`, trocar `email`, adulterar `birth_date`, limpar `deactivated_at` ou inflar `public_profile` (pontos/nível/cardsGenerated):
+
+```sql
+CREATE OR REPLACE FUNCTION public.protect_profile_columns()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF COALESCE(current_setting('request.jwt.claim.role', true), '') = 'authenticated'
+     OR session_user = 'authenticated' THEN
+    IF NEW.plan IS DISTINCT FROM OLD.plan
+       OR NEW.role IS DISTINCT FROM OLD.role
+       OR NEW.email IS DISTINCT FROM OLD.email
+       OR NEW.birth_date IS DISTINCT FROM OLD.birth_date
+       OR NEW.deactivated_at IS DISTINCT FROM OLD.deactivated_at
+       OR NEW.public_profile IS DISTINCT FROM OLD.public_profile THEN
+      RAISE EXCEPTION 'protected_profile_column_modification_forbidden'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_profiles_protect_columns
+BEFORE UPDATE ON public.profiles
+FOR EACH ROW EXECUTE FUNCTION public.protect_profile_columns();
+```
+
+- **Teste Obrigatório de Segurança RLS:** usando cliente instanciado com `SUPABASE_ANON_KEY` + JWT de usuário autenticado:
+  1. Tentar `UPDATE generation_daily_usage SET used = 0` ou `UPDATE noa_daily_budget SET chat_used = 0` deve falhar / afetar `0` linhas (RLS bloqueia escrita para `authenticated`).
+  2. Tentar `UPDATE profiles SET plan = 'premium'` ou alterar `public_profile` deve falhar com erro `42501` (`protected_profile_column_modification_forbidden`).
 
 ---
 
@@ -677,16 +730,19 @@ SELECT public.moderate_hide_target('deck', 'pub_xxxx', 'Conteúdo impróprio con
 
 ## 5. Fluxo de Auth Completo (Supabase Auth + API Express)
 
-### 5.1 Cadastro e Validação de Idade ≥ 18 no Servidor
-1. Na tela `/criar-conta` (`RegisterPage.jsx`), o usuário preenche: `name`, `email`, `password` (mínimo 8 caracteres), `birthDate`, `student` (`sim`/`nao`) e `origin` (opcional).
-2. O frontend chama `POST /v1/auth/register` na API Express antes de criar a conta.
-3. **Validação de Idade ≥ 18 no Servidor (`backend/src/routes/auth.js`):**
-   - O servidor calcula a idade exata a partir de `birthDate`.
-   - Se `birthDate` for inválida ou `age < 18`, o servidor rejeita imediatamente com `422 under_age`:
+### 5.1 Cadastro Fechado por Convite e Validação de Idade ≥ 18 no Servidor
+1. **Signup público desligado no Supabase Auth:** No painel do Supabase (`Authentication > Providers / User Signups`), o cadastro público (`Allow new users to sign up`) fica **DESLIGADO**. O frontend **nunca** chama `supabase.auth.signUp` diretamente.
+2. Na tela `/criar-conta` (`RegisterPage.jsx`), o usuário preenche: `name`, `email`, `password` (mínimo 8 caracteres), `birthDate`, `inviteCode` (código de convite), `student` (`sim`/`nao`) e `origin` (opcional).
+3. O frontend envia `POST /v1/auth/register` para a API Express.
+4. **Validação de Convite e Idade ≥ 18 no Servidor (`backend/src/routes/auth.js`):**
+   - **Código de convite (`INVITE_CODE`):** O servidor compara `inviteCode` (em comparação de tempo constante) com `process.env.INVITE_CODE`. Se ausente ou divergente → rejeita com `403 invalid_invite_code`.
+   - **Idade ≥ 18 anos:** O servidor calcula a idade exata a partir de `birthDate`. Se `birthDate` for inválida ou `age < 18`, rejeita imediatamente com `422 under_age`:
      `fail(res, 422, 'under_age', 'O Memora é exclusivo para maiores de 18 anos.', { errors: { birthDate: 'Você precisa ter pelo menos 18 anos para criar uma conta.' } })`.
-   - Dessa forma, menores de 18 anos não chegam sequer a criar usuário em `auth.users`, e a constraint `CHECK (birth_date <= (CURRENT_DATE - INTERVAL '18 years'))` em `public.profiles` atua como segunda barreira no banco.
-4. Após validar `age >= 18`, a rota cria o usuário no Supabase Auth e provisiona as linhas iniciais em `public.profiles`, `public.study_settings`, `public.user_consents` e `public.noa_daily_budget`, registrando `account_created` em `public.audit_log`.
-5. A tela `/verificar-idade` (`AgeVerificationPage` de upload de RG/selfie e responsável legal) é desligada por flag (`FEATURES.ageVerificationScreen = false`), pois não há menores no MVP.
+   - Dessa forma, menores de 18 anos e pessoas sem convite não chegam sequer a criar usuário em `auth.users`, e a constraint `CHECK (birth_date <= (CURRENT_DATE - INTERVAL '18 years'))` em `public.profiles` atua como segunda barreira no banco.
+5. **Criação no Servidor via `service_role`:**
+   - Após validar convite e maioridade, o servidor chama `serviceClient.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } })`.
+   - Em seguida, provisiona as linhas iniciais em `public.profiles`, `public.study_settings`, `public.user_consents` e `public.noa_daily_budget`, registra `account_created` em `public.audit_log`, autentica a sessão (`signInWithPassword`) e devolve `{ token, refreshToken, user }` já pronto para avançar para `/onboarding`.
+6. A tela `/verificar-idade` (`AgeVerificationPage` de upload de RG/selfie e responsável legal) é desligada por flag (`FEATURES.ageVerificationScreen = false`), pois não há menores no MVP.
 
 ### 5.2 Confirmação de E-mail: Opções, Limites do Supabase e Riscos
 O servidor de e-mail embutido do Supabase Auth possui restrições severas por padrão:
@@ -775,6 +831,17 @@ Para que nenhum componente React quebre (Regra 9):
      .vercel/
      ```
    - Criação do arquivo `.env.example` na raiz contendo apenas os nomes das variáveis (ver Seção 9).
+5. **Rate Limit (Compatível com Serverless), Cabeçalhos de Segurança, CORS Restrito e Limite de Body (Sem Dependências Novas):**
+   - **Proposta de Solução (Zero Dependências Externas):**
+     - **Rate Limit no Postgres (`public.rate_limits` + RPC `public.check_rate_limit`):** Como instâncias serverless na Vercel não compartilham memória, o controle de taxa usa uma função atômica no Postgres (`INSERT INTO public.rate_limits ... ON CONFLICT (key, window_start) DO UPDATE SET count = rate_limits.count + 1 RETURNING count <= p_limit`). Nos testes automatizados sem banco real, o middleware `backend/src/lib/rateLimit.js` usa um contador local isolado por instância de app.
+     - **Rotas protegidas por Rate Limit:**
+       - `auth` (`POST /v1/auth/login`, `POST /v1/auth/register`, `POST /v1/auth/password/recover`): **10 requisições / 15 min por IP** (`429 rate_limited`).
+       - `ai` (`POST /v1/generation/jobs`, `POST /v1/noa/chat`): **10 requisições / 1 min por `user.id`** (além da cota diária em `generation_daily_usage` e `noa_daily_budget`).
+       - `publish` (`POST /v1/decks/:id/publish`): **10 requisições / 1 hora por `user.id`**.
+       - `comment_report` (`POST /v1/community/decks/:id/comments`, `POST /v1/community/decks/:id/report`, `POST /v1/community/comments/:id/report`): **20 requisições / 10 min por `user.id`**.
+     - **Cabeçalhos de Segurança (`backend/src/lib/security.js`):** Middleware próprio em `app.js` aplicando `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(self), microphone=(), geolocation=()` e, em produção, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.
+     - **CORS Restrito:** Em produção, `cors()` valida `Origin` estritamente contra a lista `CORS_ALLOWED_ORIGIN` (separada por vírgula), bloqueando origens externas arbitrárias; requisições same-origin (via rewrite da Vercel) e ambiente local de desenvolvimento/teste continuam funcionando normalmente.
+     - **Limite de Tamanho de Body:** `express.json({ limit: '100kb' })` em `backend/src/app.js` (substituindo o antigo `2mb`, já que PDFs de até 50 páginas serão enviados diretamente ao Supabase Storage na Etapa 7B).
 
 ---
 
@@ -818,10 +885,11 @@ Seguindo a **Regra 5** (*"Não desligue features apagando código: tire a rota d
 
 ### 9.1 Nomes das Variáveis de Ambiente (`.env.example`)
 ```dotenv
-# Ambiente e Servidor
+# Ambiente, Segurança e Cadastro
 NODE_ENV=
 PORT=
 CORS_ALLOWED_ORIGIN=
+INVITE_CODE=
 
 # Supabase (Backend / Serverless Functions)
 SUPABASE_URL=
@@ -832,10 +900,12 @@ SUPABASE_SERVICE_ROLE_KEY=
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 
-# Inteligência Artificial (Servidor apenas)
-AI_PROVIDER_API_KEY=
-AI_MODEL_GENERATION=
-AI_MODEL_NOA=
+# Inteligência Artificial — Google Gemini Flash (Servidor apenas)
+GEMINI_API_KEY=
+GEMINI_MODEL_GENERATION=
+GEMINI_MODEL_NOA=
+NOA_DAILY_CHAT_LIMIT=
+ALLOW_DETERMINISTIC_AI_FALLBACK=
 ```
 
 ### 9.2 Estrutura de Migrations Versionadas (`supabase/migrations/`)
@@ -921,24 +991,25 @@ cadastro de menores no servidor.
 
 ## Decisão
 
-1. A autenticação passa a ser feita pelo **Supabase Auth** (e-mail e senha). Todos os atalhos de
-   demonstração, tokens em memória e o código fixo `123456` são removidos.
-2. O frontend obtém o JWT (`access_token`) no Supabase Auth e o envia no header
+1. A autenticação passa a ser feita pelo **Supabase Auth** (e-mail e senha), com o **signup público
+   desligado** no painel do Supabase. Todos os atalhos de demonstração, tokens em memória e o código
+   fixo `123456` são removidos.
+2. O cadastro acontece exclusivamente via `POST /v1/auth/register` no servidor (usando `service_role`
+   com `auth.admin.createUser`), exigindo código de convite (`INVITE_CODE`) e validando **idade ≥ 18
+   anos no servidor** e em constraint `CHECK` em `public.profiles`.
+3. O frontend obtém o JWT (`access_token`) no Supabase Auth e o envia no header
    `Authorization: Bearer <jwt>` em todas as chamadas à API Express (`/v1/*`).
-3. O middleware `requireRole` / `requireStudent` na API Express valida o JWT junto ao Supabase Auth,
+4. O middleware `requireRole` / `requireStudent` na API Express valida o JWT junto ao Supabase Auth,
    cria um cliente de banco escopado com esse JWT (`req.db`) e carrega o perfil do aluno em
    `public.profiles`.
-4. O cadastro exige data de nascimento e valida **idade ≥ 18 anos no servidor** (na rota da API e em
-   constraint `CHECK` na tabela `public.profiles`), sem verificação de telefone e sem fluxo parental.
 
 ## Consequências
 
 - **A favor**: senhas gerenciadas com segurança pelo Supabase Auth (bcrypt/Argon2, recuperação de
-  senha e renovação de token); compatibilidade nativa com `auth.uid()` nas políticas de RLS do
-  Postgres; eliminação da superfície de complexidade de contas de menores no MVP.
-- **Contra**: o envio de e-mails transacionais (confirmação e recuperação de senha) fica sujeito aos
-  limites do provedor SMTP configurado no projeto Supabase; testes automatizados da API precisam
-  usar mocks da camada de auth/dados ou um projeto Supabase de teste.
+  senha e renovação de token); bloqueio total de cadastros não autorizados ou de menores de 18 anos
+  antes mesmo de tocar no `auth.users`; compatibilidade nativa com `auth.uid()` nas políticas de RLS.
+- **Contra**: testes automatizados da API precisam usar mocks da camada de auth/dados ou um projeto
+  Supabase de teste.
 ```
 
 ---
@@ -947,35 +1018,37 @@ cadastro de menores no servidor.
 
 Executaremos **uma etapa por vez**, com 1 commit ao final de cada uma, parando para sua validação antes de iniciar a próxima:
 
-### Etapa 1 — Higiene de Produção, Flags de Escopo, `.env.example` e ADRs
+### Etapa 1 — Higiene de Produção, Flags de Escopo, Hardening HTTP, `.env.example` e ADRs
 - **O que será feito:**
   - Atualizar `.gitignore` e criar `.env.example`.
   - Criar `backend/src/config/features.js` e `frontend/src/config/features.js`.
-  - Desligar no `backend/src/app.js` e nos routers as rotas fora do MVP (`/_proto`, painéis, MCP, materiais, grupos, ranking, assinatura, cupons, membros de pasta, guardian-requests).
-  - Desligar no `frontend` a `<ProtoBar />`, as chamadas `/_proto/*`, os botões de login demo/social mockado e ocultar da navegação as telas fora do MVP.
+  - Criar `backend/src/lib/security.js` (cabeçalhos de segurança + CORS restrito) e aplicar limite `express.json({ limit: '100kb' })` em `backend/src/app.js`.
+  - Desligar no `backend/src/app.js` e nos routers as rotas fora do MVP (`/_proto`, painéis, MCP, materiais, grupos, ranking, assinatura, cupons, suporte, membros de pasta, apelação de publicação, guardian-requests).
+  - Desligar no `frontend` a `<ProtoBar />`, as chamadas `/_proto/*`, os botões de login demo/social mockado e ocultar da navegação as telas fora do MVP, protegendo os componentes ativos para não chamarem rotas desligadas (`CommunityHome`, `CreatePage`, `NoaHub`, `StudentLayout`, `ProfileHome`, `WalletPage`, `DevicesPage`).
   - Criar as ADRs 0012 e 0013 e atualizar o status das ADRs 0001, 0008 e `docs/adr/README.md`.
 - **Critério de pronto verificável:**
-  - `GET /v1/_proto/state`, `GET /v1/mcp/connections`, `GET /v1/coupons` e `GET /v1/subscription` retornam `404`.
+  - `GET /v1/_proto/state`, `GET /v1/mcp/connections`, `GET /v1/coupons`, `GET /v1/subscription` e `GET /v1/support/tickets` retornam `404`.
+  - **Nenhuma tela do MVP quebra com rotas desligadas** (ex.: `CommunityHome` sem `/community/groups`, `CreatePage` e `NoaHub` sem `/mcp/connections`, `StudentLayout` sem `/mcp/requests` e `/mcp/inbox`, `WalletPage` sem `/coupons`, `ProfileHome` sem `/me/materials`, `DevicesPage` apenas com sessão atual e troca de senha).
   - `ProtoBar` e botão de login demo não aparecem na UI.
-  - `npm run build` compila sem erros e `.env` está protegido no `.gitignore`.
+  - Cabeçalhos de segurança e limite de body (`100kb`) ativos; `npm test` (testes do núcleo) e `npm run build` compilam e passam sem erros.
 
-### Etapa 2 — Migrations SQL Versionadas (Schema, Ledger, Moderação Leve, RLS e Storage)
+### Etapa 2 — Migrations SQL Versionadas (Schema, Proteção de Colunas, Ledger, Rate Limit, Moderação Leve, RLS e Storage)
 - **O que será feito:**
-  - Criar os 8 arquivos SQL em `supabase/migrations/` cobrindo todas as tabelas, índices, constraints `CHECK (birth_date <= CURRENT_DATE - INTERVAL '18 years')` e `CHECK (balance_after >= 0)`, triggers de imutabilidade do ledger e auditoria, RPC `append_neuron_ledger_entry`, view `v_moderation_queue`, políticas RLS e buckets de Storage.
+  - Criar os 8 arquivos SQL em `supabase/migrations/` + `supabase/full_migration.sql` cobrindo todas as tabelas, índices, constraints `CHECK (birth_date <= CURRENT_DATE - INTERVAL '18 years')` e `CHECK (balance_after >= 0)`, trigger `protect_profile_columns` em `profiles`, triggers de imutabilidade do ledger e auditoria, RPCs `append_neuron_ledger_entry`, `append_audit_entry` e `check_rate_limit`, view `v_moderation_queue`, políticas RLS (com `generation_daily_usage` e `noa_daily_budget` restritas a escrita apenas via `service_role`) e buckets de Storage.
 - **Critério de pronto verificável:**
-  - Execução limpa de todas as migrations no banco Supabase sem erros de sintaxe ou dependência.
-  - Teste no SQL Editor confirmando que: (a) `UPDATE` ou `DELETE` em `neuron_ledger` falha com exceção; (b) `append_neuron_ledger_entry` impede saldo negativo; (c) a view `v_moderation_queue` existe e responde; (d) todas as tabelas estão com RLS ativo.
+  - Execução limpa das migrations no banco Supabase (aplicadas manualmente por você no SQL Editor) sem erros de sintaxe ou dependência.
+  - Teste confirmando que: (a) `UPDATE` ou `DELETE` em `neuron_ledger` falha com exceção; (b) `append_neuron_ledger_entry` impede saldo negativo; (c) com chave `anon` + JWT de usuário autenticado, tentar zerar cota (`generation_daily_usage` / `noa_daily_budget`) ou mudar `plan`/`public_profile` em `profiles` falha; (d) a view `v_moderation_queue` existe e responde.
 
-### Etapa 3 — Clientes Supabase e Fluxo de Auth Real (≥ 18 anos)
+### Etapa 3 — Clientes Supabase, Rate Limit e Fluxo de Auth Real (Convite + ≥ 18 anos no Servidor)
 - **O que será feito:**
   - Instalar `@supabase/supabase-js` em `backend` e `frontend`.
-  - Criar `backend/src/data/supabase.js`, `backend/src/data/profiles.repo.js`, `backend/src/data/audit.repo.js` e `frontend/src/lib/supabase.js`.
+  - Criar `backend/src/data/supabase.js`, `backend/src/data/profiles.repo.js`, `backend/src/data/audit.repo.js`, `backend/src/lib/rateLimit.js` e `frontend/src/lib/supabase.js`.
   - Atualizar `backend/src/lib/auth.js` (`requireRole` / `requireStudent`) para validar o JWT do Supabase e instanciar `req.db`.
-  - Atualizar `backend/src/routes/auth.js` e as telas `LoginPage.jsx`, `RegisterPage.jsx`, `ConfirmPage.jsx`, `OnboardingPage.jsx` e `RecoverPage.jsx` para o fluxo real de cadastro (com senha e validação ≥ 18 anos no servidor), login, confirmação, onboarding e recuperação de senha.
+  - Atualizar `backend/src/routes/auth.js` (`POST /v1/auth/register` exigindo `INVITE_CODE`, validando ≥ 18 anos e criando usuário via `service_role` com `email_confirm: true`; `POST /v1/auth/login` com rate limit) e as telas `LoginPage.jsx`, `RegisterPage.jsx` (com campo de senha e código de convite), `OnboardingPage.jsx` e `RecoverPage.jsx`.
 - **Critério de pronto verificável:**
-  - Tentativa de cadastro com data de nascimento `< 18 anos` retorna `422 under_age` no servidor.
-  - Cadastro de maior de 18 anos cria usuário no Supabase Auth + linha em `public.profiles` + `public.study_settings` + `public.user_consents`.
-  - Login com senha errada retorna `401`/`422`; login com senha certa obtém JWT válido, conclui `/onboarding` e carrega `/app`.
+  - Tentativa de cadastro sem código de convite válido retorna `403 invalid_invite_code`; tentativa com `< 18 anos` retorna `422 under_age` no servidor.
+  - Cadastro com convite válido e ≥ 18 anos cria usuário no Supabase Auth + linhas em `public.profiles`, `public.study_settings`, `public.user_consents` e `public.noa_daily_budget`.
+  - Teste automatizado/verificação: com `anon` key + JWT de usuário, tentar mudar `plan` em `profiles` ou zerar cota falha.
 
 ### Etapa 4 — Camada de Dados: Perfil (`/me`), Consentimentos e Carteira/Ledger (`/wallet`)
 - **O que será feito:**
@@ -1002,20 +1075,37 @@ Executaremos **uma etapa por vez**, com 1 commit ao final de cada uma, parando p
   - Reenviar o mesmo `clientId` em `POST /v1/reviews` retorna em `duplicates` sem duplicar revisão nem FSRS.
   - Criar objetivo e registrar `outcome` persiste no banco e credita +5 Neurônios.
 
-### Etapa 7 — Migração de Geração de Decks sem `setTimeout` (`/generation`) e Nôa/Privacidade (`/noa`, `/privacy`)
+### Etapa 7A — Persistência de Jobs/Cotas de Geração, Nôa (Sugestões/Decisões) e Privacidade (Sem Timers)
 - **O que será feito:**
   - Implementar `backend/src/data/generation.repo.js` e `backend/src/data/noa.repo.js`.
-  - Migrar `backend/src/routes/generation.js` removendo `startTimeline`/`store.later`, executando a geração de forma síncrona e persistindo `generation_jobs` e `generation_daily_usage` no Postgres.
-  - Migrar `backend/src/routes/noa.js` (catálogo, overview, responder sugestão, reverter decisão e mensagens de chat em `noa_chat_messages`) e `backend/src/routes/privacy.js`.
+  - Remover `startTimeline` e `store.later` (`setTimeout`) de `backend/src/routes/generation.js` e `backend/src/store.js`.
+  - Persistir `generation_jobs` e `generation_daily_usage` (escrita via `service_role`) no Postgres, com rate limit na rota de criação. Manter fallback determinístico **exclusivamente em ambiente de teste** atrás de flag explícita (`NODE_ENV === 'test' && process.env.ALLOW_DETERMINISTIC_AI_FALLBACK === 'true'`).
+  - Migrar `backend/src/routes/noa.js` (catálogo, overview, responder sugestão e reverter decisão) e `backend/src/routes/privacy.js`.
 - **Critério de pronto verificável:**
-  - Criar um deck em `/app/criar` (por texto, arquivo ou vazio) grava o job em `generation_jobs` já com `status = 'pronto'` sem depender de `setTimeout`, e aprovar o job cria o deck e os cards reais em `public.decks` e `public.cards`.
-  - Limite diário de geração respeita `generation_daily_usage` no Postgres.
-  - Sugestões, decisões e reversões da Nôa persistem no banco.
+  - Nenhum `setTimeout`/`store.later` resta no fluxo de geração.
+  - `generation_jobs`, `generation_daily_usage`, `noa_suggestions`, `noa_decisions` e ações de `/privacy/*` persistem no banco.
+  - Fora de modo de teste com flag explícita, nenhuma geração usa cards mockados silenciosamente.
+
+### Etapa 7B — Geração Real com Gemini Flash (Texto, Tema Digitado e PDF até 50 Páginas via Storage + Aviso de Privacidade)
+- **Pré-requisito antes de implementar a 7B:**
+  - Executar medição real de latência com um PDF de 50 páginas no Gemini Flash e apresentar o resultado para você decidir entre execução síncrona na requisição ou job com polling.
+- **O que será feito:**
+  - Implementar `backend/src/lib/gemini.js` consumindo Gemini Flash (`GEMINI_MODEL_GENERATION`) para: (a) texto colado, (b) tema digitado e (c) PDF de até 50 páginas enviado diretamente ao bucket `generation-uploads` do Supabase Storage.
+  - Adicionar em `CreatePage.jsx` o aviso explícito de privacidade sobre o processamento do texto/PDF pelo provedor de IA (Gemini) e validação do limite de 50 páginas.
+- **Critério de pronto verificável:**
+  - Geração real de flashcards com Gemini Flash funcionando para texto colado, tema digitado e PDF de até 50 páginas via Supabase Storage, exibindo aviso de privacidade na UI e respeitando a cota diária.
+
+### Etapa 7C — Chat da Nôa com Gemini Flash (`GET/POST /v1/noa/chat`) e UI em `NoaHub`
+- **O que será feito:**
+  - Implementar `GET /v1/noa/chat` e `POST /v1/noa/chat` em `backend/src/routes/noa.js` (com rate limit de IA, persistência em `public.noa_chat_messages` e controle de teto diário configurável via `NOA_DAILY_CHAT_LIMIT` em `public.noa_daily_budget` escrito por `service_role`).
+  - Adicionar a aba/seção de Chat da Nôa em `frontend/src/features/noa/NoaHub.jsx` com strings em `frontend/src/i18n/pt-BR/noa.js`.
+- **Critério de pronto verificável:**
+  - Enviar mensagens no chat da Nôa em `/app/noa` responde via Gemini Flash, persiste o histórico em `noa_chat_messages` e bloqueia com erro amigável `429 daily_limit` ao atingir `NOA_DAILY_CHAT_LIMIT`.
 
 ### Etapa 8 — Migração da Comunidade de Decks com Moderação Leve (`/community`, `/public`) e Configuração Vercel
 - **O que será feito:**
   - Implementar `backend/src/data/community.repo.js`.
-  - Migrar `POST /v1/decks/:id/publish` (nascendo como `status = 'aprovado'`, `hidden_at = null`, com `snapshot` dos cards), `GET /v1/community/feed`, `GET /v1/community/search`, `GET /v1/community/decks/:id`, `favorite`, `clone` (com crédito `clone_bonus` ao autor se aplicável), `vote`, `react`, `share`, `report` (gravando em `moderation_reports`), `comments`, `like` e `GET /v1/public/decks/:publicId`.
+  - Migrar `POST /v1/decks/:id/publish` (com rate limit, nascendo como `status = 'aprovado'`, `hidden_at = null`, com `snapshot` dos cards), `GET /v1/community/feed`, `GET /v1/community/search`, `GET /v1/community/decks/:id`, `favorite`, `clone` (com crédito `clone_bonus` ao autor se aplicável), `vote`, `react`, `share`, `report` (com rate limit, gravando em `moderation_reports`), `comments` (com rate limit), `like` e `GET /v1/public/decks/:publicId`.
   - Criar `api/index.js` e `vercel.json` para deploy unificado na Vercel.
 - **Critério de pronto verificável:**
   - Publicar um deck o torna imediatamente visível no feed da comunidade para outro usuário autenticado.
@@ -1027,20 +1117,25 @@ Executaremos **uma etapa por vez**, com 1 commit ao final de cada uma, parando p
 
 ## 12. Perguntas para Decisão e Riscos Mapeados
 
-### 12.1 Perguntas que Preciso que Você Responda Antes da Execução
-1. **Confirmação de e-mail no Supabase Auth (Seção 5.2):** Para os ~5 testadores até 14/11/2026, qual opção devemos seguir?
-   - **(A)** Desligar confirmação obrigatória de e-mail no painel do Supabase (conta já nasce com e-mail ativo no cadastro, sem risco de travar no limite de 2 e-mails/hora do SMTP embutido);
-   - **(B)** Manter confirmação ativa com SMTP customizado (Resend/Brevo) já configurado por você no Supabase;
-   - **(C)** Manter confirmação ativa usando o SMTP padrão do Supabase.
-2. **Motor de Geração de Cards (`/generation`) e Chat da Nôa (`/noa`):**
-   - Na Etapa 7, devemos conectar um provedor de LLM real (ex.: API do Gemini ou Claude via `fetch` usando `AI_PROVIDER_API_KEY`, com fallback determinístico caso a chave não esteja definida no ambiente de teste), e qual provedor/modelo você prefere usar?
-   - Para a tabela `noa_chat_messages` pedida no item 1, você quer que adicionemos também os endpoints `GET /v1/noa/chat` e `POST /v1/noa/chat` e uma aba/caixa de chat na tela `/app/noa` (`NoaHub.jsx`), ou apenas a estrutura de banco e repositório pronta?
-3. **Aplicação das Migrations no Supabase:**
-   - Você mesmo aplicará os arquivos SQL de `supabase/migrations/` no SQL Editor do painel do Supabase ao final da Etapa 2, ou prefere que eu também crie um script automatizado de migração no repositório?
-4. **Suporte (`/app/perfil/suporte`) e Dispositivos (`/app/perfil/dispositivos`):**
-   - Como o back-office está fora do MVP e as sessões agora são JWTs gerenciados pelo Supabase Auth, podemos desligar por flag as telas `/app/perfil/suporte` e `/app/perfil/dispositivos` (ou na tela de Dispositivos exibir apenas a sessão atual e o formulário de troca de senha `POST /v1/me/password`)?
-5. **Aprovação de Dependência (Regra 7):**
-   - Confirma a instalação da dependência oficial `@supabase/supabase-js` nos workspaces `backend` e `frontend`?
+### 12.1 Decisões Fechadas do Plano (Atualizado em 13/11/2026)
+
+1. **Cadastro Fechado por Convite e Sem Confirmação de E-mail:**
+   - **Decisão:** Signup público do Supabase Auth **desligado**. `POST /v1/auth/register` cria o usuário no servidor via `service_role` (`email_confirm: true`), valida idade ≥ 18 anos e exige código de convite (`INVITE_CODE`). O frontend não chama `signUp` diretamente.
+2. **RLS de Cotas e Proteção por Coluna em `profiles`:**
+   - **Decisão:** `generation_daily_usage` e `noa_daily_budget` só aceitam escrita via `service_role`. A tabela `profiles` possui trigger `protect_profile_columns` impedindo que `authenticated` altere `plan`, `role`, `email`, `birth_date`, `deactivated_at` ou `public_profile`. Incluído teste verificando que `anon` key + JWT de usuário falha ao tentar zerar cota ou mudar `plan`.
+3. **Rate Limit, Cabeçalhos de Segurança, CORS Restrito e Limite de Body:**
+   - **Decisão:** Implementação sem novas dependências npm: rate limit via tabela `public.rate_limits` + RPC `public.check_rate_limit` no Postgres para login/auth, IA, publicação e comentários/denúncias; middleware nativo de cabeçalhos de segurança; CORS restrito a `CORS_ALLOWED_ORIGIN`; e `express.json({ limit: '100kb' })`.
+4. **Motor de IA (Gemini Flash) e Divisão da Etapa 7 em 7A, 7B e 7C:**
+   - **Decisão:**
+     - **7A:** Persistência de jobs e cotas sem timers (`setTimeout`/`store.later`); fallback determinístico restrito a testes atrás de flag explícita (`ALLOW_DETERMINISTIC_AI_FALLBACK=true`).
+     - **7B:** Gemini Flash real para texto, tema digitado e PDF de até 50 páginas via upload direto ao Supabase Storage com aviso de privacidade. Antes de implementar a 7B, será feita uma medição de latência com PDF de 50 páginas para decidir entre execução síncrona e job com polling.
+     - **7C:** Chat da Nôa (`GET/POST /v1/noa/chat`) com Gemini Flash, UI em `NoaHub.jsx` e teto diário configurável (`NOA_DAILY_CHAT_LIMIT`).
+5. **Aplicação Manual de Migrations e Credenciais de Produção:**
+   - **Decisão:** As migrations SQL versionadas (`supabase/migrations/*.sql` e `supabase/full_migration.sql`) são aplicadas manualmente por você no painel do Supabase; o agente nunca recebe credenciais de produção.
+6. **Suporte (`/app/perfil/suporte`) e Dispositivos (`/app/perfil/dispositivos`):**
+   - **Decisão:** Suporte desligado por flag (`supportTickets: false`); Dispositivos mantido apenas com a visualização da sessão atual e troca de senha (`POST /v1/me/password`).
+7. **Dependência `@supabase/supabase-js` (Regra 7):**
+   - **Decisão:** Aprovada a instalação de `@supabase/supabase-js` nos workspaces `backend` e `frontend` (na Etapa 3). None outra dependência externa necessária.
 
 ### 12.2 Riscos Mapeados e Mitigações
 1. **Risco de Timeout na Vercel Serverless (limite de 10s–60s no plano Hobby) durante geração por IA:**

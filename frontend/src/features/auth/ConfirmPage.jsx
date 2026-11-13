@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import styles from './auth.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Button, Input, Wordmark, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
@@ -68,8 +69,9 @@ export function ConfirmPage() {
   const session = useSession()
   useDocumentTitle(t('auth.confirm.title'))
   const user = session.user
-  const both = user?.verified?.email && user?.verified?.phone
+  const both = user?.verified?.email && (FEATURES.phoneVerification ? user?.verified?.phone : true)
   const fromRegister = session.flow === 'register'
+  const nextRoute = fromRegister ? (FEATURES.ageVerificationScreen ? '/verificar-idade' : '/onboarding') : '/app'
 
   return (
     <>
@@ -89,14 +91,14 @@ export function ConfirmPage() {
       {user ? (
         <>
           <ChannelForm channel="email" contact={user.email} verified={user.verified?.email} />
-          <ChannelForm channel="phone" contact={user.phone} verified={user.verified?.phone} />
+          {FEATURES.phoneVerification ? <ChannelForm channel="phone" contact={user.phone} verified={user.verified?.phone} /> : null}
         </>
       ) : null}
       <div className={styles.footerActions}>
-        <Button variant="text" onClick={() => navigate(fromRegister ? '/verificar-idade' : '/app')}>
+        <Button variant="text" onClick={() => navigate(nextRoute)}>
           {t('auth.confirm.later')}
         </Button>
-        <Button disabled={!both} onClick={() => navigate(fromRegister ? '/verificar-idade' : '/app')}>
+        <Button disabled={!both} onClick={() => navigate(nextRoute)}>
           {t('auth.confirm.next')}
         </Button>
       </div>

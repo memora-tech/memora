@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import styles from './study.module.css'
 import home from './home.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Banner, Button, EmptyState, Icon, ProgressBar, Screen, ScreenHeader, Skeleton, Stepper, Surface, TargetRing, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
@@ -482,7 +483,7 @@ export function StudyHome() {
         }
       />
 
-      <McpArrivalAlert />
+      {FEATURES.mcp ? <McpArrivalAlert /> : null}
 
       {study.loading && !today ? (
         <div className={home.top}>

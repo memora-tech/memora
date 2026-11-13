@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { FEATURES } from '../config/features.js'
 import { ToastProvider } from '../design-system/index.js'
 import { ProtoProvider } from '../state/ProtoContext.jsx'
 import { SessionProvider, useSession } from '../state/SessionContext.jsx'
@@ -75,7 +76,7 @@ export function AppRoutes() {
         <Route path="/entrar" element={<LoginPage />} />
         <Route path="/criar-conta" element={<RegisterPage />} />
         <Route path="/confirmar" element={<ConfirmPage />} />
-        <Route path="/verificar-idade" element={<AgeVerificationPage />} />
+        {FEATURES.ageVerificationScreen ? <Route path="/verificar-idade" element={<AgeVerificationPage />} /> : null}
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/recuperar-senha" element={<RecoverPage />} />
       </Route>
@@ -99,60 +100,64 @@ export function AppRoutes() {
         <Route path="pastas/:folderId" element={<FolderDetail />} />
         <Route path="comunidade" element={<CommunityHome />} />
         <Route path="comunidade/busca" element={<SearchResults />} />
-        <Route path="comunidade/grupos" element={<GroupsPage />} />
-        <Route path="comunidade/grupos/:groupId" element={<GroupDetail />} />
+        {FEATURES.studyGroups ? <Route path="comunidade/grupos" element={<GroupsPage />} /> : null}
+        {FEATURES.studyGroups ? <Route path="comunidade/grupos/:groupId" element={<GroupDetail />} /> : null}
         <Route path="comunidade/deck/:deckId" element={<CommunityDeck />} />
         <Route path="comunidade/autor/:authorId" element={<AuthorProfile />} />
-        <Route path="comunidade/conteudo/:materialId" element={<MaterialView />} />
-        <Route path="comunidade/conectar" element={<Navigate to="/app/perfil/conexoes" replace />} />
-        <Route path="perfil/conexoes" element={<McpConnect />} />
-        <Route path="perfil/blog/novo" element={<BlogEditor />} />
-        <Route path="perfil/blog/:postId" element={<BlogEditor />} />
+        {FEATURES.materials ? <Route path="comunidade/conteudo/:materialId" element={<MaterialView />} /> : null}
+        {FEATURES.mcp ? <Route path="comunidade/conectar" element={<Navigate to="/app/perfil/conexoes" replace />} /> : null}
+        {FEATURES.mcp ? <Route path="perfil/conexoes" element={<McpConnect />} /> : null}
+        {FEATURES.materials ? <Route path="perfil/blog/novo" element={<BlogEditor />} /> : null}
+        {FEATURES.materials ? <Route path="perfil/blog/:postId" element={<BlogEditor />} /> : null}
         <Route path="noa" element={<NoaHub />} />
-        <Route path="recebidos" element={<McpRequests />} />
+        {FEATURES.mcp ? <Route path="recebidos" element={<McpRequests />} /> : null}
         <Route path="perfil" element={<ProfileHome />} />
-        <Route path="perfil/assinatura" element={<SubscriptionPage />} />
+        {FEATURES.subscriptions ? <Route path="perfil/assinatura" element={<SubscriptionPage />} /> : null}
         <Route path="perfil/privacidade" element={<PrivacyPage />} />
         <Route path="perfil/dispositivos" element={<DevicesPage />} />
         <Route path="perfil/configuracoes" element={<SettingsPage />} />
         <Route path="perfil/objetivos" element={<ObjectivesPage />} />
-        <Route path="perfil/suporte" element={<SupportPage />} />
+        {FEATURES.supportTickets ? <Route path="perfil/suporte" element={<SupportPage />} /> : null}
         <Route path="carteira" element={<WalletPage />} />
-        <Route path="carteira/cupom/:couponId" element={<CouponPage />} />
-        <Route path="carteira/meus/:myCouponId" element={<MyCouponPage />} />
+        {FEATURES.coupons ? <Route path="carteira/cupom/:couponId" element={<CouponPage />} /> : null}
+        {FEATURES.coupons ? <Route path="carteira/meus/:myCouponId" element={<MyCouponPage />} /> : null}
       </Route>
-      <Route
-        path="/parental/*"
-        element={
-          <Suspense fallback={<Splash />}>
-            <ParentalArea />
-          </Suspense>
-        }
-      />
-      <Route
-        path="/parceiro/*"
-        element={
-          <Suspense fallback={<Splash />}>
-            <PartnerArea />
-          </Suspense>
-        }
-      />
-      <Route
-        path="/b2b/*"
-        element={
-          <Suspense fallback={<Splash />}>
-            <B2BArea />
-          </Suspense>
-        }
-      />
-      <Route
-        path="/admin/*"
-        element={
-          <Suspense fallback={<Splash />}>
-            <AdminArea />
-          </Suspense>
-        }
-      />
+      {FEATURES.panels ? (
+        <>
+          <Route
+            path="/parental/*"
+            element={
+              <Suspense fallback={<Splash />}>
+                <ParentalArea />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/parceiro/*"
+            element={
+              <Suspense fallback={<Splash />}>
+                <PartnerArea />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/b2b/*"
+            element={
+              <Suspense fallback={<Splash />}>
+                <B2BArea />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/*"
+            element={
+              <Suspense fallback={<Splash />}>
+                <AdminArea />
+              </Suspense>
+            }
+          />
+        </>
+      ) : null}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   )
@@ -175,7 +180,7 @@ export function App() {
     <BrowserRouter>
       <AppProviders>
         <AppRoutes />
-        <ProtoBar />
+        {FEATURES.protoBar ? <ProtoBar /> : null}
       </AppProviders>
     </BrowserRouter>
   )

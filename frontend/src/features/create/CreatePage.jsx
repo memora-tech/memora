@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import styles from './create.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Banner, Button, Chip, Icon, Input, Panel, Screen, ScreenHeader, Sheet, Surface, Textarea, useToast } from '../../design-system/index.js'
 import { fmtRelative } from '../../lib/format.js'
 import { SimulateButton } from '../mcp/SimulateButton.jsx'
@@ -232,7 +233,7 @@ export function CreatePage() {
         </Surface>
       </div>
 
-      <McpDecksPanel />
+      {FEATURES.mcp ? <McpDecksPanel /> : null}
 
       <input ref={cameraRef} className={styles.hidden} type="file" accept="image/*" capture="environment" onChange={onFile('camera')} aria-label={t('create.origin.camera')} />
       <input ref={fileRef} className={styles.hidden} type="file" accept=".pdf,image/*" onChange={onFile('file')} aria-label={t('create.origin.file')} />
@@ -243,7 +244,7 @@ export function CreatePage() {
         {q ? <p className={styles.meta}>{t('create.budget', { input: q.tokens.input.toLocaleString('pt-BR'), output: q.tokens.output.toLocaleString('pt-BR') })}</p> : null}
         <p className={styles.meta}>{t('create.pipeline')}</p>
         <p className={styles.meta}>{t('create.governance')}</p>
-        {q?.plan === 'free' ? <p className={styles.meta}>{t('create.quotaPremium', { limit: 10 })}</p> : null}
+        {FEATURES.subscriptions && q?.plan === 'free' ? <p className={styles.meta}>{t('create.quotaPremium', { limit: 10 })}</p> : null}
       </details>
 
       <Sheet
@@ -291,7 +292,7 @@ export function CreatePage() {
             <Button variant="ghost" onClick={() => setLimit(null)}>
               {t('common.actions.close')}
             </Button>
-            {limit?.upsell ? (
+            {FEATURES.subscriptions && limit?.upsell ? (
               <Button to="/app/perfil/assinatura" icon="zap" onClick={() => setLimit(null)}>
                 {t('create.upsell')}
               </Button>
@@ -299,8 +300,8 @@ export function CreatePage() {
           </>
         }
       >
-        <p>{limit?.upsell ? t('create.limitText', { premiumLimit: limit?.premiumLimit ?? 10 }) : t('create.limitTomorrow')}</p>
-        {limit?.upsell ? <p className={styles.meta}>{t('create.limitTomorrow')}</p> : null}
+        <p>{FEATURES.subscriptions && limit?.upsell ? t('create.limitText', { premiumLimit: limit?.premiumLimit ?? 10 }) : t('create.limitTomorrow')}</p>
+        {FEATURES.subscriptions && limit?.upsell ? <p className={styles.meta}>{t('create.limitTomorrow')}</p> : null}
       </Sheet>
     </Screen>
   )

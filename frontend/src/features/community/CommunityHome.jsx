@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import styles from './community.module.css'
 import home from './home.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Avatar, Badge, Banner, Button, Icon, Input, Segmented, Skeleton } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -16,7 +17,7 @@ import { KIND_ICON } from './kinds.jsx'
 import { CreatorFeature, PulseBar, Spotlight, TopicCloud, pulseOf } from './CommunityPulse.jsx'
 import { TransformSheet } from '../noa/AiFormats.jsx'
 
-const TAB_VALUES = ['all', 'flashcards', 'resumo', 'mapa', 'quiz', 'linha', 'noticia', 'mine']
+const TAB_VALUES = FEATURES.materials ? ['all', 'flashcards', 'resumo', 'mapa', 'quiz', 'linha', 'noticia', 'mine'] : ['all', 'flashcards']
 
 const engagement = (i) => {
   const reactions = Object.values(i.reactions || {}).reduce((s, n) => s + n, 0)
@@ -94,21 +95,25 @@ function ShareBox() {
   return (
     <div className={home.share}>
       <Avatar name={session.user?.name} />
-      <Link to="/app/perfil/blog/novo" className={home.shareField}>
+      <Link to={FEATURES.materials ? '/app/perfil/blog/novo' : '/app/decks'} className={home.shareField}>
         {t('community.feed.sharePrompt', {
           name: session.user?.name?.split(' ')[0] || ''
         })}
       </Link>
       <div className={home.shareActions}>
-        <Link to="/app/perfil/blog/novo" className={home.shareAction} data-kind="noticia">
-          <Icon name="edit" size={16} /> <span>{t('community.feed.shareBlog')}</span>
-        </Link>
+        {FEATURES.materials ? (
+          <Link to="/app/perfil/blog/novo" className={home.shareAction} data-kind="noticia">
+            <Icon name="edit" size={16} /> <span>{t('community.feed.shareBlog')}</span>
+          </Link>
+        ) : null}
         <Link to="/app/decks" className={home.shareAction} data-kind="flashcards">
           <Icon name="layers" size={16} /> <span>{t('community.feed.shareDeck')}</span>
         </Link>
-        <Link to="/app/noa" className={home.shareAction} data-kind="quiz">
-          <Icon name="sparkle" size={16} /> <span>{t('community.feed.shareAi')}</span>
-        </Link>
+        {FEATURES.mcp ? (
+          <Link to="/app/noa" className={home.shareAction} data-kind="quiz">
+            <Icon name="sparkle" size={16} /> <span>{t('community.feed.shareAi')}</span>
+          </Link>
+        ) : null}
       </div>
     </div>
   )
@@ -163,44 +168,46 @@ function SideRail({ data, allItems, groups }) {
   const recommended = (data.recommendations || []).slice(0, 3)
   return (
     <aside className={home.rail} aria-label={t('community.railLabel')}>
-      <GroupsCard groups={groups} />
-      <CreatorFeature creator={data.creatorOfMonth} />
-      <section className={home.railCard} aria-labelledby="rail-ranking">
-        <h2 id="rail-ranking" className={home.railTitle}>
-          <Icon name="trophy" size={16} /> {t('community.rankingWeek')}
-        </h2>
-        <ol className={home.rank}>
-          {data.rankingWeek.slice(0, 5).map((r) => (
-            <li key={r.deckId}>
-              <Link to={`/app/comunidade/deck/${r.deckId}`} className={home.rankRow}>
-                <span className={home.rankPos} data-top={r.position <= 3 ? String(r.position) : 'no'}>
-                  {r.position}
-                </span>
-                <span className={home.groupText}>
-                  <span className={home.groupName}>{r.name}</span>
-                  <span className={home.groupMeta}>
-                    {t('community.studiedWeek', {
-                      count: r.studiedWeek,
-                      value: fmtNumber(r.studiedWeek)
-                    })}
+      {FEATURES.studyGroups ? <GroupsCard groups={groups} /> : null}
+      {FEATURES.rankings ? <CreatorFeature creator={data.creatorOfMonth} /> : null}
+      {FEATURES.rankings && data.rankingWeek?.length ? (
+        <section className={home.railCard} aria-labelledby="rail-ranking">
+          <h2 id="rail-ranking" className={home.railTitle}>
+            <Icon name="trophy" size={16} /> {t('community.rankingWeek')}
+          </h2>
+          <ol className={home.rank}>
+            {data.rankingWeek.slice(0, 5).map((r) => (
+              <li key={r.deckId}>
+                <Link to={`/app/comunidade/deck/${r.deckId}`} className={home.rankRow}>
+                  <span className={home.rankPos} data-top={r.position <= 3 ? String(r.position) : 'no'}>
+                    {r.position}
                   </span>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ol>
-        <button type="button" className={home.rulesToggle} onClick={() => setRulesOpen((v) => !v)} aria-expanded={rulesOpen ? 'true' : 'false'}>
-          {t('community.rankingRulesToggle')} <Icon name={rulesOpen ? 'chevronUp' : 'chevronDown'} size={14} />
-        </button>
-        {rulesOpen ? (
-          <p className={home.railText}>
-            {t('community.rankingRules')}{' '}
-            {t('community.materialized', {
-              time: fmtTime(data.materializedAt)
-            })}
-          </p>
-        ) : null}
-      </section>
+                  <span className={home.groupText}>
+                    <span className={home.groupName}>{r.name}</span>
+                    <span className={home.groupMeta}>
+                      {t('community.studiedWeek', {
+                        count: r.studiedWeek,
+                        value: fmtNumber(r.studiedWeek)
+                      })}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+          <button type="button" className={home.rulesToggle} onClick={() => setRulesOpen((v) => !v)} aria-expanded={rulesOpen ? 'true' : 'false'}>
+            {t('community.rankingRulesToggle')} <Icon name={rulesOpen ? 'chevronUp' : 'chevronDown'} size={14} />
+          </button>
+          {rulesOpen ? (
+            <p className={home.railText}>
+              {t('community.rankingRules')}{' '}
+              {t('community.materialized', {
+                time: fmtTime(data.materializedAt)
+              })}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {recommended.length ? (
         <section className={home.railCard} aria-labelledby="rail-noa">
@@ -264,7 +271,7 @@ export function CommunityHome() {
   const [q, setQ] = useState('')
   const [transforming, setTransforming] = useState(null)
   const feed = useAsync(() => studentApi.get('/community/feed'), [])
-  const groupList = useAsync(() => studentApi.get('/community/groups'), [])
+  const groupList = useAsync(() => (FEATURES.studyGroups ? studentApi.get('/community/groups') : Promise.resolve({ groups: [] })), [])
   const myGroups = (groupList.data?.groups || []).filter((g) => g.joined)
   useDocumentTitle(t('community.title'))
   const data = feed.data
@@ -290,15 +297,17 @@ export function CommunityHome() {
     icon: value === 'all' ? 'home' : KIND_ICON[value],
     count: value === 'all' ? TAB_VALUES.filter((k) => k !== 'all' && k !== 'mine').reduce((s, k) => s + (counts[k] || 0), 0) : counts[value]
   }))
-  const tabs = [
-    ...kindTabs,
-    {
-      value: 'mine',
-      label: t('community.mine.title'),
-      icon: 'user',
-      count: counts.mine
-    }
-  ]
+  const tabs = FEATURES.materials
+    ? [
+        ...kindTabs,
+        {
+          value: 'mine',
+          label: t('community.mine.title'),
+          icon: 'user',
+          count: counts.mine
+        }
+      ]
+    : kindTabs
 
   const allItems = useMemo(() => {
     if (!data) return []
@@ -335,9 +344,11 @@ export function CommunityHome() {
               onSubmit={goSearch}
             />
           </div>
-          <Button icon="edit" to="/app/perfil/blog/novo">
-            {t('community.blog.write')}
-          </Button>
+          {FEATURES.materials ? (
+            <Button icon="edit" to="/app/perfil/blog/novo">
+              {t('community.blog.write')}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -403,7 +414,7 @@ export function CommunityHome() {
                   {t('common.state.error')}
                 </Banner>
               ) : null}
-              {data && tab === 'all' && !category ? <Spotlight items={allItems} onTransform={setTransforming} /> : null}
+              {data && tab === 'all' && !category ? <Spotlight items={allItems} onTransform={FEATURES.mcp ? setTransforming : null} /> : null}
               {data ? <ShareBox /> : null}
               {data && tab === 'noticia' ? <BlogList posts={items} /> : null}
               {data && tab !== 'noticia' ? (
@@ -417,7 +428,7 @@ export function CommunityHome() {
                   <Timeline
                     items={items}
                     grouped={sort !== 'alta'}
-                    onTransform={setTransforming}
+                    onTransform={FEATURES.mcp ? setTransforming : null}
                     emptyText={
                       category
                         ? t('community.categoryEmpty')
@@ -433,7 +444,7 @@ export function CommunityHome() {
         </div>
         {data ? <SideRail data={data} allItems={allItems} groups={myGroups} /> : null}
       </div>
-      <TransformSheet open={Boolean(transforming)} item={transforming} onClose={() => setTransforming(null)} />
+      {FEATURES.mcp ? <TransformSheet open={Boolean(transforming)} item={transforming} onClose={() => setTransforming(null)} /> : null}
     </div>
   )
 }

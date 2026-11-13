@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import styles from './student.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Icon, NeuronCounter, Wordmark, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useSession } from '../../state/SessionContext.jsx'
@@ -31,8 +32,12 @@ const NAV_GROUPS = [
     key: 'ai',
     items: [
       { to: '/app/noa', key: 'noa', icon: 'sparkle', badge: 'IA' },
-      { to: '/app/perfil/conexoes', key: 'connections', icon: 'plug' },
-      { to: '/app/recebidos', key: 'requests', icon: 'archive', counter: true }
+      ...(FEATURES.mcp
+        ? [
+            { to: '/app/perfil/conexoes', key: 'connections', icon: 'plug' },
+            { to: '/app/recebidos', key: 'requests', icon: 'archive', counter: true }
+          ]
+        : [])
     ]
   }
 ]
@@ -222,12 +227,12 @@ export function StudentLayout() {
             <span>{t('study.session.peekRedeemable')}</span>
           </div>
         )}
-        {proto.notification && !focus && <NotificationCard />}
+        {FEATURES.protoBar && proto.notification && !focus && <NotificationCard />}
         <main id="conteudo" className={[styles.main, focus && styles.mainFocus, wide ? styles.mainWide : styles.mainReadable, fill && styles.mainFill].filter(Boolean).join(' ')} tabIndex={-1}>
           {!focus && (
             <div className={styles.banners}>
               <LayoutBanners />
-              <McpArrivalWatcher />
+              {FEATURES.mcp ? <McpArrivalWatcher /> : null}
             </div>
           )}
           <Outlet context={outletContext} />

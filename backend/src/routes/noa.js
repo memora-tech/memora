@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { FEATURES } from '../config/features.js'
 import { requireStudent } from '../lib/auth.js'
 import { fail, ensureDay, ownDecksOf, cardsOfDeck } from '../lib/helpers.js'
 import { todaySession } from './study.js'
 import { nowIso } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 
-export function noaRoutes() {
+export function noaRoutes(features = FEATURES) {
   const r = Router()
 
   r.get('/noa/catalog', requireStudent, (req, res) => {
@@ -19,8 +20,8 @@ export function noaRoutes() {
     ensureDay(state, req.user.id)
     const suggestions = state.noa.suggestions.filter((s) => s.userId === req.user.id && s.status === 'pendente')
     const decisions = state.noa.decisions.filter((d) => d.userId === req.user.id).slice(0, 10)
-    const connections = state.mcp.connections.filter((c) => c.userId === req.user.id && !c.revokedAt)
-    const aiSaved = state.mcp.activity.filter((a) => a.userId === req.user.id && a.ok && a.write).length
+    const connections = features.mcp ? state.mcp.connections.filter((c) => c.userId === req.user.id && !c.revokedAt) : []
+    const aiSaved = features.mcp ? state.mcp.activity.filter((a) => a.userId === req.user.id && a.ok && a.write).length : 0
     const today = todaySession(state, req.user.id)
     const own = ownDecksOf(state, req.user.id)
     const weakest = own

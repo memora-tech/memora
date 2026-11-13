@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import styles from './profile.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Banner, Button, Icon, Input, PageHeader, Sheet, Skeleton, Surface, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -70,17 +71,17 @@ export function DevicesPage() {
       {list.length ? (
         <Surface>
           {list.map((s) => (
-          <div key={s.id} className={styles.row}>
-            <Icon name="device" size={22} />
-            <div className={styles.rowBody}>
-              <span className={styles.rowTitle}>
-                {s.device} {s.current ? <Badge tone="brand">{t('profile.devices.current')}</Badge> : null}
-              </span>
-              <span className={styles.meta}>
-                {s.location} · {t('profile.devices.lastUsed', { when: fmtRelative(s.lastUsedAt) })} · {t('profile.devices.since', { date: fmtDate(s.createdAt) })}
-              </span>
-            </div>
-              {!s.current ? (
+            <div key={s.id} className={styles.row}>
+              <Icon name="device" size={22} />
+              <div className={styles.rowBody}>
+                <span className={styles.rowTitle}>
+                  {s.device} {s.current ? <Badge tone="brand">{t('profile.devices.current')}</Badge> : null}
+                </span>
+                <span className={styles.meta}>
+                  {s.location} · {t('profile.devices.lastUsed', { when: fmtRelative(s.lastUsedAt) })} · {t('profile.devices.since', { date: fmtDate(s.createdAt) })}
+                </span>
+              </div>
+              {FEATURES.deviceSessionsManagement && !s.current ? (
                 <Button size="small" variant="ghost" onClick={() => end(s.id)}>
                   {t('profile.devices.end')}
                 </Button>
@@ -89,7 +90,7 @@ export function DevicesPage() {
           ))}
         </Surface>
       ) : null}
-      {list.filter((s) => !s.current).length ? (
+      {FEATURES.deviceSessionsManagement && list.filter((s) => !s.current).length ? (
         <Button variant="danger" icon="logout" onClick={endAll}>
           {t('profile.devices.endAll')}
         </Button>

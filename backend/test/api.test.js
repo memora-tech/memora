@@ -4,18 +4,36 @@ import { createApp } from '../src/app.js'
 import { createStore } from '../src/store.js'
 import { verifyChain } from '../src/lib/audit.js'
 
+const ALL_FEATURES = {
+  proto: true,
+  mcp: true,
+  materials: true,
+  studyGroups: true,
+  rankings: true,
+  coupons: true,
+  subscriptions: true,
+  supportTickets: true,
+  panels: true,
+  guardian: true,
+  ageVerification: true,
+  phoneVerification: true,
+  folderSharing: true,
+  publicationAppeals: true,
+  deviceSessionsManagement: true
+}
+
 let store
 let app
 
-async function login(role = 'student') {
+async function login(role = 'student', targetApp = app) {
   if (role === 'student') {
-    const res = await request(app).post('/v1/auth/login').send({ provider: 'google' })
+    const res = await request(targetApp).post('/v1/auth/login').send({ provider: 'email', email: 'manoel@exemplo.com', password: 'senha-segura' })
     return res.body.token
   }
-  if (role === 'guardian') return (await request(app).post('/v1/parental/auth/login').send({ email: 'p@x.com', password: 'x' })).body.token
-  if (role === 'partner') return (await request(app).post('/v1/partner/auth/login').send({ cnpj: '12.345.678/0001-90', password: 'x' })).body.token
-  if (role.startsWith('admin:')) return (await request(app).post('/v1/admin/auth/login').send({ role: role.split(':')[1] })).body.token
-  if (role.startsWith('b2b:')) return (await request(app).post('/v1/b2b/auth/login').send({ role: role.split(':')[1] })).body.token
+  if (role === 'guardian') return (await request(targetApp).post('/v1/parental/auth/login').send({ email: 'p@x.com', password: 'x' })).body.token
+  if (role === 'partner') return (await request(targetApp).post('/v1/partner/auth/login').send({ cnpj: '12.345.678/0001-90', password: 'x' })).body.token
+  if (role.startsWith('admin:')) return (await request(targetApp).post('/v1/admin/auth/login').send({ role: role.split(':')[1] })).body.token
+  if (role.startsWith('b2b:')) return (await request(targetApp).post('/v1/b2b/auth/login').send({ role: role.split(':')[1] })).body.token
   throw new Error('role')
 }
 
@@ -26,9 +44,69 @@ beforeEach(() => {
   app = createApp(store)
 })
 
+describe('etapa 1: endurecimento HTTP e rotas fora do escopo desligadas', () => {
+  it('inclui cabeçalhos de segurança e rejeita login demo ou sem senha', async () => {
+    const health = await request(app).get('/v1/health')
+    expect(health.status).toBe(200)
+    expect(health.headers['x-content-type-options']).toBe('nosniff')
+    expect(health.headers['x-frame-options']).toBe('DENY')
+    expect(health.headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
+
+    const demo = await request(app).post('/v1/auth/login').send({ provider: 'demo' })
+    expect(demo.status).toBe(422)
+    expect(demo.body.code).toBe('invalid_credentials')
+
+    const social = await request(app).post('/v1/auth/login').send({ provider: 'google' })
+    expect(social.status).toBe(422)
+  })
+
+  it('responde 404 para todas as rotas desligadas por feature flag no MVP', async () => {
+    const token = await login()
+    const disabledGet = [
+      '/v1/_proto/state',
+      '/v1/mcp/connections',
+      '/v1/mcp/requests',
+      '/v1/mcp/inbox',
+      '/v1/coupons',
+      '/v1/subscription',
+      '/v1/support/tickets',
+      '/v1/parental/overview',
+      '/v1/b2b/overview',
+      '/v1/admin/moderation/queue',
+      '/v1/partner/overview',
+      '/v1/community/groups',
+      '/v1/community/rankings',
+      '/v1/me/materials',
+      '/v1/me/publications',
+      '/v1/me/guardian-requests'
+    ]
+    for (const url of disabledGet) {
+      const res = await request(app).get(url).set(auth(token))
+      expect(res.status, `GET ${url} deveria retornar 404`).toBe(404)
+    }
+
+    const disabledPost = [
+      '/v1/_proto/reset',
+      '/v1/auth/age-verification',
+      '/v1/folders/f1/members',
+      '/v1/publications/pub2/appeal'
+    ]
+    for (const url of disabledPost) {
+      const res = await request(app).post(url).set(auth(token)).send({})
+      expect(res.status, `POST ${url} deveria retornar 404`).toBe(404)
+    }
+  })
+
+  it('rejeita payload JSON acima de 100kb com 413', async () => {
+    const huge = 'x'.repeat(110 * 1024)
+    const res = await request(app).post('/v1/auth/login').send({ email: 'a@b.co', password: huge })
+    expect(res.status).toBe(413)
+  })
+})
+
 describe('conta e acesso', () => {
   it('login devolve token e usuário verificado', async () => {
-    const res = await request(app).post('/v1/auth/login').send({ provider: 'google' })
+    const res = await request(app).post('/v1/auth/login').send({ provider: 'email', email: 'manoel@exemplo.com', password: 'senha-segura' })
     expect(res.status).toBe(200)
     expect(res.body.user.canEarn).toBe(true)
   })
@@ -144,7 +222,11 @@ describe('geração', () => {
   })
 })
 
-describe('carteira e cupons', () => {
+describe('carteira e cupons (legado com flags ativas)', () => {
+  beforeEach(() => {
+    app = createApp(store, { features: ALL_FEATURES })
+  })
+
   it('resgate do último cupom é atômico: dois pedidos, um sucesso', async () => {
     const token = await login()
     const [a, b] = await Promise.all([
@@ -196,6 +278,7 @@ describe('comunidade e moderação', () => {
   })
 
   it('menor sem liberação recebe bloqueio e a solicitação chega ao responsável', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     await request(app).post('/v1/_proto/profile').send({ profile: 'minor' })
     const token = await login()
     const res = await request(app).post('/v1/community/decks/c1/share').set(auth(token)).send({ channel: 'whatsapp' })
@@ -220,6 +303,7 @@ describe('comunidade e moderação', () => {
   })
 
   it('moderador aprova e o deck aparece na comunidade; rejeição exige motivo e trecho', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const mod = await login('admin:moderador')
     const bad = await request(app).post('/v1/admin/moderation/pub2/decide').set(auth(mod)).send({ decision: 'rejeitado' })
     expect(bad.status).toBe(422)
@@ -231,6 +315,7 @@ describe('comunidade e moderação', () => {
   })
 
   it('contestação não pode ser revisada pelo moderador original', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const hugo = await request(app).post('/v1/admin/auth/login').send({ role: 'moderador' })
     store.state.appeals[0].originalReviewer = hugo.body.user.id
     const res = await request(app).post('/v1/admin/moderation/appeals/ap1/decide').set(auth(hugo.body.token)).send({ decision: 'aceita' })
@@ -239,6 +324,10 @@ describe('comunidade e moderação', () => {
 })
 
 describe('B2B, assinatura e auditoria', () => {
+  beforeEach(() => {
+    app = createApp(store, { features: ALL_FEATURES })
+  })
+
   it('agregados só com 10 alunos consentidos e nunca há ranking', async () => {
     const token = await login('b2b:coordenador')
     const res = await request(app).get('/v1/b2b/overview').set(auth(token))
@@ -285,6 +374,7 @@ describe('B2B, assinatura e auditoria', () => {
 
 describe('privacidade, sessões e contestação do autor', () => {
   it('o autor contesta a rejeição e cai com um moderador diferente do original', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const mod = await login('admin:moderador')
     const rejected = await request(app).post('/v1/admin/moderation/pub2/decide').set(auth(mod)).send({ decision: 'rejeitado', reasonCategory: 'veracidade', excerpt: 'Card 2: o núcleo não armazena RNA.' })
     expect(rejected.body.publication.status).toBe('rejeitado')
@@ -302,6 +392,7 @@ describe('privacidade, sessões e contestação do autor', () => {
   })
 
   it('não contesta publicação de outro autor', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const token = await login()
     const res = await request(app).post('/v1/publications/pub5/appeal').set(auth(token)).send({ text: 'não é minha' })
     expect(res.status).toBe(404)
@@ -355,6 +446,7 @@ describe('privacidade, sessões e contestação do autor', () => {
   })
 
   it('a fila de moderação traz o contato suspeito sinalizado por Nôa com SLA de 4 h', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const token = await login('admin:moderador')
     const reports = await request(app).get('/v1/admin/moderation/reports').set(auth(token))
     const flagged = reports.body.reports.find((r) => r.targetType === 'contato_suspeito')
@@ -365,6 +457,7 @@ describe('privacidade, sessões e contestação do autor', () => {
   })
 
   it('templates de notificação acima de 2% de opt-out saem desativados', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const token = await login('admin:engenharia')
     const res = await request(app).get('/v1/admin/engineering/overview').set(auth(token))
     const templates = res.body.notificationTemplates
@@ -374,6 +467,7 @@ describe('privacidade, sessões e contestação do autor', () => {
   })
 
   it('revisão com horário implausível entra na fila antifraude', async () => {
+    app = createApp(store, { features: ALL_FEATURES })
     const token = await login()
     const today = await request(app).get('/v1/study/today').set(auth(token))
     const res = await request(app)

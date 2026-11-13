@@ -63,21 +63,6 @@ export function LoginPage() {
           {t('auth.login.submit')}
         </Button>
       </form>
-      <div className={styles.divider}>{t('auth.login.or')}</div>
-      <div className={styles.federated}>
-        <Button variant="ghost" block onClick={() => go({ provider: 'google' })} loading={busy}>
-          {t('auth.login.google')}
-        </Button>
-        <Button variant="ghost" block onClick={() => go({ provider: 'microsoft' })} loading={busy}>
-          {t('auth.login.microsoft')}
-        </Button>
-        <Button variant="soft" block icon="zap" onClick={() => go({ provider: 'demo' })} loading={busy} aria-describedby="demo-hint">
-          {t('auth.login.demo')}
-        </Button>
-        <p id="demo-hint" className={styles.meta}>
-          {t('auth.login.demoHint')}
-        </p>
-      </div>
       <div className={styles.footer}>
         <div className={styles.footerRow}>
           <Link to="/recuperar-senha" className={styles.footerLink}>

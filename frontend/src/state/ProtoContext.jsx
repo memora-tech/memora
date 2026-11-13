@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { FEATURES } from '../config/features.js'
 import { setSimulatedOffline, studentApi } from '../lib/api.js'
 import { storage } from '../lib/storage.js'
 
@@ -9,15 +10,17 @@ const defaults = { offline: false, nextGeneration: 'normal', barOpen: false, fat
 const ProtoContext = createContext(null)
 
 export function ProtoProvider({ children }) {
-  const [state, setState] = useState(() => ({ ...defaults, ...storage.get(KEY, {}), notification: null, barOpen: false }))
+  const [state, setState] = useState(() => ({ ...defaults, ...(FEATURES.protoBar ? storage.get(KEY, {}) : {}), notification: null, barOpen: false }))
   const [server, setServer] = useState(null)
 
   useEffect(() => {
+    if (!FEATURES.protoBar) return
     storage.set(KEY, { offline: state.offline, nextGeneration: state.nextGeneration })
     setSimulatedOffline(state.offline)
   }, [state.offline, state.nextGeneration])
 
   const refreshServer = useCallback(async () => {
+    if (!FEATURES.protoBar) return null
     try {
       const data = await studentApi.get('/_proto/state', { allowOffline: true })
       setServer(data)

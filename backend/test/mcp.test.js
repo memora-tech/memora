@@ -3,13 +3,31 @@ import request from 'supertest'
 import { createApp } from '../src/app.js'
 import { createStore } from '../src/store.js'
 
+const ALL_FEATURES = {
+  proto: true,
+  mcp: true,
+  materials: true,
+  studyGroups: true,
+  rankings: true,
+  coupons: true,
+  subscriptions: true,
+  supportTickets: true,
+  panels: true,
+  guardian: true,
+  ageVerification: true,
+  phoneVerification: true,
+  folderSharing: true,
+  publicationAppeals: true,
+  deviceSessionsManagement: true
+}
+
 let store
 let app
 
 const auth = (token) => ({ Authorization: `Bearer ${token}` })
 
 async function studentToken() {
-  return (await request(app).post('/v1/auth/login').send({ provider: 'google' })).body.token
+  return (await request(app).post('/v1/auth/login').send({ provider: 'email', email: 'manoel@exemplo.com', password: 'senha-segura' })).body.token
 }
 
 async function connect(student) {
@@ -42,7 +60,7 @@ const MAPA = {
 
 beforeEach(() => {
   store = createStore()
-  app = createApp(store)
+  app = createApp(store, { features: ALL_FEATURES })
 })
 
 describe('servidor MCP', () => {

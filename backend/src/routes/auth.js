@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { FEATURES } from '../config/features.js'
 import { createSession, requireStudent } from '../lib/auth.js'
 import { fail, publicUser } from '../lib/helpers.js'
 import { hoursFromNow, nowIso, sha256 } from '../lib/ids.js'
@@ -14,12 +15,12 @@ const ageFrom = (birthDate) => {
   return age
 }
 
-export function authRoutes() {
+export function authRoutes(features = FEATURES) {
   const r = Router()
 
   r.post('/auth/login', (req, res) => {
     const { provider = 'email', email, password, device } = req.body || {}
-    if (provider === 'email' && (!email || !password)) {
+    if (provider !== 'email' || !email || !password) {
       return fail(res, 422, 'invalid_credentials', 'Informe e-mail e senha.')
     }
     const state = req.store.state
@@ -73,45 +74,48 @@ export function authRoutes() {
   })
 
   r.post('/auth/confirm', requireStudent, (req, res) => {
-    const { channel, code } = req.body || {}
-    if (!['email', 'phone'].includes(channel)) return fail(res, 422, 'validation', 'Canal inválido.')
-    if (String(code) !== '123456') return fail(res, 422, 'invalid_code', 'Código incorreto. No protótipo, o código é 123456.')
-    req.user.verified = { ...req.user.verified, [channel]: true }
+    const { channel = 'email', code } = req.body || {}
+    if (channel !== 'email') return fail(res, 422, 'validation', 'Canal inválido.')
+    if (!code || String(code).trim().length < 6) return fail(res, 422, 'invalid_code', 'Código de confirmação inválido.')
+    req.user.verified = { ...req.user.verified, email: true }
     res.json({ verified: req.user.verified, user: publicUser(req.store.state, req.user) })
   })
 
   r.post('/auth/resend', requireStudent, (req, res) => {
-    const { channel } = req.body || {}
-    res.json({ sent: true, channel, hint: 'No protótipo, o código é 123456.' })
+    const { channel = 'email' } = req.body || {}
+    if (channel !== 'email') return fail(res, 422, 'validation', 'Canal inválido.')
+    res.json({ sent: true, channel })
   })
 
-  r.post('/auth/age-verification', requireStudent, (req, res) => {
-    const state = req.store.state
-    const { method = 'documento + prova de vida', guardian } = req.body || {}
-    const age = ageFrom(req.user.birthDate)
-    const needsGuardian = age !== null && age < 16
-    if (needsGuardian && !guardian?.name) {
-      return res.json({ status: 'aguardando_responsavel', requiresGuardian: true, age, message: 'Contas até 16 anos ficam vinculadas a um responsável verificado.' })
-    }
-    const verifiedAt = nowIso()
-    req.user.ageVerification = {
-      status: 'aprovado',
-      method,
-      provider: 'Verificador homologado',
-      verifiedAt,
-      documentDeletedBy: hoursFromNow(24),
-      documentHash: sha256(`${req.user.id}:${verifiedAt}`).slice(0, 12),
-      verifiedBy: 'Verificador homologado'
-    }
-    if (needsGuardian) {
-      req.user.isMinor = true
-      req.user.guardianId = 'g1'
-      state.parental.guardian = { ...state.parental.guardian, name: guardian.name, email: guardian.email || state.parental.guardian.email, phone: guardian.phone || state.parental.guardian.phone }
-      state.parental.child = { ...state.parental.child, name: req.user.name, age, birthDate: req.user.birthDate, verifiedAt }
-    }
-    appendAudit(state, { actor: 'verifier', actorRole: 'third_party', action: 'age_verified', target: req.user.id, details: { method, retained: ['resultado', 'método', 'data', 'hash', 'verificador'] } })
-    res.json({ status: 'aprovado', ageVerification: req.user.ageVerification, isMinor: req.user.isMinor, user: publicUser(state, req.user) })
-  })
+  if (features.ageVerification) {
+    r.post('/auth/age-verification', requireStudent, (req, res) => {
+      const state = req.store.state
+      const { method = 'documento + prova de vida', guardian } = req.body || {}
+      const age = ageFrom(req.user.birthDate)
+      const needsGuardian = age !== null && age < 16
+      if (needsGuardian && !guardian?.name) {
+        return res.json({ status: 'aguardando_responsavel', requiresGuardian: true, age, message: 'Contas até 16 anos ficam vinculadas a um responsável verificado.' })
+      }
+      const verifiedAt = nowIso()
+      req.user.ageVerification = {
+        status: 'aprovado',
+        method,
+        provider: 'Verificador homologado',
+        verifiedAt,
+        documentDeletedBy: hoursFromNow(24),
+        documentHash: sha256(`${req.user.id}:${verifiedAt}`).slice(0, 12),
+        verifiedBy: 'Verificador homologado'
+      }
+      if (needsGuardian) {
+        req.user.isMinor = true
+        req.user.guardianId = 'g1'
+        state.parental.guardian = { ...state.parental.guardian, name: guardian.name, email: guardian.email || state.parental.guardian.email, phone: guardian.phone || state.parental.guardian.phone }
+        state.parental.child = { ...state.parental.child, name: req.user.name, age, birthDate: req.user.birthDate, verifiedAt }
+      }
+      appendAudit(state, { actor: 'verifier', actorRole: 'third_party', action: 'age_verified', target: req.user.id, details: { method, retained: ['resultado', 'método', 'data', 'hash', 'verificador'] } })
+      res.json({ status: 'aprovado', ageVerification: req.user.ageVerification, isMinor: req.user.isMinor, user: publicUser(state, req.user) })
+    })
+  }
 
   r.post('/auth/onboarding', requireStudent, (req, res) => {
     const state = req.store.state

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { FEATURES } from '../../config/features.js'
 import { studentApi } from '../../lib/api.js'
 
 export const ARRIVAL_EVENT = 'memora:mcp-arrival'
@@ -16,6 +17,7 @@ export function useMcpRequests() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const load = useCallback(async () => {
+    if (!FEATURES.mcp) return
     try {
       setData(await studentApi.get('/mcp/requests'))
       setError(null)
@@ -25,6 +27,7 @@ export function useMcpRequests() {
   }, [])
 
   useEffect(() => {
+    if (!FEATURES.mcp) return undefined
     load()
     const timer = setInterval(load, POLL_MS)
     window.addEventListener(ARRIVAL_EVENT, load)
@@ -50,6 +53,7 @@ export function useMcpInbox() {
   const [items, setItems] = useState([])
   const [loaded, setLoaded] = useState(false)
   const load = useCallback(async () => {
+    if (!FEATURES.mcp) return undefined
     try {
       const data = await studentApi.get('/mcp/inbox')
       setItems(data.items)
@@ -61,6 +65,7 @@ export function useMcpInbox() {
   }, [])
 
   useEffect(() => {
+    if (!FEATURES.mcp) return undefined
     load()
     const timer = setInterval(load, POLL_MS)
     window.addEventListener(ARRIVAL_EVENT, load)

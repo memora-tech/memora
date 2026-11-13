@@ -61,7 +61,7 @@ export const auth = {
     email: 'Código enviado ao e-mail {email}',
     phone: 'Código enviado por SMS para {phone}',
     code: 'Código',
-    hint: 'No protótipo, o código é 123456.',
+    hint: 'Digite o código de 6 dígitos enviado para você.',
     resend: 'Reenviar código',
     resent: 'Código reenviado',
     confirmed: 'Confirmado',

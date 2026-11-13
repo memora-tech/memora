@@ -2,7 +2,7 @@
 
 ## Status
 
-Aceita.
+Substituída pela [ADR-0012](./0012-persistencia-postgres-supabase-e-rls.md).
 
 ## Contexto
 

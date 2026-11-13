@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import styles from './noa.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Badge, Banner, Button, EmptyState, Icon, Screen, ScreenHeader, Skeleton, TabBar, TabPanel, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
@@ -186,30 +187,32 @@ export function NoaHub() {
             </ul>
           </section>
 
-          <section className={styles.aiSection} aria-labelledby="noa-ia">
-            <header className={styles.aiHead}>
-              <span className={styles.aiEyebrow}>
-                <Icon name="plug" size={14} /> {t('noa.ai.eyebrow')}
-              </span>
-              <h2 id="noa-ia" className={styles.aiTitle}>
-                {t('ai.formatsTitle')}
-              </h2>
-              <p className={styles.aiLead}>{t('ai.formatsLead')}</p>
-            </header>
-            <FlowStrip />
-            <div className={styles.aiGrid}>
-              <FormatGallery topic={ins.weakest?.name} />
-              <div className={styles.aiAside}>
-                <AiStatusCard pending={requests.pending} />
-                <div className={styles.aiTip}>
-                  <span className={styles.itemTitle}>
-                    <Icon name="info" size={16} /> {t('noa.ai.tipTitle')}
-                  </span>
-                  <span className={styles.itemText}>{t('noa.ai.tipText')}</span>
+          {FEATURES.mcp ? (
+            <section className={styles.aiSection} aria-labelledby="noa-ia">
+              <header className={styles.aiHead}>
+                <span className={styles.aiEyebrow}>
+                  <Icon name="plug" size={14} /> {t('noa.ai.eyebrow')}
+                </span>
+                <h2 id="noa-ia" className={styles.aiTitle}>
+                  {t('ai.formatsTitle')}
+                </h2>
+                <p className={styles.aiLead}>{t('ai.formatsLead')}</p>
+              </header>
+              <FlowStrip />
+              <div className={styles.aiGrid}>
+                <FormatGallery topic={ins.weakest?.name} />
+                <div className={styles.aiAside}>
+                  <AiStatusCard pending={requests.pending} />
+                  <div className={styles.aiTip}>
+                    <span className={styles.itemTitle}>
+                      <Icon name="info" size={16} /> {t('noa.ai.tipTitle')}
+                    </span>
+                    <span className={styles.itemText}>{t('noa.ai.tipText')}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
 
           <section className={styles.section} aria-labelledby="noa-acoes">
             <h2 id="noa-acoes" className={styles.sectionTitle}>

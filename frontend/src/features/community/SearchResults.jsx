@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import styles from './community.module.css'
+import { FEATURES } from '../../config/features.js'
 import { Banner, Breadcrumbs, Button, ChipButton, Icon, Segmented, Sheet, Skeleton } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -143,21 +144,23 @@ export function SearchResults() {
         }
       >
         <div className={styles.filterSheet}>
-          <div className={styles.filterGroup}>
-            <span className={styles.filterGroupLabel} id="f-kind">
-              {t('community.kindFilter')}
-            </span>
-            <div className={styles.filterOptions} role="group" aria-labelledby="f-kind">
-              <ChipButton pressed={!kind} onClick={() => update({ kind: '' })}>
-                {t('community.filters.all')}
-              </ChipButton>
-              {KINDS.map((k) => (
-                <ChipButton key={k} icon={KIND_ICON[k]} pressed={kind === k} onClick={() => update({ kind: kind === k ? '' : k })}>
-                  {t(`community.kindsPlural.${k}`)}
+          {FEATURES.materials ? (
+            <div className={styles.filterGroup}>
+              <span className={styles.filterGroupLabel} id="f-kind">
+                {t('community.kindFilter')}
+              </span>
+              <div className={styles.filterOptions} role="group" aria-labelledby="f-kind">
+                <ChipButton pressed={!kind} onClick={() => update({ kind: '' })}>
+                  {t('community.filters.all')}
                 </ChipButton>
-              ))}
+                {KINDS.map((k) => (
+                  <ChipButton key={k} icon={KIND_ICON[k]} pressed={kind === k} onClick={() => update({ kind: kind === k ? '' : k })}>
+                    {t(`community.kindsPlural.${k}`)}
+                  </ChipButton>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
           <div className={styles.filterGroup}>
             <span className={styles.filterGroupLabel} id="f-cat">
               {t('community.filters.category')}

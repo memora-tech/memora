@@ -2,7 +2,7 @@
 
 ## Status
 
-Aceita.
+Substituída pela [ADR-0013](./0013-autenticacao-supabase-auth-jwt-adultos.md).
 
 ## Contexto
 

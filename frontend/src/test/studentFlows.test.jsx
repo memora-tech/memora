@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { FEATURES } from '../config/features.js'
 import { AppProviders, AppRoutes } from '../app/App.jsx'
 import { startLiveServer } from './liveServer.js'
 
@@ -40,7 +41,8 @@ describe('regra dos 3 toques', () => {
     const wallet = await screen.findByRole('button', { name: /Abrir Carteira/ })
     await userEvent.click(wallet)
     expect(await screen.findByRole('heading', { name: 'Carteira' })).toBeInTheDocument()
-    expect(await screen.findByText('Loja de cupons')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Movimentações' })).toBeInTheDocument()
+    expect(screen.queryByText('Loja de cupons')).not.toBeInTheDocument()
     await waitFor(() => expect(live.store.state.ledger.filter((e) => e.type === 'daily_access').length).toBeGreaterThan(30))
   })
 
@@ -91,7 +93,7 @@ describe('sessão de estudo por teclado', () => {
   })
 })
 
-describe('carteira', () => {
+describe.runIf(FEATURES.coupons)('carteira', () => {
   it('resgatar cupom com confirmação leva ao QR e debita o saldo', async () => {
     renderAt('/app/carteira/cupom/cp1')
     const redeem = await screen.findByRole('button', { name: 'Resgatar' }, { timeout: 4000 })
@@ -106,7 +108,7 @@ describe('carteira', () => {
 })
 
 describe('geração', () => {
-  it('quarto deck do dia trava com upsell do Premium', async () => {
+  it('quarto deck do dia trava no limite diário sem quebrar com assinatura desligada', async () => {
     live.store.state.generation.quota.u1.used = 3
     renderAt('/app/criar')
     await userEvent.click(await screen.findByText('Colar texto'))
@@ -114,6 +116,10 @@ describe('geração', () => {
     await userEvent.type(textarea, 'A primeira lei da termodinâmica relaciona calor e trabalho.')
     await userEvent.click(screen.getByRole('button', { name: 'Gerar cards' }))
     expect(await screen.findByText('Você já criou 3 decks hoje')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Conhecer o Premium/ })).toBeInTheDocument()
+    if (FEATURES.subscriptions) {
+      expect(screen.getByRole('link', { name: /Conhecer o Premium/ })).toBeInTheDocument()
+    } else {
+      expect(screen.queryByRole('link', { name: /Conhecer o Premium/ })).not.toBeInTheDocument()
+    }
   })
 })
