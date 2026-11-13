@@ -543,6 +543,286 @@ describe('conta e acesso', () => {
     expect(walletRes.body.ledger[0].type).toBe('daily_access')
     expect(walletRes.body.redeemable).toBe(false)
   })
+
+  it('etapa 5: CRUD de pastas, decks e cards persiste no repositorio com isolamento por owner_id e limite de fixados', async () => {
+    const userA = 'aaaa1111-2222-4333-8444-555555555555'
+    const userB = 'bbbb1111-2222-4333-8444-555555555555'
+    const tables = {
+      profiles: [
+        {
+          id: userA,
+          role: 'student',
+          name: 'Aluna A',
+          email: 'a@exemplo.com',
+          birth_date: '1996-02-10',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          onboarding_done: true
+        },
+        {
+          id: userB,
+          role: 'student',
+          name: 'Aluno B',
+          email: 'b@exemplo.com',
+          birth_date: '1994-09-15',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          onboarding_done: true
+        }
+      ],
+      study_settings: [
+        { user_id: userA, streak: 2, study_days: 5 },
+        { user_id: userB, streak: 1, study_days: 2 }
+      ],
+      neuron_ledger: [],
+      folders: [],
+      decks: [],
+      cards: [],
+      deck_favorites: [],
+      deck_publications: []
+    }
+
+    let idSeq = 1
+    const nextId = (prefix) => `${prefix}_${idSeq++}`
+
+    const buildQuery = (table, currentUserId) => {
+      const state = {
+        eqs: {},
+        isNulls: [],
+        op: 'select',
+        payload: null
+      }
+
+      const matches = (row) => {
+        if (table === 'decks' || table === 'cards' || table === 'folders') {
+          if (row.owner_id !== currentUserId) return false
+        }
+        if (table === 'deck_favorites' && row.user_id !== currentUserId) return false
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+
+      const execute = () => {
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const now = new Date().toISOString()
+          const prefix = table === 'folders' ? 'f' : table === 'decks' ? 'd' : 'c'
+          const created = {
+            id: nextId(prefix),
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+            ...state.payload
+          }
+          list.push(created)
+          return [created]
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload, { updated_at: new Date().toISOString() })
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        if (state.op === 'delete') {
+          const removed = []
+          for (let i = list.length - 1; i >= 0; i -= 1) {
+            if (matches(list[i])) {
+              const [del] = list.splice(i, 1)
+              removed.push(del)
+              if (table === 'folders') {
+                for (const d of tables.decks) {
+                  if (d.folder_id === del.id) d.folder_id = null
+                }
+              }
+            }
+          }
+          return removed
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        delete() {
+          state.op = 'delete'
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order() {
+          return builder
+        },
+        async limit(n) {
+          return { data: execute().slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeCreateUserClient = (jwt = null) => {
+      const currentUserId = jwt === 'jwt_user_b' ? userB : userA
+      return {
+        auth: {
+          async getUser(token) {
+            if (token === 'jwt_user_a') return { data: { user: { id: userA } }, error: null }
+            if (token === 'jwt_user_b') return { data: { user: { id: userB } }, error: null }
+            return { data: { user: null }, error: new Error('invalid_jwt') }
+          }
+        },
+        from(table) {
+          return buildQuery(table, currentUserId)
+        }
+      }
+    }
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const f1 = await request(sbApp)
+      .post('/v1/folders')
+      .set(auth('jwt_user_a'))
+      .send({ name: 'Biologia' })
+    expect(f1.status).toBe(201)
+    expect(f1.body.folder.name).toBe('Biologia')
+    expect(f1.body.folder.depth).toBe(1)
+
+    const f2 = await request(sbApp)
+      .post('/v1/folders')
+      .set(auth('jwt_user_a'))
+      .send({ name: 'Citologia', parentId: f1.body.folder.id })
+    expect(f2.status).toBe(201)
+    expect(f2.body.folder.depth).toBe(2)
+
+    const f3 = await request(sbApp)
+      .post('/v1/folders')
+      .set(auth('jwt_user_a'))
+      .send({ name: 'Organelas', parentId: f2.body.folder.id })
+    expect(f3.status).toBe(201)
+    expect(f3.body.folder.depth).toBe(3)
+
+    const f4 = await request(sbApp)
+      .post('/v1/folders')
+      .set(auth('jwt_user_a'))
+      .send({ name: 'Excesso', parentId: f3.body.folder.id })
+    expect(f4.status).toBe(409)
+    expect(f4.body.code).toBe('folder_depth')
+
+    const createdDeck = await request(sbApp)
+      .post('/v1/decks')
+      .set(auth('jwt_user_a'))
+      .send({ name: 'Membrana Plasmática', categoryId: 'vestibular', difficulty: 'medio' })
+    expect(createdDeck.status).toBe(201)
+    const deckId = createdDeck.body.deck.id
+
+    const moveRes = await request(sbApp)
+      .post(`/v1/folders/${f1.body.folder.id}/decks`)
+      .set(auth('jwt_user_a'))
+      .send({ deckId })
+    expect(moveRes.status).toBe(200)
+    expect(moveRes.body.deck.folderId).toBe(f1.body.folder.id)
+
+    const addCard = await request(sbApp)
+      .post(`/v1/decks/${deckId}/cards`)
+      .set(auth('jwt_user_a'))
+      .send({ front: 'O que é transporte ativo?', back: 'Transporte contra o gradiente com gasto de ATP.' })
+    expect(addCard.status).toBe(201)
+    const cardId = addCard.body.card.id
+    expect(addCard.body.card.sched.state).toBe('new')
+
+    const editCard = await request(sbApp)
+      .patch(`/v1/decks/${deckId}/cards/${cardId}`)
+      .set(auth('jwt_user_a'))
+      .send({ front: 'Defina transporte ativo', back: 'Contra o gradiente usando ATP.' })
+    expect(editCard.status).toBe(200)
+    expect(editCard.body.card.front).toBe('Defina transporte ativo')
+
+    const pinDeck = await request(sbApp)
+      .patch(`/v1/decks/${deckId}`)
+      .set(auth('jwt_user_a'))
+      .send({ pinned: true, focus: true })
+    expect(pinDeck.status).toBe(200)
+    expect(pinDeck.body.deck.pinned).toBe(true)
+    expect(pinDeck.body.deck.focus).toBe(true)
+    expect(pinDeck.body.deck.progress.offlineReason).toBe('fixado')
+
+    const detailA = await request(sbApp).get(`/v1/decks/${deckId}`).set(auth('jwt_user_a'))
+    expect(detailA.status).toBe(200)
+    expect(detailA.body.cards.length).toBe(1)
+    expect(detailA.body.folder.id).toBe(f1.body.folder.id)
+
+    const detailB = await request(sbApp).get(`/v1/decks/${deckId}`).set(auth('jwt_user_b'))
+    expect(detailB.status).toBe(404)
+
+    const libB = await request(sbApp).get('/v1/decks').set(auth('jwt_user_b'))
+    expect(libB.status).toBe(200)
+    expect(libB.body.decks.length).toBe(0)
+    expect(libB.body.folders.length).toBe(0)
+
+    const exp = await request(sbApp)
+      .post(`/v1/decks/${deckId}/export`)
+      .set(auth('jwt_user_a'))
+      .send({ format: 'txt' })
+    expect(exp.status).toBe(200)
+    expect(exp.body.cards).toBe(1)
+
+    const delCard = await request(sbApp)
+      .delete(`/v1/decks/${deckId}/cards/${cardId}`)
+      .set(auth('jwt_user_a'))
+    expect(delCard.status).toBe(200)
+
+    const detailAfterCardDel = await request(sbApp).get(`/v1/decks/${deckId}`).set(auth('jwt_user_a'))
+    expect(detailAfterCardDel.body.cards.length).toBe(0)
+
+    const delFolder = await request(sbApp)
+      .delete(`/v1/folders/${f1.body.folder.id}`)
+      .set(auth('jwt_user_a'))
+    expect(delFolder.status).toBe(200)
+
+    const detailAfterFolderDel = await request(sbApp).get(`/v1/decks/${deckId}`).set(auth('jwt_user_a'))
+    expect(detailAfterFolderDel.body.deck.folderId).toBeNull()
+  })
 })
 
 describe('estudo', () => {
