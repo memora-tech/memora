@@ -19,29 +19,29 @@ export const httpError = (status, code, message, extra = {}) => {
 export const fail = (res, status, code, message, extra = {}) => res.status(status).json({ code, message, ...extra })
 
 export function publicUser(state, user) {
-  const study = state.study[user.id]
+  const study = state?.study?.[user.id]
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     phone: user.phone,
     birthDate: user.birthDate,
-    isMinor: user.isMinor,
-    guardianId: user.guardianId,
+    isMinor: Boolean(user.isMinor),
+    guardianId: user.guardianId || null,
     plan: user.plan,
     locale: user.locale,
     timezone: user.timezone,
     verified: user.verified,
-    canEarn: Boolean(user.verified?.email && user.verified?.phone),
+    canEarn: Boolean(user.verified?.email),
     ageVerification: user.ageVerification,
     createdAt: user.createdAt,
     deactivatedAt: user.deactivatedAt || null,
     publicProfile: user.publicProfile,
     settings: user.settings || {},
-    guardianPermissions: user.isMinor ? state.parental.permissions : null,
-    streak: study?.streak ?? 0,
-    studyDays: study?.studyDays ?? 0,
-    balance: balanceOf(state, user.id),
+    guardianPermissions: user.isMinor && state?.parental ? state.parental.permissions : null,
+    streak: user.streak ?? study?.streak ?? 0,
+    studyDays: user.studyDays ?? study?.studyDays ?? 0,
+    balance: typeof user.balance === 'number' ? user.balance : state ? balanceOf(state, user.id) : 0,
     onboardingDone: user.onboardingDone !== false
   }
 }
@@ -188,6 +188,6 @@ export function guardianGate(state, user, permission, detail) {
 }
 
 export function requireVerified(user) {
-  if (user.verified?.email && user.verified?.phone) return null
-  return { code: 'verification_required', missing: [!user.verified?.email && 'email', !user.verified?.phone && 'phone'].filter(Boolean) }
+  if (user.verified?.email) return null
+  return { code: 'verification_required', missing: ['email'] }
 }

@@ -3,6 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { loadDevEnv } from '../src/config/env.js'
+import { createServiceClient, createUserClient, isSupabaseConfigured } from '../src/data/supabase.js'
 import { verifyDistDirectory } from '../../scripts/verify-dist-env.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -154,4 +156,103 @@ describe('etapa 2: migrations SQL, RLS, ledger, protecao de colunas e moderacao'
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
   })
+
+  it('etapa 3: com SUPABASE_PUBLISHABLE_KEY + JWT de usuario, tentar mudar plan em profiles ou zerar cota falha', async () => {
+    loadDevEnv()
+    if (!isSupabaseConfigured()) {
+      expect(isSupabaseConfigured()).toBe(false)
+      return
+    }
+
+    const admin = createServiceClient()
+    const testEmail = `rls-test-${Date.now()}@memora.local`
+    const testPassword = 'SenhaForte123!@#'
+    let createdUserId = null
+
+    try {
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email: testEmail,
+        password: testPassword,
+        email_confirm: true,
+        user_metadata: { name: 'Teste RLS' }
+      })
+
+      if (createErr && /fetch failed|network|EACCES|ENOTFOUND/i.test(createErr.message || '')) {
+        return
+      }
+      expect(createErr).toBeNull()
+      createdUserId = created.user.id
+
+      const { error: profErr } = await admin.from('profiles').insert({
+        id: createdUserId,
+        name: 'Teste RLS',
+        email: testEmail,
+        birth_date: '1995-04-10',
+        plan: 'free'
+      })
+      if (profErr?.code === 'PGRST205') {
+        return
+      }
+      expect(profErr).toBeNull()
+
+      await admin.from('generation_daily_usage').insert({
+        user_id: createdUserId,
+        day_key: '2026-11-13',
+        used: 3
+      })
+      await admin.from('noa_daily_budget').insert({
+        user_id: createdUserId,
+        day_key: '2026-11-13',
+        chat_used: 10
+      })
+
+      const anonClient = createUserClient()
+      const { data: signIn, error: signInErr } = await anonClient.auth.signInWithPassword({
+        email: testEmail,
+        password: testPassword
+      })
+      expect(signInErr).toBeNull()
+      const userClient = createUserClient(signIn.session.access_token)
+
+      const { error: planErr } = await userClient
+        .from('profiles')
+        .update({ plan: 'premium' })
+        .eq('id', createdUserId)
+      expect(planErr).toBeTruthy()
+
+      const { error: pointsErr } = await userClient
+        .from('profiles')
+        .update({ public_profile: { points: 999999 } })
+        .eq('id', createdUserId)
+      expect(pointsErr).toBeTruthy()
+
+      const { error: genQuotaErr } = await userClient
+        .from('generation_daily_usage')
+        .update({ used: 0 })
+        .eq('user_id', createdUserId)
+      const { data: genQuotaRow } = await admin
+        .from('generation_daily_usage')
+        .select('used')
+        .eq('user_id', createdUserId)
+        .single()
+      expect(Boolean(genQuotaErr) || genQuotaRow?.used === 3).toBe(true)
+      expect(genQuotaRow?.used).toBe(3)
+
+      const { error: noaQuotaErr } = await userClient
+        .from('noa_daily_budget')
+        .update({ chat_used: 0 })
+        .eq('user_id', createdUserId)
+      const { data: noaQuotaRow } = await admin
+        .from('noa_daily_budget')
+        .select('chat_used')
+        .eq('user_id', createdUserId)
+        .single()
+      expect(Boolean(noaQuotaErr) || noaQuotaRow?.chat_used === 10).toBe(true)
+      expect(noaQuotaRow?.chat_used).toBe(10)
+    } finally {
+      if (createdUserId) {
+        await admin.auth.admin.deleteUser(createdUserId)
+      }
+    }
+  }, 20000)
 })

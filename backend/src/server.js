@@ -1,10 +1,11 @@
 import './config/env.js'
 import { createApp } from './app.js'
+import { isSupabaseConfigured } from './data/supabase.js'
 import { createStore } from './store.js'
 
 const port = Number(process.env.PORT || 3180)
 const store = createStore()
-const app = createApp(store)
+const app = createApp(store, { useSupabase: isSupabaseConfigured() })
 
 app.listen(port, () => {
   process.stdout.write(`Memora API mock em http://localhost:${port}/v1\n`)

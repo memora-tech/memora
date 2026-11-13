@@ -163,13 +163,17 @@ describe('estrutura do app', () => {
       ['/app/perfil/dispositivos', 'Dispositivos'],
       ['/app/carteira', 'Carteira'],
       ['/app/pastas/f1', 'Concurso TRF'],
-      ['/entrar', 'Entrar']
+      ['/entrar', 'Entrar'],
+      ['/recuperar-senha', 'Recuperar senha'],
+      ['/criar-conta', 'Criar conta']
     ]
     for (const [path, heading] of routes) {
       cleanup()
       renderAt(path)
       expect(await screen.findByRole('heading', { name: new RegExp(heading, 'i') }, { timeout: 4000 })).toBeInTheDocument()
     }
+    expect(screen.getByLabelText(/Código de convite/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Senha/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Entrar direto no app de demonstração/ })).not.toBeInTheDocument()
     expect(live.notFoundCalls).toEqual([])
   })

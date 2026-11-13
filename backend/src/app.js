@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import { FEATURES } from './config/features.js'
+import { createDataLayer } from './data/index.js'
+import { isSupabaseConfigured } from './data/supabase.js'
 import { buildCorsOptions, securityHeaders } from './lib/security.js'
 import { authRoutes } from './routes/auth.js'
 import { meRoutes } from './routes/me.js'
@@ -24,6 +26,12 @@ import { partnerRoutes } from './routes/partner.js'
 
 export function createApp(store, options = {}) {
   const features = { ...FEATURES, ...(options.features || {}) }
+  const data = options.data || createDataLayer({ serviceClient: options.serviceClient || null })
+  const useSupabase =
+    typeof options.useSupabase === 'boolean'
+      ? options.useSupabase
+      : Boolean(!store && isSupabaseConfigured())
+
   const app = express()
   app.disable('x-powered-by')
   app.use(securityHeaders())
@@ -32,11 +40,22 @@ export function createApp(store, options = {}) {
   app.use((req, _res, next) => {
     req.store = store
     req.features = features
+    req.data = data
+    req.useSupabase = useSupabase
+    if (options.serviceClient) req.serviceClient = options.serviceClient
+    if (options.createUserClient) req.createUserClient = options.createUserClient
+    if (options.inviteCode !== undefined) req.inviteCode = options.inviteCode
     next()
   })
 
   const v1 = express.Router()
-  v1.get('/health', (_req, res) => res.json({ ok: true, seededAt: store.state.seededAt, profile: store.state.profile }))
+  v1.get('/health', (_req, res) =>
+    res.json({
+      ok: true,
+      seededAt: store?.state?.seededAt || null,
+      profile: store?.state?.profile || 'mvp'
+    })
+  )
   v1.use(authRoutes(features))
   v1.use(meRoutes(features))
   v1.use(studyRoutes())

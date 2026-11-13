@@ -67,3 +67,6 @@ CREATE POLICY generation_uploads_delete_own ON storage.objects
     AND (storage.foldername(name))[1] = auth.uid()::text
   );
 
+NOTIFY pgrst, 'reload schema';
+
+

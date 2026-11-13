@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer } from 'react'
 import { studentApi, ApiError } from '../lib/api.js'
 import { storage } from '../lib/storage.js'
+import { supabase } from '../lib/supabase.js'
 
 const CACHE_KEY = 'memora.cache.me'
 
@@ -71,6 +72,18 @@ export function SessionProvider({ children }) {
   }, [refresh])
 
   useEffect(() => {
+    if (!supabase?.auth) return undefined
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, sbSession) => {
+      if (sbSession?.access_token) {
+        studentApi.setToken(sbSession.access_token)
+      }
+    })
+    return () => {
+      sub?.subscription?.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
     const handler = () => refresh()
     window.addEventListener('memora:proto-changed', handler)
     return () => window.removeEventListener('memora:proto-changed', handler)
@@ -80,6 +93,12 @@ export function SessionProvider({ children }) {
     async (payload) => {
       const data = await studentApi.post('/auth/login', payload)
       studentApi.setToken(data.token)
+      if (supabase?.auth && data.token && data.refreshToken) {
+        await supabase.auth.setSession({
+          access_token: data.token,
+          refresh_token: data.refreshToken
+        })
+      }
       dispatch({ type: 'patch', patch: { flow: 'login' } })
       await refresh()
       return data
@@ -90,6 +109,12 @@ export function SessionProvider({ children }) {
   const register = useCallback(async (payload) => {
     const data = await studentApi.post('/auth/register', payload)
     studentApi.setToken(data.token)
+    if (supabase?.auth && data.token && data.refreshToken) {
+      await supabase.auth.setSession({
+        access_token: data.token,
+        refresh_token: data.refreshToken
+      })
+    }
     dispatch({ type: 'loaded', user: data.user })
     dispatch({ type: 'patch', patch: { flow: 'register', registration: data } })
     return data
@@ -120,6 +145,9 @@ export function SessionProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
+      if (supabase?.auth) {
+        await supabase.auth.signOut()
+      }
       await studentApi.post('/auth/logout')
     } catch {
       return undefined

@@ -122,7 +122,15 @@ describe('conta e acesso', () => {
   })
 
   it('cadastro bloqueia após 5 contas por IP em 24 h', async () => {
-    const body = { name: 'Teste', email: 'a@b.co', phone: '11999990000', birthDate: '2000-01-01', student: true }
+    const body = {
+      name: 'Teste',
+      email: 'a@b.co',
+      password: 'senha-segura-123',
+      inviteCode: 'MEMORA-MVP-2026',
+      phone: '11999990000',
+      birthDate: '2000-01-01',
+      student: true
+    }
     for (let i = 0; i < 5; i += 1) {
       const res = await request(app).post('/v1/auth/register').send(body)
       expect(res.status).toBe(201)
@@ -130,6 +138,197 @@ describe('conta e acesso', () => {
     const blocked = await request(app).post('/v1/auth/register').send(body)
     expect(blocked.status).toBe(429)
     expect(blocked.body.code).toBe('captcha_required')
+  })
+
+  it('etapa 3: exige código de convite válido (403) e idade >= 18 anos (422) no servidor', async () => {
+    const badInvite = await request(app).post('/v1/auth/register').send({
+      name: 'Teste Sem Convite',
+      email: 'semconvite@exemplo.com',
+      password: 'senha-segura-123',
+      inviteCode: 'CONVITE-ERRADO',
+      birthDate: '1998-05-10',
+      student: true
+    })
+    expect(badInvite.status).toBe(403)
+    expect(badInvite.body.code).toBe('invalid_invite_code')
+
+    const underAge = await request(app).post('/v1/auth/register').send({
+      name: 'Menor de Idade',
+      email: 'menor@exemplo.com',
+      password: 'senha-segura-123',
+      inviteCode: 'MEMORA-MVP-2026',
+      birthDate: '2012-08-15',
+      student: true
+    })
+    expect(underAge.status).toBe(422)
+    expect(underAge.body.code).toBe('under_age')
+  })
+
+  it('etapa 3: provisiona conta via Supabase Auth (service_role) e valida JWT no requireStudent', async () => {
+    const provisionedTables = {
+      profiles: [],
+      user_consents: [],
+      study_settings: [],
+      noa_daily_budget: []
+    }
+    const fakeUserId = '11111111-2222-4333-8444-555555555555'
+    const fakeServiceClient = {
+      auth: {
+        admin: {
+          async createUser({ email, user_metadata }) {
+            return {
+              data: {
+                user: { id: fakeUserId, email, user_metadata }
+              },
+              error: null
+            }
+          }
+        }
+      },
+      from(table) {
+        return {
+          upsert(payload) {
+            provisionedTables[table].push(payload)
+            const singleResult = async () => ({
+              data: {
+                id: fakeUserId,
+                role: 'student',
+                name: payload.name || 'Ana Teste',
+                email: payload.email || 'ana@exemplo.com',
+                birth_date: payload.birth_date || '1999-04-12',
+                plan: 'free',
+                timezone: 'America/Sao_Paulo',
+                onboarding_done: false,
+                streak: 0,
+                study_days: 0
+              },
+              error: null
+            })
+            return {
+              select() {
+                return { single: singleResult }
+              },
+              then(resolve) {
+                return Promise.resolve({ data: payload, error: null }).then(resolve)
+              }
+            }
+          }
+        }
+      },
+      rpc: async (fn) => {
+        if (fn === 'check_rate_limit') {
+          return { data: { allowed: true, count: 1, limit: 10, remaining: 9 }, error: null }
+        }
+        return { data: { seq: 1 }, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = (jwt = null) => ({
+      auth: {
+        async signInWithPassword({ email }) {
+          return {
+            data: {
+              user: { id: fakeUserId, email },
+              session: { access_token: 'jwt_real_supabase_token', refresh_token: 'ref_token_1' }
+            },
+            error: null
+          }
+        },
+        async getUser(token) {
+          if (token === 'jwt_real_supabase_token') {
+            return { data: { user: { id: fakeUserId, email: 'ana@exemplo.com' } }, error: null }
+          }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        },
+        async signOut() {
+          return { error: null }
+        }
+      },
+      from(table) {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  async maybeSingle() {
+                    if (table === 'profiles') {
+                      return {
+                        data: {
+                          id: fakeUserId,
+                          role: 'student',
+                          name: 'Ana Teste',
+                          email: 'ana@exemplo.com',
+                          birth_date: '1999-04-12',
+                          plan: 'free',
+                          timezone: 'America/Sao_Paulo',
+                          onboarding_done: false
+                        },
+                        error: null
+                      }
+                    }
+                    return { data: { streak: 0, study_days: 0 }, error: null }
+                  },
+                  order() {
+                    return {
+                      async limit() {
+                        return { data: [{ balance_after: 0 }], error: null }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          update() {
+            return {
+              async eq() {
+                return { data: null, error: null }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient,
+      inviteCode: 'CONVITE-REAL-MVP'
+    })
+
+    const reg = await request(sbApp).post('/v1/auth/register').send({
+      name: 'Ana Teste',
+      email: 'ana@exemplo.com',
+      password: 'senha-segura-123',
+      inviteCode: 'CONVITE-REAL-MVP',
+      birthDate: '1999-04-12',
+      student: true
+    })
+    expect(reg.status).toBe(201)
+    expect(reg.body.token).toBe('jwt_real_supabase_token')
+    expect(reg.body.nextStep).toBe('onboarding')
+    expect(provisionedTables.profiles.length).toBe(1)
+    expect(provisionedTables.user_consents.length).toBe(1)
+    expect(provisionedTables.study_settings.length).toBe(1)
+    expect(provisionedTables.noa_daily_budget.length).toBe(1)
+
+    const onb = await request(sbApp)
+      .post('/v1/auth/onboarding')
+      .set(auth(reg.body.token))
+      .send({ context: 'Concurso público', subjects: ['Direito'], minutesPerDay: 20 })
+    expect(onb.status).toBe(200)
+    expect(onb.body.goal).toBe(60)
+  })
+
+  it('etapa 3: aplica rate limit de 10 tentativas em /v1/auth/login', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const res = await request(app).post('/v1/auth/login').send({ provider: 'demo' })
+      expect(res.status).toBe(422)
+    }
+    const limited = await request(app).post('/v1/auth/login').send({ provider: 'demo' })
+    expect(limited.status).toBe(429)
+    expect(limited.body.code).toBe('rate_limited')
   })
 
   it('trocar senha encerra as outras sessões', async () => {
