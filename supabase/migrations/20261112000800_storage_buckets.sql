@@ -66,3 +66,4 @@ CREATE POLICY generation_uploads_delete_own ON storage.objects
     bucket_id = 'generation-uploads'
     AND (storage.foldername(name))[1] = auth.uid()::text
   );
+

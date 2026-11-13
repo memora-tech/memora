@@ -465,3 +465,4 @@ CREATE POLICY audit_log_service_all ON public.audit_log
 DROP POLICY IF EXISTS rate_limits_service_all ON public.rate_limits;
 CREATE POLICY rate_limits_service_all ON public.rate_limits
   FOR ALL TO service_role USING (true) WITH CHECK (true);
+

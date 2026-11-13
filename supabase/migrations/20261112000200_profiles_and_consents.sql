@@ -118,3 +118,4 @@ CREATE TABLE IF NOT EXISTS public.objectives (
 );
 
 CREATE INDEX IF NOT EXISTS idx_objectives_user_date ON public.objectives (user_id, target_date ASC);
+

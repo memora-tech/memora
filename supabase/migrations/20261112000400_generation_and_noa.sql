@@ -102,3 +102,4 @@ CREATE TABLE IF NOT EXISTS public.noa_chat_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_noa_chat_user_created ON public.noa_chat_messages (user_id, created_at ASC);
+

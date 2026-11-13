@@ -187,3 +187,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.moderate_hide_target(text, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.moderate_hide_target(text, text, text) TO service_role;
+

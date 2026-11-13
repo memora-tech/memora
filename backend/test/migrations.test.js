@@ -1,7 +1,9 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { verifyDistDirectory } from '../../scripts/verify-dist-env.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '../..')
@@ -136,5 +138,20 @@ describe('etapa 2: migrations SQL, RLS, ledger, protecao de colunas e moderacao'
     expect(storageSql).toContain("'generation-uploads'")
     expect(verifySql).toContain('pg_temp.run_etapa2_verification()')
     expect(verifySql).toContain('SET LOCAL ROLE authenticated')
+  })
+
+  it('falha no verificador de bundle se qualquer variavel sem prefixo VITE_ aparecer em dist', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'memora-dist-test-'))
+    try {
+      const cleanFile = path.join(tmpDir, 'clean.js')
+      fs.writeFileSync(cleanFile, 'console.log("bundle limpo")\n')
+      expect(() => verifyDistDirectory(tmpDir, rootDir)).not.toThrow()
+
+      const leakedFile = path.join(tmpDir, 'leaked.js')
+      fs.writeFileSync(leakedFile, 'const key = "SUPABASE_SECRET_KEY"\n')
+      expect(() => verifyDistDirectory(tmpDir, rootDir)).toThrow(/SUPABASE_SECRET_KEY/)
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 })

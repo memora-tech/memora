@@ -5,7 +5,8 @@
   "workspaces": ["frontend", "backend"],
   "scripts": {
     "dev": "concurrently -n api,web -c blue,cyan \"npm run dev -w backend\" \"npm run dev -w frontend\"",
-    "build": "npm run build -w frontend",
+    "build": "npm run build -w frontend && npm run verify:dist-env",
+    "verify:dist-env": "node scripts/verify-dist-env.mjs",
     "test": "npm run test -w backend && npm run test -w frontend"
   },
   "devDependencies": {

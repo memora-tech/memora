@@ -87,3 +87,4 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 
 CREATE INDEX IF NOT EXISTS idx_reviews_user_reviewed ON public.reviews (user_id, reviewed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reviews_user_deck ON public.reviews (user_id, deck_id, reviewed_at DESC);
+

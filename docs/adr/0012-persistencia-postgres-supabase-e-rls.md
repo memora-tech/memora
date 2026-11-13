@@ -18,9 +18,10 @@ invocação e timers após a resposta HTTP são congelados pelo runtime.
 2. As rotas Express não acessam o banco diretamente: toda leitura e escrita passa pela camada
    `backend/src/data/*.repo.js`, que converte o schema relacional (`snake_case`) para o contrato JSON
    existente (`camelCase`).
-3. A API instancia o cliente Supabase repassando o JWT do usuário autenticado em todas as operações
-   de domínio, fazendo com que as políticas de **Row Level Security (RLS)** do Postgres atuem como
-   segunda camada de defesa. O uso de `service_role` fica restrito a pontos explícitos no servidor:
+3. A API instancia o cliente Supabase com `SUPABASE_PUBLISHABLE_KEY` repassando o JWT do usuário
+   autenticado em todas as operações de domínio, fazendo com que as políticas de **Row Level Security
+   (RLS)** do Postgres atuem como segunda camada de defesa. O uso de `SUPABASE_SECRET_KEY`
+   (`service_role`, exclusivo no servidor) fica restrito a pontos explícitos:
    provisionamento de cadastro via convite, gravação atômica no ledger de Neurônios via RPC,
    atualização de jobs/cotas de IA, rate limit e escrita no log de auditoria, e rotina de moderação.
 4. O pipeline de geração de decks não utiliza mais `setTimeout` nem estado em memória.

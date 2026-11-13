@@ -32,7 +32,7 @@
 ```
 
 ### 0.2 Pontos Explícitos e Exclusivos de Uso da `service_role`
-A chave `SUPABASE_SERVICE_ROLE_KEY` **jamais** existe no frontend e, no backend, é encapsulada exclusivamente em `backend/src/data/supabase.js` (`createServiceClient()`), sendo chamada apenas em **5 pontos**:
+A chave `SUPABASE_SECRET_KEY` **jamais** existe no frontend e, no backend, é encapsulada exclusivamente em `backend/src/data/supabase.js` (`createServiceClient()`), sendo chamada apenas em **5 pontos**:
 1. **Cadastro de Usuário no Servidor (`backend/src/routes/auth.js` + `backend/src/data/profiles.repo.js`):** como o signup público do Supabase Auth fica desligado, apenas `POST /v1/auth/register` (após validar o `INVITE_CODE` e idade ≥ 18 anos) chama `auth.admin.createUser({ email, password, email_confirm: true })` e provisiona o perfil inicial.
 2. **Ledger de Neurônios (`backend/src/data/ledger.repo.js`):** invocação da função RPC `public.append_neuron_ledger_entry` para creditar/debitar Neurônios de forma atômica, já que os usuários autenticados têm apenas permissão de `SELECT` em `neuron_ledger`.
 3. **Jobs de IA e Tabelas de Cota/Orçamento (`backend/src/data/generation.repo.js` e `backend/src/data/noa.repo.js`):** escrita em `generation_daily_usage` e `noa_daily_budget` (que não aceitam `INSERT`/`UPDATE` via `authenticated`), gravação do resultado processado pelo Gemini Flash e estorno de cota em caso de falha.
@@ -636,7 +636,7 @@ Todas as tabelas terão `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;` e `ALTER TA
 | `rate_limits` | **Apenas `service_role` via RPC** (negado para `authenticated`). | **Apenas `service_role` via RPC**. | **Apenas `service_role` via RPC**. | **Apenas `service_role`**. |
 
 ### 3.1 Proteção por Coluna em `public.profiles` e Teste de Segurança
-Para impedir que um usuário autenticado use a `SUPABASE_ANON_KEY` + seu próprio JWT diretamente contra o PostgREST do Supabase para elevar seu plano (`plan`), alterar `role`, trocar `email`, adulterar `birth_date`, limpar `deactivated_at` ou inflar `public_profile` (pontos/nível/cardsGenerated):
+Para impedir que um usuário autenticado use a `SUPABASE_PUBLISHABLE_KEY` + seu próprio JWT diretamente contra o PostgREST do Supabase para elevar seu plano (`plan`), alterar `role`, trocar `email`, adulterar `birth_date`, limpar `deactivated_at` ou inflar `public_profile` (pontos/nível/cardsGenerated):
 
 ```sql
 CREATE OR REPLACE FUNCTION public.protect_profile_columns()
@@ -665,7 +665,7 @@ BEFORE UPDATE ON public.profiles
 FOR EACH ROW EXECUTE FUNCTION public.protect_profile_columns();
 ```
 
-- **Teste Obrigatório de Segurança RLS:** usando cliente instanciado com `SUPABASE_ANON_KEY` + JWT de usuário autenticado:
+- **Teste Obrigatório de Segurança RLS:** usando cliente instanciado com `SUPABASE_PUBLISHABLE_KEY` + JWT de usuário autenticado:
   1. Tentar `UPDATE generation_daily_usage SET used = 0` ou `UPDATE noa_daily_budget SET chat_used = 0` deve falhar / afetar `0` linhas (RLS bloqueia escrita para `authenticated`).
   2. Tentar `UPDATE profiles SET plan = 'premium'` ou alterar `public_profile` deve falhar com erro `42501` (`protected_profile_column_modification_forbidden`).
 
@@ -893,12 +893,12 @@ INVITE_CODE=
 
 # Supabase (Backend / Serverless Functions)
 SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
 
 # Supabase (Frontend Vite)
 VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 
 # Inteligência Artificial — Google Gemini Flash (Servidor apenas)
 GEMINI_API_KEY=
@@ -956,11 +956,12 @@ invocação e timers após a resposta HTTP são congelados pelo runtime.
 2. As rotas Express não acessam o banco diretamente: toda leitura e escrita passa pela camada
    `backend/src/data/*.repo.js`, que converte o schema relacional (`snake_case`) para o contrato JSON
    existente (`camelCase`).
-3. A API instancia o cliente Supabase repassando o JWT do usuário autenticado em todas as operações
-   de domínio, fazendo com que as políticas de **Row Level Security (RLS)** do Postgres atuem como
-   segunda camada de defesa. O uso de `service_role` fica restrito a quatro operações explícitas no
-   servidor: gravação atômica no ledger de Neurônios via RPC, atualização de jobs/cotas de IA,
-   escrita no log de auditoria e rotina de moderação.
+3. A API instancia o cliente Supabase com `SUPABASE_PUBLISHABLE_KEY` repassando o JWT do usuário
+   autenticado em todas as operações de domínio, fazendo com que as políticas de **Row Level Security
+   (RLS)** do Postgres atuem como segunda camada de defesa. O uso de `SUPABASE_SECRET_KEY`
+   (`service_role`, exclusivo no servidor) fica restrito a pontos explícitos:
+   provisionamento de cadastro via convite, gravação atômica no ledger de Neurônios via RPC,
+   atualização de jobs/cotas de IA, rate limit e escrita no log de auditoria, e rotina de moderação.
 4. O pipeline de geração de decks não utiliza mais `setTimeout` nem estado em memória.
 
 ## Consequências
@@ -994,14 +995,16 @@ cadastro de menores no servidor.
 1. A autenticação passa a ser feita pelo **Supabase Auth** (e-mail e senha), com o **signup público
    desligado** no painel do Supabase. Todos os atalhos de demonstração, tokens em memória e o código
    fixo `123456` são removidos.
-2. O cadastro acontece exclusivamente via `POST /v1/auth/register` no servidor (usando `service_role`
-   com `auth.admin.createUser`), exigindo código de convite (`INVITE_CODE`) e validando **idade ≥ 18
-   anos no servidor** e em constraint `CHECK` em `public.profiles`.
-3. O frontend obtém o JWT (`access_token`) no Supabase Auth e o envia no header
-   `Authorization: Bearer <jwt>` em todas as chamadas à API Express (`/v1/*`).
-4. O middleware `requireRole` / `requireStudent` na API Express valida o JWT junto ao Supabase Auth,
-   cria um cliente de banco escopado com esse JWT (`req.db`) e carrega o perfil do aluno em
+2. O cadastro acontece exclusivamente via `POST /v1/auth/register` no servidor (usando
+   `SUPABASE_SECRET_KEY` / `service_role` com `auth.admin.createUser`), exigindo código de convite
+   (`INVITE_CODE`) e validando **idade ≥ 18 anos no servidor** e em constraint `CHECK` em
    `public.profiles`.
+3. O frontend (configurado apenas com `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`) obtém o
+   JWT (`access_token`) no Supabase Auth e o envia no header `Authorization: Bearer <jwt>` em todas
+   as chamadas à API Express (`/v1/*`).
+4. O middleware `requireRole` / `requireStudent` na API Express valida o JWT junto ao Supabase Auth
+   (via `SUPABASE_PUBLISHABLE_KEY`), cria um cliente de banco escopado com esse JWT (`req.db`) e
+   carrega o perfil do aluno em `public.profiles`.
 
 ## Consequências
 

@@ -18,3 +18,4 @@ AS $$
   SELECT p_birth_date IS NOT NULL
      AND p_birth_date <= (CURRENT_DATE - INTERVAL '18 years')::date;
 $$;
+

@@ -177,3 +177,4 @@ END;
 $$;
 
 SELECT * FROM pg_temp.run_etapa2_verification();
+

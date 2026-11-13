@@ -1,3 +1,4 @@
+import './config/env.js'
 import { createApp } from './app.js'
 import { createStore } from './store.js'
 
