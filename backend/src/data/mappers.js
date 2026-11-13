@@ -280,3 +280,75 @@ export function mapObjectiveRow(row) {
     createdAt: row.created_at ?? row.createdAt
   }
 }
+
+export function mapGenerationJobRow(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    userId: row.user_id ?? row.userId,
+    plan: row.plan || 'free',
+    source: row.source || 'file',
+    documentName: row.document_name ?? row.documentName ?? 'documento.pdf',
+    storagePath: row.storage_path ?? row.storagePath ?? null,
+    textPreview: row.text_preview ?? row.textPreview ?? '',
+    sizeTokens: Number(row.size_tokens ?? row.sizeTokens ?? 0),
+    pages: Number(row.pages ?? 1),
+    legibility: row.legibility || 'ok',
+    idempotencyKey: row.idempotency_key ?? row.idempotencyKey ?? null,
+    createdAt: row.created_at ?? row.createdAt,
+    status: row.status || 'criado',
+    queuePosition: row.queue_position ?? row.queuePosition ?? null,
+    attempt: Number(row.attempt ?? 1),
+    tokensBudget: row.tokens_budget ?? row.tokensBudget ?? {},
+    scope: row.scope || null,
+    overBudget: row.over_budget ?? row.overBudget ?? null,
+    readerModel: row.reader_model ?? row.readerModel ?? null,
+    generatorModel: row.generator_model ?? row.generatorModel ?? null,
+    quotaRefunded: Boolean(row.quota_refunded ?? row.quotaRefunded),
+    result: row.result || null,
+    approvedDeckId: row.approved_deck_id ?? row.approvedDeckId ?? null,
+    readyAt: row.ready_at ?? row.readyAt ?? null,
+    failedAt: row.failed_at ?? row.failedAt ?? null
+  }
+}
+
+export function mapNoaSuggestionRow(row) {
+  if (!row) return null
+  const payload = row.payload || {}
+  return {
+    id: row.id,
+    userId: row.user_id ?? row.userId,
+    actionKey: row.action_key ?? row.actionKey,
+    deckId: row.deck_id ?? row.deckId ?? null,
+    title: row.title,
+    body: row.body,
+    payload,
+    ...(payload.showAfterCard !== undefined || row.showAfterCard !== undefined
+      ? { showAfterCard: payload.showAfterCard ?? row.showAfterCard }
+      : {}),
+    ...(payload.goal !== undefined || row.goal !== undefined
+      ? { goal: payload.goal ?? row.goal }
+      : {}),
+    status: row.status || 'pendente',
+    feedback: row.feedback || null,
+    respondedAt: row.responded_at ?? row.respondedAt ?? null,
+    createdAt: row.created_at ?? row.createdAt
+  }
+}
+
+export function mapNoaDecisionRow(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    userId: row.user_id ?? row.userId,
+    actionKey: row.action_key ?? row.actionKey,
+    at: row.created_at ?? row.at,
+    text: row.text,
+    reversible: row.reversible !== false,
+    reverted: Boolean(row.reverted),
+    revertedAt: row.reverted_at ?? row.revertedAt ?? null,
+    accepted: typeof row.accepted === 'boolean' ? row.accepted : null,
+    previousState: row.previous_state ?? row.previousState ?? null,
+    contested: row.contested || null
+  }
+}

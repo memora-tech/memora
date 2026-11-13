@@ -40,6 +40,7 @@ async function login(role = 'student', targetApp = app) {
 const auth = (token) => ({ Authorization: `Bearer ${token}` })
 
 beforeEach(() => {
+  process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
   store = createStore()
   app = createApp(store)
 })
@@ -1239,7 +1240,7 @@ describe('geração', () => {
     const res = await request(app).post('/v1/generation/jobs').set(auth(token)).send({ source: 'file', documentName: 'grande.pdf', sizeTokens: 400000 })
     expect(res.body.job.status).toBe('acima_do_orcamento')
     const scoped = await request(app).post(`/v1/generation/jobs/${res.body.job.id}/scope`).set(auth(token)).send({ pages: [1, 120] })
-    expect(scoped.body.job.status).toBe('na_fila')
+    expect(scoped.body.job.status).toBe('pronto')
   })
 
   it('texto com dados pessoais de terceiros é filtrado na entrada', async () => {
@@ -1247,6 +1248,354 @@ describe('geração', () => {
     const res = await request(app).post('/v1/generation/jobs').set(auth(token)).send({ source: 'text', text: 'Nome: João, CPF 123.456.789-00' })
     expect(res.status).toBe(422)
     expect(res.body.code).toBe('content_filtered')
+  })
+
+  it('Etapa 7A (Supabase): remove timers, bloqueia fallback mockado fora de flag explícita e persiste jobs, cotas, Nôa e privacidade', async () => {
+    expect(store.later).toBeUndefined()
+    expect(store.timers).toBeUndefined()
+
+    const userId = '22222222-2222-4222-8222-222222222222'
+    const deckId = 'deck-e7a-1'
+    const now = new Date().toISOString()
+
+    const tables = {
+      profiles: [
+        {
+          id: userId,
+          email: 'bruno@exemplo.br',
+          name: 'Bruno Costa',
+          role: 'student',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          birth_date: '1995-04-12',
+          onboarding_done: true,
+          settings: {},
+          notifications: {
+            intensity: 'padrao',
+            reminderTime: '19:00',
+            push: true
+          },
+          public_profile: {
+            level: 1,
+            topic: 'Geral',
+            points: 0,
+            badges: [],
+            cardsGenerated: 0
+          },
+          deactivated_at: null,
+          created_at: now
+        }
+      ],
+      study_settings: [
+        {
+          user_id: userId,
+          goal: 20,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2026-11-13',
+          goal_hit_day: null,
+          streak: 3,
+          study_days: 5,
+          last_study_day: '2026-11-12',
+          last_study_at: null,
+          skipped_day: null,
+          reschedules_week_key: '2026-W46',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          paused_until: null,
+          paused_at: null,
+          fatigue_detection: true,
+          fatigue_keep_load_day: null,
+          plan_order: [deckId],
+          plan_adjustments: {},
+          community_answered: {}
+        }
+      ],
+      decks: [
+        {
+          id: deckId,
+          owner_id: userId,
+          name: 'Direito Constitucional',
+          category_id: 'concursos',
+          difficulty: 'medio',
+          scheduled: true,
+          difficult: false,
+          focus: false,
+          complementary: false,
+          pinned: false,
+          deleted_at: null,
+          created_at: now
+        }
+      ],
+      cards: [
+        {
+          id: 'card-e7a-1',
+          deck_id: deckId,
+          owner_id: userId,
+          position: 0,
+          front: 'O que é cláusula pétrea?',
+          back: 'Limitação material ao poder de reforma constitucional.',
+          sched_state: 'review',
+          sched_stability: 2.0,
+          sched_difficulty: 6,
+          sched_due: now,
+          sched_reps: 2,
+          sched_lapses: 3,
+          sched_consecutive_lapses: 1,
+          deleted_at: null
+        }
+      ],
+      reviews: [],
+      objectives: [],
+      generation_daily_usage: [],
+      generation_jobs: [],
+      noa_daily_budget: [],
+      noa_suggestions: [
+        {
+          id: 'sug_e7a_1',
+          user_id: userId,
+          action_key: 'mark_difficult',
+          deck_id: deckId,
+          title: 'Marcar Direito Constitucional como difícil?',
+          body: 'Você errou 3 vezes seguidas neste deck.',
+          payload: { showAfterCard: 5 },
+          status: 'pendente',
+          feedback: null,
+          responded_at: null,
+          created_at: now
+        }
+      ],
+      noa_decisions: [],
+      neuron_ledger: [],
+      audit_log: []
+    }
+
+    function buildQuery(table, isService = false) {
+      const state = { op: 'select', payload: null, eqs: {}, isNulls: [] }
+
+      function matches(row) {
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+
+      function execute() {
+        if (!isService && (table === 'generation_daily_usage' || table === 'noa_daily_budget') && state.op !== 'select') {
+          throw new Error('rls_write_denied_for_authenticated')
+        }
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const items = Array.isArray(state.payload) ? state.payload : [state.payload]
+          const inserted = items.map((item, idx) => ({
+            id: item.id || `${table}_${list.length + idx + 1}`,
+            created_at: item.created_at || new Date().toISOString(),
+            ...item
+          }))
+          list.push(...inserted)
+          return inserted
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload)
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        if (state.op === 'delete') {
+          const kept = []
+          const removed = []
+          for (const row of list) {
+            if (matches(row)) removed.push(row)
+            else kept.push(row)
+          }
+          tables[table] = kept
+          return removed
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        delete() {
+          state.op = 'delete'
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order() {
+          return builder
+        },
+        async limit(n) {
+          return { data: execute().slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeServiceClient = {
+      from(table) {
+        return buildQuery(table, true)
+      },
+      async rpc(fnName, params) {
+        if (fnName === 'check_rate_limit') {
+          return { data: { allowed: true, remaining: 9 }, error: null }
+        }
+        if (fnName === 'append_audit_entry') {
+          const entry = {
+            seq: tables.audit_log.length + 1,
+            actor_id: params.p_actor_id,
+            actor_role: params.p_actor_role,
+            action: params.p_action,
+            target: params.p_target,
+            details: params.p_details || {},
+            prev_hash: '0',
+            hash: `h_${tables.audit_log.length + 1}`,
+            created_at: new Date().toISOString()
+          }
+          tables.audit_log.push(entry)
+          return { data: entry, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_bruno') return { data: { user: { id: userId } }, error: null }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        }
+      },
+      from(table) {
+        return buildQuery(table, false)
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'false'
+    const noFallbackRes = await request(sbApp)
+      .post('/v1/generation/jobs')
+      .set(auth('jwt_bruno'))
+      .send({ source: 'text', text: 'Primeira lei da termodinâmica.' })
+    expect(noFallbackRes.status).toBe(503)
+    expect(noFallbackRes.body.code).toBe('ai_unavailable')
+    expect(tables.generation_jobs[0].status).toBe('falhou')
+    expect(tables.generation_jobs[0].quota_refunded).toBe(true)
+    expect(tables.generation_daily_usage[0].used).toBe(0)
+
+    process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
+    const genRes = await request(sbApp)
+      .post('/v1/generation/jobs')
+      .set(auth('jwt_bruno'))
+      .set('Idempotency-Key', 'idem-e7a-1')
+      .send({ source: 'text', text: 'Termodinâmica clássica: calor e trabalho.' })
+    expect(genRes.status).toBe(201)
+    expect(genRes.body.job.status).toBe('pronto')
+    expect(genRes.body.job.result.cards.length).toBeGreaterThan(0)
+    expect(genRes.body.quota.used).toBe(1)
+
+    const dupGenRes = await request(sbApp)
+      .post('/v1/generation/jobs')
+      .set(auth('jwt_bruno'))
+      .set('Idempotency-Key', 'idem-e7a-1')
+      .send({ source: 'text', text: 'Termodinâmica clássica: calor e trabalho.' })
+    expect(dupGenRes.status).toBe(200)
+    expect(dupGenRes.body.duplicate).toBe(true)
+    expect(tables.generation_daily_usage[0].used).toBe(1)
+
+    const approveRes = await request(sbApp)
+      .post(`/v1/generation/jobs/${genRes.body.job.id}/approve`)
+      .set(auth('jwt_bruno'))
+      .send({ name: 'Termodinâmica I' })
+    expect(approveRes.status).toBe(201)
+    expect(approveRes.body.deck.name).toBe('Termodinâmica I')
+    expect(approveRes.body.cards).toBe(genRes.body.job.result.cards.length)
+    expect(tables.profiles[0].public_profile.cardsGenerated).toBe(approveRes.body.cards)
+
+    const overviewRes = await request(sbApp).get('/v1/noa/overview').set(auth('jwt_bruno'))
+    expect(overviewRes.status).toBe(200)
+    expect(overviewRes.body.suggestions.length).toBe(1)
+    expect(overviewRes.body.insights.weakest.id).toBe(deckId)
+
+    const respondRes = await request(sbApp)
+      .post('/v1/noa/suggestions/sug_e7a_1/respond')
+      .set(auth('jwt_bruno'))
+      .send({ accepted: true })
+    expect(respondRes.status).toBe(200)
+    expect(respondRes.body.suggestion.status).toBe('aceita')
+    expect(respondRes.body.effect.type).toBe('deck_marked_difficult')
+    expect(tables.decks[0].difficult).toBe(true)
+    expect(tables.noa_decisions.length).toBe(1)
+
+    const decId = tables.noa_decisions[0].id
+    const contestRes = await request(sbApp)
+      .post(`/v1/privacy/decisions/${decId}/contest`)
+      .set(auth('jwt_bruno'))
+      .send({ text: 'Prefiro revisar no ritmo padrão.' })
+    expect(contestRes.status).toBe(200)
+    expect(contestRes.body.decision.contested.status).toBe('em_analise')
+
+    const revertRes = await request(sbApp)
+      .post(`/v1/noa/decisions/${decId}/revert`)
+      .set(auth('jwt_bruno'))
+    expect(revertRes.status).toBe(200)
+    expect(revertRes.body.decision.reverted).toBe(true)
+    expect(tables.decks[0].difficult).toBe(false)
+
+    const exportRes = await request(sbApp).post('/v1/privacy/export').set(auth('jwt_bruno'))
+    expect(exportRes.status).toBe(201)
+    const listExports = await request(sbApp).get('/v1/privacy/export').set(auth('jwt_bruno'))
+    expect(listExports.body.requests.length).toBe(1)
+
+    const delRes = await request(sbApp).post('/v1/privacy/delete').set(auth('jwt_bruno'))
+    expect(delRes.status).toBe(201)
+    expect(tables.profiles[0].deactivated_at).toBeTruthy()
+
+    const reactivateRes = await request(sbApp).post('/v1/privacy/reactivate').set(auth('jwt_bruno'))
+    expect(reactivateRes.status).toBe(200)
+    expect(tables.profiles[0].deactivated_at).toBeNull()
   })
 })
 

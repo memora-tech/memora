@@ -45,6 +45,7 @@ export function createApp(store, options = {}) {
     if (options.serviceClient) req.serviceClient = options.serviceClient
     if (options.createUserClient) req.createUserClient = options.createUserClient
     if (options.inviteCode !== undefined) req.inviteCode = options.inviteCode
+    if (options.aiGenerator) req.aiGenerator = options.aiGenerator
     next()
   })
 
