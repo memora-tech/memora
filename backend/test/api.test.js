@@ -678,11 +678,21 @@ describe('conta e acesso', () => {
           if (val === null) state.isNulls.push(col)
           return builder
         },
-        order() {
+        order(col, opts = {}) {
+          state.orderCol = col
+          state.orderAsc = opts.ascending !== false
           return builder
         },
         async limit(n) {
-          return { data: execute().slice(0, n), error: null }
+          let rows = execute()
+          if (state.orderCol) {
+            rows = rows.slice().sort((a, b) => {
+              if (a[state.orderCol] < b[state.orderCol]) return state.orderAsc ? -1 : 1
+              if (a[state.orderCol] > b[state.orderCol]) return state.orderAsc ? 1 : -1
+              return 0
+            })
+          }
+          return { data: rows.slice(0, n), error: null }
         },
         async single() {
           const rows = execute()
@@ -872,6 +882,341 @@ describe('estudo', () => {
     expect(first.body.reward.amount).toBe(5)
     const second = await request(app).post('/v1/objectives/o2/outcome').set(auth(token)).send({ outcome: 'aprovado' })
     expect(second.body.reward).toBeNull()
+  })
+
+  it('Etapa 6 (Supabase): persiste revisões FSRS, idempotência por clientId, bônus de meta diária e resultado de objetivo', async () => {
+    const userId = '11111111-1111-4111-8111-111111111111'
+    const deckId = 'deck-e6-1'
+    const now = new Date().toISOString()
+
+    const tables = {
+      profiles: [
+        {
+          id: userId,
+          email: 'lara@exemplo.br',
+          name: 'Lara Mendes',
+          handle: '@lara',
+          role: 'student',
+          plan: 'free',
+          age_group: 'adult',
+          timezone: 'America/Sao_Paulo',
+          verified_email: true,
+          verified_phone: false,
+          balance: 100
+        }
+      ],
+      study_settings: [
+        {
+          user_id: userId,
+          goal: 5,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2020-01-01',
+          goal_hit_day: null,
+          streak: 0,
+          study_days: 0,
+          last_study_day: null,
+          last_study_at: null,
+          skipped_day: null,
+          reschedules_week_key: '2020-W01',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          paused_until: null,
+          paused_at: null,
+          fatigue_detection: true,
+          fatigue_keep_load_day: null,
+          plan_order: [],
+          plan_adjustments: {},
+          community_answered: {}
+        }
+      ],
+      decks: [
+        {
+          id: deckId,
+          owner_id: userId,
+          name: 'Biologia Celular',
+          category_id: 'vestibular',
+          difficulty: 'medio',
+          scheduled: true,
+          focus: true,
+          difficult: false,
+          complementary: false,
+          pinned: false,
+          deleted_at: null,
+          last_studied_at: null,
+          created_at: now
+        }
+      ],
+      cards: Array.from({ length: 5 }, (_, i) => ({
+        id: `card-e6-${i + 1}`,
+        deck_id: deckId,
+        owner_id: userId,
+        position: i,
+        front: `Pergunta ${i + 1}`,
+        back: `Resposta ${i + 1}`,
+        sched_state: i === 0 ? 'review' : 'new',
+        sched_stability: i === 0 ? 2.3 : 0,
+        sched_difficulty: 5,
+        sched_due: now,
+        sched_last_review: null,
+        sched_reps: i === 0 ? 1 : 0,
+        sched_lapses: 0,
+        sched_consecutive_lapses: 0,
+        deleted_at: null
+      })),
+      reviews: [],
+      objectives: [],
+      noa_suggestions: [],
+      noa_daily_budget: [],
+      deck_publications: [],
+      neuron_ledger: [],
+      audit_log: []
+    }
+
+    function buildQuery(table) {
+      const state = { op: 'select', payload: null, eqs: {}, isNulls: [] }
+
+      function matches(row) {
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+
+      function execute() {
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const items = Array.isArray(state.payload) ? state.payload : [state.payload]
+          const inserted = items.map((item, idx) => ({
+            id: item.id || `${table}_${list.length + idx + 1}`,
+            created_at: item.created_at || new Date().toISOString(),
+            ...item
+          }))
+          list.push(...inserted)
+          return inserted
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload)
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        if (state.op === 'delete') {
+          const kept = []
+          const removed = []
+          for (const row of list) {
+            if (matches(row)) removed.push(row)
+            else kept.push(row)
+          }
+          tables[table] = kept
+          return removed
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        delete() {
+          state.op = 'delete'
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order(col, opts = {}) {
+          state.orderCol = col
+          state.orderAsc = opts.ascending !== false
+          return builder
+        },
+        async limit(n) {
+          let rows = execute()
+          if (state.orderCol) {
+            rows = rows.slice().sort((a, b) => {
+              if (a[state.orderCol] < b[state.orderCol]) return state.orderAsc ? -1 : 1
+              if (a[state.orderCol] > b[state.orderCol]) return state.orderAsc ? 1 : -1
+              return 0
+            })
+          }
+          return { data: rows.slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeServiceClient = {
+      from(table) {
+        return buildQuery(table)
+      },
+      async rpc(fnName, params) {
+        if (fnName === 'append_neuron_ledger_entry') {
+          const existing = tables.neuron_ledger.find(
+            (e) =>
+              e.user_id === params.p_user_id &&
+              params.p_idempotency_key &&
+              e.idempotency_key === params.p_idempotency_key
+          )
+          if (existing) return { data: existing, error: null }
+          const lastSeq = tables.neuron_ledger.length
+            ? tables.neuron_ledger[tables.neuron_ledger.length - 1].seq
+            : 0
+          const prevBal = tables.neuron_ledger.length
+            ? tables.neuron_ledger[tables.neuron_ledger.length - 1].balance_after
+            : 100
+          const entry = {
+            seq: lastSeq + 1,
+            id: `led_${tables.neuron_ledger.length + 1}`,
+            user_id: params.p_user_id,
+            amount: params.p_amount,
+            balance_after: prevBal + params.p_amount,
+            type: params.p_type,
+            meta: params.p_meta || {},
+            idempotency_key: params.p_idempotency_key || null,
+            created_at: new Date().toISOString()
+          }
+          tables.neuron_ledger.push(entry)
+          return { data: entry, error: null }
+        }
+        if (fnName === 'append_audit_entry') {
+          const entry = {
+            seq: tables.audit_log.length + 1,
+            actor_id: params.p_actor_id,
+            actor_role: params.p_actor_role,
+            action: params.p_action,
+            target: params.p_target,
+            details: params.p_details || {},
+            prev_hash: '0',
+            hash: `h_${tables.audit_log.length + 1}`,
+            created_at: new Date().toISOString()
+          }
+          tables.audit_log.push(entry)
+          return { data: entry, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_lara') return { data: { user: { id: userId } }, error: null }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        }
+      },
+      from(table) {
+        return buildQuery(table)
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const sessionRes = await request(sbApp).get('/v1/study/today').set(auth('jwt_lara'))
+    expect(sessionRes.status).toBe(200)
+    expect(sessionRes.body.cardsDue).toBe(5)
+    expect(sessionRes.body.goal).toBe(5)
+
+    const reviewsPayload = sessionRes.body.cards.map((c, idx) => ({
+      clientId: `rev_e6_${idx + 1}`,
+      cardId: c.id,
+      rating: idx === 0 ? 'again' : 'good',
+      durationMs: 3500
+    }))
+
+    const firstRev = await request(sbApp)
+      .post('/v1/reviews')
+      .set(auth('jwt_lara'))
+      .send({ reviews: reviewsPayload })
+    expect(firstRev.status).toBe(200)
+    expect(firstRev.body.accepted.length).toBe(5)
+    expect(firstRev.body.doneToday).toBe(5)
+    expect(firstRev.body.streak).toBe(1)
+    expect(firstRev.body.goalHitToday).toBe(true)
+    expect(firstRev.body.rewards.length).toBe(1)
+    expect(firstRev.body.rewards[0].type).toBe('goal_bonus')
+    expect(firstRev.body.rewards[0].amount).toBe(5)
+    expect(firstRev.body.balance).toBe(105)
+    expect(tables.cards[0].sched_lapses).toBe(1)
+    expect(tables.cards[1].sched_reps).toBe(1)
+
+    const dupRev = await request(sbApp)
+      .post('/v1/reviews')
+      .set(auth('jwt_lara'))
+      .send({ reviews: reviewsPayload })
+    expect(dupRev.status).toBe(200)
+    expect(dupRev.body.accepted.length).toBe(0)
+    expect(dupRev.body.duplicates.length).toBe(5)
+    expect(dupRev.body.doneToday).toBe(5)
+    expect(dupRev.body.rewards.length).toBe(0)
+    expect(tables.reviews.length).toBe(5)
+
+    const mistakesRes = await request(sbApp).get('/v1/study/mistakes').set(auth('jwt_lara'))
+    expect(mistakesRes.status).toBe(200)
+    expect(mistakesRes.body.items.length).toBe(1)
+    expect(mistakesRes.body.items[0].cardId).toBe('card-e6-1')
+
+    const createObj = await request(sbApp)
+      .post('/v1/objectives')
+      .set(auth('jwt_lara'))
+      .send({ name: 'ENEM 2026', date: '2026-11-08' })
+    expect(createObj.status).toBe(201)
+    expect(createObj.body.objective.name).toBe('ENEM 2026')
+    expect(createObj.body.objective.subjects).toContain('Biologia Celular')
+    const objId = createObj.body.objective.id
+
+    const outcome1 = await request(sbApp)
+      .post(`/v1/objectives/${objId}/outcome`)
+      .set(auth('jwt_lara'))
+      .send({ outcome: 'aprovado' })
+    expect(outcome1.status).toBe(200)
+    expect(outcome1.body.reward.type).toBe('objective_outcome')
+    expect(outcome1.body.reward.amount).toBe(5)
+    expect(outcome1.body.balance).toBe(110)
+
+    const outcome2 = await request(sbApp)
+      .post(`/v1/objectives/${objId}/outcome`)
+      .set(auth('jwt_lara'))
+      .send({ outcome: 'aprovado' })
+    expect(outcome2.status).toBe(200)
+    expect(outcome2.body.reward).toBeNull()
+    expect(outcome2.body.balance).toBe(110)
   })
 })
 

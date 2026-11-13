@@ -101,14 +101,22 @@ export function todaySession(state, userId) {
 export function studyRoutes() {
   const r = Router()
 
-  r.get('/study/today', requireStudent, (req, res) => {
+  r.get('/study/today', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const session = await req.data.study.todaySession(req.db, req.user, req.data.ledger)
+      return res.json(session)
+    }
     res.json(todaySession(req.store.state, req.user.id))
   })
 
-  r.post('/reviews', requireStudent, (req, res) => {
+  r.post('/reviews', requireStudent, async (req, res) => {
+    const reviews = Array.isArray(req.body?.reviews) ? req.body.reviews : []
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.submitReviews(req.db, req.user, reviews, req.data.ledger)
+      return res.json(result)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
-    const reviews = Array.isArray(req.body?.reviews) ? req.body.reviews : []
     const tz = userTimezone(state, req.user.id)
     const today = dayKey(nowIso(), tz)
     const yesterday = dayKey(daysFromNow(-1), tz)
@@ -158,7 +166,7 @@ export function studyRoutes() {
       }
     }
 
-    if (s.doneToday >= s.goal && s.goalHitDay !== today && req.user.verified?.email && req.user.verified?.phone) {
+    if (s.doneToday >= s.goal && s.goalHitDay !== today && req.user.verified?.email) {
       s.goalHitDay = today
       rewards.push(credit(state, req.user.id, 5, 'goal_bonus', { goal: s.goal, day: today }))
     }
@@ -166,7 +174,11 @@ export function studyRoutes() {
     res.json({ accepted, duplicates, flagged, doneToday: s.doneToday, goal: s.goal, goalHitToday: s.goalHitDay === today, streak: s.streak, studyDays: s.studyDays, rewards, balance: balanceOf(state, req.user.id) })
   })
 
-  r.post('/study/complete', requireStudent, (req, res) => {
+  r.post('/study/complete', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.completeSession(req.db, req.user, req.data.ledger)
+      return res.json(result)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     const tz = userTimezone(state, req.user.id)
@@ -190,7 +202,21 @@ export function studyRoutes() {
     })
   })
 
-  r.post('/study/skip', requireStudent, (req, res) => {
+  r.post('/study/skip', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.skipToday(req.db, req.user, req.data.ledger)
+      if (result.limitError) {
+        return fail(res, 409, 'reschedule_limit', 'Você já reagendou 3 vezes nesta semana.', { reschedules: result.limitError })
+      }
+      await req.data.audit.append({
+        actor: req.user.id,
+        actorRole: 'student',
+        action: 'goal_rescheduled',
+        target: req.user.id,
+        details: { used: result.used }
+      })
+      return res.json(result.session)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     if (s.reschedules.used >= s.reschedules.limit) {
@@ -202,7 +228,11 @@ export function studyRoutes() {
     res.json(todaySession(state, req.user.id))
   })
 
-  r.post('/study/undo-skip', requireStudent, (req, res) => {
+  r.post('/study/undo-skip', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const session = await req.data.study.undoSkipToday(req.db, req.user, req.data.ledger)
+      return res.json(session)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     if (s.skippedDay === dayKey(nowIso(), userTimezone(state, req.user.id))) {
@@ -212,17 +242,25 @@ export function studyRoutes() {
     res.json(todaySession(state, req.user.id))
   })
 
-  r.post('/study/pause', requireStudent, (req, res) => {
-    const state = req.store.state
-    const s = ensureDay(state, req.user.id)
+  r.post('/study/pause', requireStudent, async (req, res) => {
     const days = Number(req.body?.days)
     if (!Number.isInteger(days) || days < 1 || days > 30) return fail(res, 422, 'validation', 'Escolha entre 1 e 30 dias.')
+    if (req.useSupabase && req.db) {
+      const session = await req.data.study.pauseGoal(req.db, req.user, days, req.data.ledger)
+      return res.json(session)
+    }
+    const state = req.store.state
+    const s = ensureDay(state, req.user.id)
     s.pausedUntil = daysFromNow(days, 6)
     s.pausedAt = nowIso()
     res.json(todaySession(state, req.user.id))
   })
 
-  r.post('/study/resume', requireStudent, (req, res) => {
+  r.post('/study/resume', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.resumeGoal(req.db, req.user, req.data.ledger)
+      return res.json(result)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     const pausedDays = s.pausedAt ? Math.max(1, Math.round((Date.now() - new Date(s.pausedAt).getTime()) / 86400000)) : 0
@@ -238,16 +276,24 @@ export function studyRoutes() {
     res.json({ session: todaySession(state, req.user.id), summary })
   })
 
-  r.patch('/study/goal', requireStudent, (req, res) => {
-    const state = req.store.state
-    const s = ensureDay(state, req.user.id)
+  r.patch('/study/goal', requireStudent, async (req, res) => {
     const goal = Number(req.body?.goal)
     if (!Number.isInteger(goal) || goal < 5 || goal > 200) return fail(res, 422, 'validation', 'A meta vai de 5 a 200 cards por dia.')
+    if (req.useSupabase && req.db) {
+      const session = await req.data.study.updateGoal(req.db, req.user, goal, req.data.ledger)
+      return res.json(session)
+    }
+    const state = req.store.state
+    const s = ensureDay(state, req.user.id)
     s.goal = goal
     res.json(todaySession(state, req.user.id))
   })
 
-  r.patch('/study/plan', requireStudent, (req, res) => {
+  r.patch('/study/plan', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const session = await req.data.study.updatePlan(req.db, req.user, req.body || {}, req.data.ledger)
+      return res.json(session)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     if (Array.isArray(req.body?.order)) s.planOrder = req.body.order
@@ -256,7 +302,18 @@ export function studyRoutes() {
     res.json(todaySession(state, req.user.id))
   })
 
-  r.post('/study/fatigue', requireStudent, (req, res) => {
+  r.post('/study/fatigue', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.recordFatigue(req.db, req.user, req.body || {})
+      await req.data.audit.append({
+        actor: 'noa',
+        actorRole: 'agent',
+        action: 'reduce_load',
+        target: req.user.id,
+        details: { keptLoad: Boolean(req.body?.keepLoad) }
+      })
+      return res.json(result)
+    }
     const state = req.store.state
     const s = ensureDay(state, req.user.id)
     const tz = userTimezone(state, req.user.id)
@@ -266,7 +323,11 @@ export function studyRoutes() {
     res.json({ fatigueDetection: s.fatigueDetection, keepLoadToday: s.fatigueKeepLoadDay === dayKey(nowIso(), tz) })
   })
 
-  r.get('/study/history', requireStudent, (req, res) => {
+  r.get('/study/history', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.getHistory(req.db, req.user)
+      return res.json(result)
+    }
     const state = req.store.state
     const byDeck = new Map()
     for (const rv of state.reviews.filter((x) => x.userId === req.user.id)) {
@@ -296,7 +357,11 @@ export function studyRoutes() {
     res.json({ items, created: ownDecksOf(state, req.user.id).map((d) => ({ deckId: d.id, name: d.name, createdAt: d.createdAt, source: d.source?.type })) })
   })
 
-  r.get('/study/mistakes', requireStudent, (req, res) => {
+  r.get('/study/mistakes', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.getMistakes(req.db, req.user)
+      return res.json(result)
+    }
     const state = req.store.state
     const decks = ownDecksOf(state, req.user.id)
     const items = state.cards
@@ -308,7 +373,11 @@ export function studyRoutes() {
     res.json({ items, reinforcement: worstDeck ? { deckId: worstDeck.id, deckName: worstDeck.name, suggestion: `Um deck curto de reforço em "${worstDeck.name}" com os ${items.filter((i) => i.deckId === worstDeck.id).length} cards que você mais erra.` } : null })
   })
 
-  r.get('/objectives', requireStudent, (req, res) => {
+  r.get('/objectives', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.listObjectives(req.db, req.user)
+      return res.json(result)
+    }
     const state = req.store.state
     const today = dayKey(nowIso(), userTimezone(state, req.user.id))
     const objectives = state.objectives
@@ -318,17 +387,26 @@ export function studyRoutes() {
     res.json({ objectives })
   })
 
-  r.post('/objectives', requireStudent, (req, res) => {
-    const state = req.store.state
+  r.post('/objectives', requireStudent, async (req, res) => {
     const { name, date, subjects } = req.body || {}
     if (!name || !date) return fail(res, 422, 'validation', 'Nome e data são obrigatórios.')
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.createObjective(req.db, req.user, { name, date, subjects })
+      return res.status(201).json(result)
+    }
+    const state = req.store.state
     const objective = { id: id('obj'), userId: req.user.id, name: name.trim(), date, subjects: subjects?.length ? subjects : inferSubjects(state, req.user.id, name), outcome: null, outcomeRewarded: false, createdAt: nowIso() }
     state.objectives.push(objective)
     const sameDate = state.objectives.filter((o) => o.userId === req.user.id && o.date === date)
     res.status(201).json({ objective, tie: sameDate.length > 1 ? sameDate.map((o) => ({ id: o.id, name: o.name })) : null })
   })
 
-  r.patch('/objectives/:id', requireStudent, (req, res) => {
+  r.patch('/objectives/:id', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const objective = await req.data.study.updateObjective(req.db, req.user, req.params.id, req.body || {})
+      if (!objective) return fail(res, 404, 'not_found', 'Objetivo não encontrado.')
+      return res.json({ objective })
+    }
     const state = req.store.state
     const objective = state.objectives.find((o) => o.id === req.params.id && o.userId === req.user.id)
     if (!objective) return fail(res, 404, 'not_found', 'Objetivo não encontrado.')
@@ -340,22 +418,31 @@ export function studyRoutes() {
     res.json({ objective })
   })
 
-  r.delete('/objectives/:id', requireStudent, (req, res) => {
+  r.delete('/objectives/:id', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.deleteObjective(req.db, req.user, req.params.id)
+      return res.json(result)
+    }
     const state = req.store.state
     state.objectives = state.objectives.filter((o) => !(o.id === req.params.id && o.userId === req.user.id))
     res.json({ ok: true })
   })
 
-  r.post('/objectives/:id/outcome', requireStudent, (req, res) => {
+  r.post('/objectives/:id/outcome', requireStudent, async (req, res) => {
+    const { outcome } = req.body || {}
+    if (!['aprovado', 'reprovado', 'aguardando', 'nao_fiz'].includes(outcome)) return fail(res, 422, 'validation', 'Resultado inválido.')
+    if (req.useSupabase && req.db) {
+      const result = await req.data.study.recordObjectiveOutcome(req.db, req.user, req.params.id, { outcome }, req.data.ledger)
+      if (!result) return fail(res, 404, 'not_found', 'Objetivo não encontrado.')
+      return res.json(result)
+    }
     const state = req.store.state
     const objective = state.objectives.find((o) => o.id === req.params.id && o.userId === req.user.id)
     if (!objective) return fail(res, 404, 'not_found', 'Objetivo não encontrado.')
-    const { outcome } = req.body || {}
-    if (!['aprovado', 'reprovado', 'aguardando', 'nao_fiz'].includes(outcome)) return fail(res, 422, 'validation', 'Resultado inválido.')
     objective.outcome = outcome
     objective.outcomeAt = nowIso()
     let reward = null
-    if (!objective.outcomeRewarded && req.user.verified?.email && req.user.verified?.phone) {
+    if (!objective.outcomeRewarded && req.user.verified?.email) {
       objective.outcomeRewarded = true
       reward = credit(state, req.user.id, 5, 'objective_outcome', { objectiveId: objective.id, name: objective.name })
     }
