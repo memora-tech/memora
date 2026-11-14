@@ -457,11 +457,16 @@ export function createCommunityRepo({ serviceClient = null } = {}) {
       if (updDeckErr) throw updDeckErr
 
       if (auditRepo) {
-        await auditRepo.append(user.id, 'publication_submitted', {
-          publicationId: savedPub.id,
-          deckId: deckRow.id,
-          version,
-          status: 'aprovado'
+        await auditRepo.append({
+          actor: user.id,
+          actorRole: user.role || 'student',
+          action: 'publication_submitted',
+          target: savedPub.id,
+          details: {
+            deckId: deckRow.id,
+            version,
+            status: 'aprovado'
+          }
         })
       }
 
@@ -851,9 +856,14 @@ export function createCommunityRepo({ serviceClient = null } = {}) {
       }
 
       if (auditRepo) {
-        await auditRepo.append(user.id, 'deck_cloned', {
-          sourceDeckId: pubRow.id,
-          newDeckId: createdDeck.id
+        await auditRepo.append({
+          actor: user.id,
+          actorRole: user.role || 'student',
+          action: 'deck_cloned',
+          target: pubRow.id,
+          details: {
+            newDeckId: createdDeck.id
+          }
         })
       }
 
@@ -1005,9 +1015,14 @@ export function createCommunityRepo({ serviceClient = null } = {}) {
       if (!pubRow || pubRow.hidden_at || pubRow.hiddenAt) return null
 
       if (auditRepo) {
-        await auditRepo.append(user.id, 'deck_shared', {
-          deckId: pubRow.id,
-          channel
+        await auditRepo.append({
+          actor: user.id,
+          actorRole: user.role || 'student',
+          action: 'deck_shared',
+          target: pubRow.id,
+          details: {
+            channel
+          }
         })
       }
 
@@ -1056,10 +1071,15 @@ export function createCommunityRepo({ serviceClient = null } = {}) {
       if (repErr) throw repErr
 
       if (auditRepo) {
-        await auditRepo.append(user.id, 'report_created', {
-          reportId: inserted.id,
-          deckId: pubRow.id,
-          reason
+        await auditRepo.append({
+          actor: user.id,
+          actorRole: user.role || 'student',
+          action: 'report_created',
+          target: inserted.id,
+          details: {
+            deckId: pubRow.id,
+            reason
+          }
         })
       }
 

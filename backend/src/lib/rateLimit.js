@@ -16,9 +16,8 @@ export function rateLimit({
       if (useSupabase) {
         const serviceClient = req.serviceClient || createServiceClient()
         const { data, error } = await serviceClient.rpc('check_rate_limit', {
-          p_scope: scope,
-          p_actor_key: actorKey,
-          p_max_hits: maxHits,
+          p_key: `${scope}:${actorKey}`,
+          p_limit: maxHits,
           p_window_seconds: windowSeconds
         })
         if (error) throw error
