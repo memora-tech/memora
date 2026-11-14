@@ -390,7 +390,9 @@ export function createStudyRepo() {
         if (!deckId) {
           deckId = rv.cardId.includes('_c')
             ? rv.cardId.split('_c')[0]
-            : rv.cardId.split('_')[0]
+            : rv.cardId.startsWith('pub_')
+              ? rv.cardId.split('_').slice(0, 2).join('_')
+              : rv.cardId.split('_')[0]
         }
 
         const { error: insertRevErr } = await db.from('reviews').insert({

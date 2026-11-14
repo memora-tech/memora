@@ -2348,6 +2348,529 @@ describe('comunidade e moderação', () => {
     const res = await request(app).post('/v1/admin/moderation/appeals/ap1/decide').set(auth(hugo.body.token)).send({ decision: 'aceita' })
     expect(res.status).toBe(403)
   })
+
+  it('Etapa 8 (Comunidade + Moderação Leve + Config Vercel): publicação nasce aprovada, aparece para outro usuário, registra interações/clone_bonus/denúncias e some ao preencher hidden_at', async () => {
+    const authorId = '99999999-1111-4111-8111-111111111111'
+    const readerId = '99999999-2222-4222-8222-222222222222'
+    const deckId = 'deck-e8-1'
+    const now = new Date().toISOString()
+
+    const tables = {
+      profiles: [
+        {
+          id: authorId,
+          email: 'autora@exemplo.br',
+          name: 'Helena Autora',
+          role: 'student',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          birth_date: '1994-03-15',
+          onboarding_done: true,
+          settings: {},
+          notifications: { intensity: 'padrao', reminderTime: '19:00', push: true },
+          public_profile: { level: 3, topic: 'Direito', points: 45, badges: ['Criadora'], cardsGenerated: 12 },
+          deactivated_at: null,
+          created_at: now
+        },
+        {
+          id: readerId,
+          email: 'leitor@exemplo.br',
+          name: 'Marcos Leitor',
+          role: 'student',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          birth_date: '1996-07-20',
+          onboarding_done: true,
+          settings: {},
+          notifications: { intensity: 'padrao', reminderTime: '19:00', push: true },
+          public_profile: { level: 1, topic: 'Geral', points: 10, badges: [], cardsGenerated: 0 },
+          deactivated_at: null,
+          created_at: now
+        }
+      ],
+      user_consents: [
+        {
+          user_id: authorId,
+          school_share: false,
+          whatsapp: { lembretes: true, conquistas: false, conta: true, informativo: false },
+          content_policy_accepted_version: null,
+          content_policy_accepted_at: null
+        },
+        {
+          user_id: readerId,
+          school_share: false,
+          whatsapp: { lembretes: true, conquistas: false, conta: true, informativo: false },
+          content_policy_accepted_version: 'v2.1',
+          content_policy_accepted_at: now
+        }
+      ],
+      study_settings: [
+        {
+          user_id: authorId,
+          goal: 20,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2026-11-13',
+          streak: 2,
+          study_days: 4,
+          reschedules_week_key: '2026-W46',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          fatigue_detection: true,
+          plan_order: [deckId],
+          plan_adjustments: {},
+          community_answered: {}
+        },
+        {
+          user_id: readerId,
+          goal: 20,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2026-11-13',
+          streak: 1,
+          study_days: 2,
+          reschedules_week_key: '2026-W46',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          fatigue_detection: true,
+          plan_order: [],
+          plan_adjustments: {},
+          community_answered: {}
+        }
+      ],
+      folders: [],
+      decks: [
+        {
+          id: deckId,
+          owner_id: authorId,
+          name: 'Direito Administrativo Essencial',
+          category_id: 'concursos',
+          tags: ['licitacoes', 'atos'],
+          difficulty: 'medio',
+          lang: 'pt-BR',
+          scheduled: true,
+          publication_meta: { status: 'nao_publicado' },
+          deleted_at: null,
+          created_at: now
+        }
+      ],
+      cards: [
+        {
+          id: 'card-e8-1',
+          deck_id: deckId,
+          owner_id: authorId,
+          position: 0,
+          type: 'text',
+          front: 'Quais são os atributos do ato administrativo?',
+          back: 'Presunção de legitimidade, autoexecutoriedade, tipicidade e imperatividade (PATI).',
+          lang: 'pt-BR',
+          sched_state: 'new',
+          sched_stability: 0,
+          sched_difficulty: 5,
+          sched_due: now,
+          deleted_at: null,
+          created_at: now
+        },
+        {
+          id: 'card-e8-2',
+          deck_id: deckId,
+          owner_id: authorId,
+          position: 1,
+          type: 'text',
+          front: 'O que é revogação do ato administrativo?',
+          back: 'Retirada de ato válido por motivo de conveniência e oportunidade (efeitos ex nunc).',
+          lang: 'pt-BR',
+          sched_state: 'new',
+          sched_stability: 0,
+          sched_difficulty: 5,
+          sched_due: now,
+          deleted_at: null,
+          created_at: now
+        }
+      ],
+      reviews: [],
+      deck_publications: [],
+      deck_comments: [],
+      comment_likes: [],
+      deck_reactions: [],
+      deck_favorites: [],
+      deck_votes: [],
+      author_follows: [],
+      moderation_reports: [],
+      neuron_ledger: [],
+      audit_log: []
+    }
+
+    function buildQuery(table) {
+      const state = { op: 'select', payload: null, onConflict: null, eqs: {}, ins: {}, isNulls: [] }
+      function matches(row) {
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const [k, vals] of Object.entries(state.ins)) {
+          if (!vals.includes(row[k])) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+      function execute() {
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const items = Array.isArray(state.payload) ? state.payload : [state.payload]
+          const inserted = items.map((item, idx) => ({
+            id: item.id || `${table}_${list.length + idx + 1}`,
+            created_at: item.created_at || new Date().toISOString(),
+            ...item
+          }))
+          list.push(...inserted)
+          return inserted
+        }
+        if (state.op === 'upsert') {
+          const key = state.onConflict || 'id'
+          const existing = list.find((r) => r[key] === state.payload[key])
+          if (existing) {
+            Object.assign(existing, state.payload)
+            return [{ ...existing }]
+          }
+          const created = { ...state.payload, created_at: new Date().toISOString() }
+          list.push(created)
+          return [created]
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload)
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        if (state.op === 'delete') {
+          const kept = []
+          const removed = []
+          for (const row of list) {
+            if (matches(row)) removed.push(row)
+            else kept.push(row)
+          }
+          tables[table] = kept
+          return removed
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        upsert(payload, opts = {}) {
+          state.op = 'upsert'
+          state.payload = payload
+          state.onConflict = opts.onConflict || 'id'
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        delete() {
+          state.op = 'delete'
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        in(col, vals) {
+          state.ins[col] = Array.isArray(vals) ? vals : []
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order() {
+          return builder
+        },
+        async limit(n) {
+          return { data: execute().slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeServiceClient = {
+      from(table) {
+        return buildQuery(table)
+      },
+      async rpc(fnName, params) {
+        if (fnName === 'check_rate_limit') {
+          return { data: { allowed: true, remaining: 9 }, error: null }
+        }
+        if (fnName === 'append_neuron_ledger_entry') {
+          const existing = tables.neuron_ledger.find(
+            (e) =>
+              e.user_id === params.p_user_id &&
+              params.p_idempotency_key &&
+              e.idempotency_key === params.p_idempotency_key
+          )
+          if (existing) return { data: existing, error: null }
+          const prevUserEntries = tables.neuron_ledger.filter((e) => e.user_id === params.p_user_id)
+          const prevBal = prevUserEntries.length
+            ? prevUserEntries[prevUserEntries.length - 1].balance_after
+            : 50
+          const entry = {
+            seq: tables.neuron_ledger.length + 1,
+            id: `led_${tables.neuron_ledger.length + 1}`,
+            user_id: params.p_user_id,
+            amount: params.p_amount,
+            balance_after: prevBal + params.p_amount,
+            type: params.p_type,
+            meta: params.p_meta || {},
+            idempotency_key: params.p_idempotency_key || null,
+            created_at: new Date().toISOString()
+          }
+          tables.neuron_ledger.push(entry)
+          return { data: entry, error: null }
+        }
+        if (fnName === 'append_audit_entry') {
+          const entry = {
+            seq: tables.audit_log.length + 1,
+            actor_id: params.p_actor_id,
+            actor_role: params.p_actor_role,
+            action: params.p_action,
+            target: params.p_target,
+            details: params.p_details || {},
+            created_at: new Date().toISOString()
+          }
+          tables.audit_log.push(entry)
+          return { data: entry, error: null }
+        }
+        if (fnName === 'moderate_hide_target') {
+          const hideNow = new Date().toISOString()
+          if (params.p_target_type === 'deck') {
+            const pub = tables.deck_publications.find((p) => p.id === params.p_target_id)
+            if (pub) {
+              pub.hidden_at = hideNow
+              pub.hidden_reason = params.p_reason
+            }
+          } else if (params.p_target_type === 'comment') {
+            const cm = tables.deck_comments.find((c) => c.id === params.p_target_id)
+            if (cm) {
+              cm.hidden_at = hideNow
+              cm.hidden_reason = params.p_reason
+            }
+          }
+          for (const rep of tables.moderation_reports) {
+            if (
+              rep.target_type === params.p_target_type &&
+              rep.target_id === params.p_target_id &&
+              rep.status === 'aberta'
+            ) {
+              rep.status = 'oculta'
+              rep.resolved_at = hideNow
+            }
+          }
+          return { data: null, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_helena') return { data: { user: { id: authorId } }, error: null }
+          if (token === 'jwt_marcos') return { data: { user: { id: readerId } }, error: null }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        }
+      },
+      from(table) {
+        return buildQuery(table)
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const needPolicy = await request(sbApp)
+      .post(`/v1/decks/${deckId}/publish`)
+      .set(auth('jwt_helena'))
+      .send({})
+    expect(needPolicy.status).toBe(428)
+    expect(needPolicy.body.code).toBe('policy_acceptance_required')
+
+    const pubRes = await request(sbApp)
+      .post(`/v1/decks/${deckId}/publish`)
+      .set(auth('jwt_helena'))
+      .send({ acceptPolicy: true })
+    expect(pubRes.status).toBe(201)
+    expect(pubRes.body.publication.status).toBe('aprovado')
+    expect(pubRes.body.publication.hiddenAt).toBeNull()
+    expect(pubRes.body.publication.snapshot.length).toBe(2)
+    expect(pubRes.body.sla.hours).toBe(0)
+
+    const pubId = pubRes.body.publication.id
+    const publicId = pubRes.body.publication.publicId
+
+    const feedRes = await request(sbApp).get('/v1/community/feed').set(auth('jwt_marcos'))
+    expect(feedRes.status).toBe(200)
+    expect(feedRes.body.latest.some((d) => d.id === pubId && d.name === 'Direito Administrativo Essencial')).toBe(true)
+
+    const searchRes = await request(sbApp)
+      .get('/v1/community/search?q=Administrativo')
+      .set(auth('jwt_marcos'))
+    expect(searchRes.status).toBe(200)
+    expect(searchRes.body.results.some((d) => d.id === pubId)).toBe(true)
+
+    const pubPreview = await request(sbApp).get(`/v1/public/decks/${publicId}`)
+    expect(pubPreview.status).toBe(200)
+    expect(pubPreview.body.preview.id).toBe(pubId)
+    expect(pubPreview.body.preview.sample.length).toBe(2)
+
+    const favRes = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/favorite`)
+      .set(auth('jwt_marcos'))
+    expect(favRes.status).toBe(200)
+    expect(favRes.body.favorited).toBe(true)
+
+    const reactRes = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/react`)
+      .set(auth('jwt_marcos'))
+      .send({ emoji: '🔥' })
+    expect(reactRes.status).toBe(200)
+    expect(reactRes.body.reactions['🔥']).toBe(1)
+
+    const voteDenied = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/vote`)
+      .set(auth('jwt_marcos'))
+    expect(voteDenied.status).toBe(403)
+    expect(voteDenied.body.code).toBe('vote_not_allowed')
+
+    const startStudy = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/study-start`)
+      .set(auth('jwt_marcos'))
+    expect(startStudy.status).toBe(200)
+    expect(startStudy.body.cards.length).toBe(2)
+
+    await request(sbApp)
+      .post('/v1/reviews')
+      .set(auth('jwt_marcos'))
+      .send({
+        reviews: [{ clientId: 'rv_comm_1', cardId: startStudy.body.cards[0].id, rating: 'good' }]
+      })
+
+    const voteAllowed = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/vote`)
+      .set(auth('jwt_marcos'))
+    expect(voteAllowed.status).toBe(200)
+    expect(voteAllowed.body.voted).toBe(true)
+
+    const cmRes = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/comments`)
+      .set(auth('jwt_marcos'))
+      .send({ text: 'Excelente resumo de atos administrativos!' })
+    expect(cmRes.status).toBe(201)
+    const commentId = cmRes.body.comment.id
+
+    const likeRes = await request(sbApp)
+      .post(`/v1/community/comments/${commentId}/like`)
+      .set(auth('jwt_helena'))
+    expect(likeRes.status).toBe(200)
+    expect(likeRes.body.likeCount).toBe(1)
+
+    const followRes = await request(sbApp)
+      .post(`/v1/community/authors/${authorId}/follow`)
+      .set(auth('jwt_marcos'))
+    expect(followRes.status).toBe(200)
+    expect(followRes.body.following).toBe(true)
+
+    const cloneRes = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/clone`)
+      .set(auth('jwt_marcos'))
+    expect(cloneRes.status).toBe(201)
+    expect(cloneRes.body.credit.bonus).toBe(5)
+    expect(
+      tables.neuron_ledger.some(
+        (e) => e.user_id === authorId && e.type === 'clone_bonus' && e.amount === 5
+      )
+    ).toBe(true)
+
+    const repComment = await request(sbApp)
+      .post(`/v1/community/comments/${commentId}/report`)
+      .set(auth('jwt_helena'))
+      .send({ reason: 'Spam' })
+    expect(repComment.status).toBe(201)
+    expect(repComment.body.report.status).toBe('aberta')
+
+    const repDeck = await request(sbApp)
+      .post(`/v1/community/decks/${pubId}/report`)
+      .set(auth('jwt_marcos'))
+      .send({ reason: 'Conteúdo incorreto', detail: 'Detalhe de teste' })
+    expect(repDeck.status).toBe(201)
+    expect(repDeck.body.report.status).toBe('aberta')
+    expect(tables.moderation_reports.length).toBe(2)
+
+    await fakeServiceClient.rpc('moderate_hide_target', {
+      p_target_type: 'comment',
+      p_target_id: commentId,
+      p_reason: 'Ocultado na revisão'
+    })
+    const commentsAfterHide = await request(sbApp)
+      .get(`/v1/community/decks/${pubId}/comments`)
+      .set(auth('jwt_marcos'))
+    expect(commentsAfterHide.status).toBe(200)
+    expect(commentsAfterHide.body.threads.length).toBe(0)
+
+    await fakeServiceClient.rpc('moderate_hide_target', {
+      p_target_type: 'deck',
+      p_target_id: pubId,
+      p_reason: 'Deck ocultado pela moderação'
+    })
+
+    const feedAfterHide = await request(sbApp).get('/v1/community/feed').set(auth('jwt_marcos'))
+    expect(feedAfterHide.body.latest.some((d) => d.id === pubId)).toBe(false)
+
+    const searchAfterHide = await request(sbApp)
+      .get('/v1/community/search?q=Administrativo')
+      .set(auth('jwt_marcos'))
+    expect(searchAfterHide.body.results.some((d) => d.id === pubId)).toBe(false)
+
+    const detailAfterHide = await request(sbApp)
+      .get(`/v1/community/decks/${pubId}`)
+      .set(auth('jwt_marcos'))
+    expect(detailAfterHide.status).toBe(404)
+
+    const publicAfterHide = await request(sbApp).get(`/v1/public/decks/${publicId}`)
+    expect(publicAfterHide.status).toBe(404)
+    expect(tables.moderation_reports.every((r) => r.status === 'oculta')).toBe(true)
+
+    const vercelEntry = await import('../../api/index.js')
+    expect(typeof vercelEntry.default).toBe('function')
+  })
 })
 
 describe('B2B, assinatura e auditoria', () => {

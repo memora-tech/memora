@@ -7,6 +7,7 @@ import { credit } from '../lib/ledger.js'
 import { appendAudit } from '../lib/audit.js'
 import { KINDS, materialPublic, publishedMaterials, remixCountOf, remixesOf } from '../lib/materials.js'
 import { groupItems, groupRanking, groupSummary } from '../lib/groups.js'
+import { rateLimit } from '../lib/rateLimit.js'
 
 function withAuthor(state, deck, viewerId) {
   return { kind: 'flashcards', ...communityDeckPublic(state, deck, viewerId), remixCount: remixCountOf(state, deck.id) }
@@ -17,288 +18,459 @@ const dateOf = (item) => item.publishedAt || item.createdAt
 
 export function communityRoutes(features = FEATURES) {
   const r = Router()
-
-  r.get('/community/feed', requireStudent, (req, res) => {
-    const state = req.store.state
-    const viewer = req.user.id
-    const decks = state.community.decks.map((d) => withAuthor(state, d, viewer))
-    const highlights = decks.slice().sort((a, b) => b.stats.studiedWeek + b.stats.votes * 2 - (a.stats.studiedWeek + a.stats.votes * 2))
-    const followed = state.community.follows.filter((f) => f.userId === viewer).map((f) => f.authorId)
-    const following = decks.filter((d) => followed.includes(d.authorId)).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
-    const rankingWeek = features.rankings
-      ? decks
-          .slice()
-          .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
-          .slice(0, 5)
-          .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
-      : []
-    const creator = features.rankings ? state.community.authors.find((a) => a.creatorOfMonth) : null
-    const creatorOfMonth = creator
-      ? {
-          ...authorPublic(state, creator, viewer),
-          topDecks: decks
-            .filter((d) => d.authorId === creator.id)
-            .slice(0, 2)
-            .map((d) => ({ id: d.id, name: d.name }))
-        }
-      : null
-    const own = ownDecksOf(state, viewer)
-    const favIds = new Set(state.community.favorites.filter((f) => f.userId === viewer).map((f) => f.deckId))
-    const lower = (list) => list.map((x) => x.toLowerCase())
-    const recommendations = decks
-      .filter((d) => !favIds.has(d.id) && d.authorId !== viewer)
-      .map((d) => {
-        const because = own.find((o) => o.categoryId === d.categoryId || lower(o.tags).some((tg) => lower(d.tags).includes(tg)))
-        return because ? { ...d, becauseDeck: because.name } : null
-      })
-      .filter(Boolean)
-      .slice(0, 4)
-    const materials = features.materials ? publishedMaterials(state, viewer).map((m) => materialPublic(state, m, viewer)) : []
-    const byKind = Object.fromEntries(KINDS.map((k) => [k, materials.filter((m) => m.kind === k).sort((a, b) => dateOf(b).localeCompare(dateOf(a)))]))
-    const latest = [...decks, ...materials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))).slice(0, 8)
-    const trending = [...decks, ...materials].sort((a, b) => engagement(b) - engagement(a)).slice(0, 6)
-    const followingMaterials = materials.filter((m) => followed.includes(m.authorId))
-    const mine = features.materials ? state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt && m.mcpReview !== 'pendente') : []
-    const counts = { flashcards: decks.length, ...(features.materials ? Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])) : {}), mine: mine.length + own.filter((d) => d.mcpReview !== 'pendente').length }
-    const sourceCounts = {}
-    materials.forEach((m) => {
-      const client = m.source?.client || 'IA'
-      sourceCounts[client] = (sourceCounts[client] || 0) + 1
-    })
-    const sources = Object.entries(sourceCounts)
-      .map(([client, count]) => ({ client, count }))
-      .sort((a, b) => b.count - a.count)
-    res.json({ highlights, following: [...following, ...followingMaterials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))), rankingWeek, creatorOfMonth, recommendations, latest, trending, materials: byKind, counts, sources, categories: state.categories, materializedAt: materializedAt(), rules: { maxSessionsPerPersonPerDeckPerDay: 1, ignoresAuthorAndClones: true, refreshMinutes: 15 } })
+  const commentReportLimiter = rateLimit({
+    scope: 'comment_report',
+    maxHits: 20,
+    windowSeconds: 600,
+    keyFrom: (req) => req.user?.id || req.ip || 'anon',
+    message: 'Muitas interações em pouco tempo. Aguarde alguns minutos.'
   })
 
-  r.get('/community/search', requireStudent, (req, res) => {
-    const state = req.store.state
-    const q = String(req.query.q || '')
-      .trim()
-      .toLowerCase()
-    const category = req.query.category ? String(req.query.category) : null
-    const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
-    const sort = String(req.query.sort || 'relevance')
-    const allowedKinds = features.materials ? ['flashcards', ...KINDS] : ['flashcards']
-    const kind = allowedKinds.includes(req.query.kind) ? String(req.query.kind) : null
-    const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
-    const materials = features.materials ? publishedMaterials(state, req.user.id).map((m) => materialPublic(state, m, req.user.id)) : []
-    let results = [...decks, ...materials]
-    if (kind) results = results.filter((d) => d.kind === kind)
-    if (q) {
-      results = results
+  r.get('/community/feed', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.getFeed(req.db, req.user, {
+          rankings: Boolean(features.rankings)
+        })
+        return res.json(result)
+      }
+      const state = req.store.state
+      const viewer = req.user.id
+      const decks = state.community.decks.map((d) => withAuthor(state, d, viewer))
+      const highlights = decks.slice().sort((a, b) => b.stats.studiedWeek + b.stats.votes * 2 - (a.stats.studiedWeek + a.stats.votes * 2))
+      const followed = state.community.follows.filter((f) => f.userId === viewer).map((f) => f.authorId)
+      const following = decks.filter((d) => followed.includes(d.authorId)).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+      const rankingWeek = features.rankings
+        ? decks
+            .slice()
+            .sort((a, b) => b.stats.studiedWeek - a.stats.studiedWeek)
+            .slice(0, 5)
+            .map((d, i) => ({ position: i + 1, deckId: d.id, name: d.name, authorName: d.author?.name, studiedWeek: d.stats.studiedWeek, categoryName: d.categoryName }))
+        : []
+      const creator = features.rankings ? state.community.authors.find((a) => a.creatorOfMonth) : null
+      const creatorOfMonth = creator
+        ? {
+            ...authorPublic(state, creator, viewer),
+            topDecks: decks
+              .filter((d) => d.authorId === creator.id)
+              .slice(0, 2)
+              .map((d) => ({ id: d.id, name: d.name }))
+          }
+        : null
+      const own = ownDecksOf(state, viewer)
+      const favIds = new Set(state.community.favorites.filter((f) => f.userId === viewer).map((f) => f.deckId))
+      const lower = (list) => list.map((x) => x.toLowerCase())
+      const recommendations = decks
+        .filter((d) => !favIds.has(d.id) && d.authorId !== viewer)
         .map((d) => {
-          const name = d.name || d.title
-          const hay = `${name} ${d.description} ${d.tags.join(' ')} ${d.author?.name || ''} ${d.categoryName} ${d.kind === 'flashcards' ? '' : d.kindLabel}`.toLowerCase()
-          const score = name.toLowerCase().includes(q) ? 3 : hay.includes(q) ? 1 : 0
-          return { ...d, score }
+          const because = own.find((o) => o.categoryId === d.categoryId || lower(o.tags).some((tg) => lower(d.tags).includes(tg)))
+          return because ? { ...d, becauseDeck: because.name } : null
         })
-        .filter((d) => d.score > 0)
+        .filter(Boolean)
+        .slice(0, 4)
+      const materials = features.materials ? publishedMaterials(state, viewer).map((m) => materialPublic(state, m, viewer)) : []
+      const byKind = Object.fromEntries(KINDS.map((k) => [k, materials.filter((m) => m.kind === k).sort((a, b) => dateOf(b).localeCompare(dateOf(a)))]))
+      const latest = [...decks, ...materials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))).slice(0, 8)
+      const trending = [...decks, ...materials].sort((a, b) => engagement(b) - engagement(a)).slice(0, 6)
+      const followingMaterials = materials.filter((m) => followed.includes(m.authorId))
+      const mine = features.materials ? state.materials.filter((m) => m.ownerId === viewer && !m.deletedAt && m.mcpReview !== 'pendente') : []
+      const counts = { flashcards: decks.length, ...(features.materials ? Object.fromEntries(KINDS.map((k) => [k, byKind[k].length])) : {}), mine: mine.length + own.filter((d) => d.mcpReview !== 'pendente').length }
+      const sourceCounts = {}
+      materials.forEach((m) => {
+        const client = m.source?.client || 'IA'
+        sourceCounts[client] = (sourceCounts[client] || 0) + 1
+      })
+      const sources = Object.entries(sourceCounts)
+        .map(([client, count]) => ({ client, count }))
+        .sort((a, b) => b.count - a.count)
+      return res.json({ highlights, following: [...following, ...followingMaterials].sort((a, b) => dateOf(b).localeCompare(dateOf(a))), rankingWeek, creatorOfMonth, recommendations, latest, trending, materials: byKind, counts, sources, categories: state.categories, materializedAt: materializedAt(), rules: { maxSessionsPerPersonPerDeckPerDay: 1, ignoresAuthorAndClones: true, refreshMinutes: 15 } })
+    } catch (err) {
+      return next(err)
     }
-    if (category) results = results.filter((d) => d.categoryId === category)
-    if (difficulty) results = results.filter((d) => d.kind === 'flashcards' && d.difficulty === difficulty)
-    if (String(req.query.approved || '') === '1') results = results.filter((d) => (d.author?.badges || []).length > 0)
-    const rating = (d) => (d.kind === 'flashcards' ? d.stats.votes : d.stats.favorites)
-    if (sort === 'recent') results.sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
-    else if (sort === 'rating') results.sort((a, b) => rating(b) - rating(a))
-    else results.sort((a, b) => (b.score || 0) - (a.score || 0) || engagement(b) - engagement(a))
-    res.json({ results, total: results.length, q, filters: { categories: state.categories, kinds: allowedKinds, difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
   })
 
-  r.get('/community/decks/:id', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const detail = withAuthor(state, deck, req.user.id)
-    const cards = state.community.cards.filter((c) => c.deckId === deck.id).map((c) => ({ ...c, hasTranslation: Boolean(c.translation?.[req.user.locale]) }))
-    const studiedVersion = state.community.answered[req.user.id]?.[deck.id] ? Math.max(1, deck.version - 1) : null
-    res.json({
-      deck: detail,
-      cards,
-      translation: { available: deck.lang !== req.user.locale, from: deck.lang, to: req.user.locale, cached: true, notice: 'Tradução automática. O moderador revisa apenas o original.' },
-      versions: Array.from({ length: deck.version }, (_, i) => ({ version: i + 1, publishedAt: deck.publishedAt, current: i + 1 === deck.version })),
-      newVersionNotice: studiedVersion && studiedVersion < deck.version ? { studiedVersion, current: deck.version, keepsProgress: true } : null,
-      reactionsList: state.reactions,
-      remixes: remixesOf(state, deck.id, req.user.id)
-    })
-  })
-
-  r.post('/community/decks/:id/favorite', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const idx = state.community.favorites.findIndex((f) => f.userId === req.user.id && f.deckId === deck.id)
-    if (idx >= 0) {
-      state.community.favorites.splice(idx, 1)
-      deck.stats.favorites = Math.max(0, deck.stats.favorites - 1)
-      return res.json({ favorited: false })
-    }
-    state.community.favorites.push({ userId: req.user.id, deckId: deck.id, folderId: req.body?.folderId || null, at: nowIso() })
-    deck.stats.favorites += 1
-    res.json({ favorited: true, undoWindowMs: 3000 })
-  })
-
-  r.post('/community/decks/:id/clone', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const author = state.community.authors.find((a) => a.id === deck.authorId)
-    const clone = {
-      id: id('d'),
-      ownerId: req.user.id,
-      name: deck.name,
-      categoryId: deck.categoryId,
-      tags: deck.tags,
-      difficulty: deck.difficulty,
-      lang: deck.lang,
-      difficult: false,
-      focus: false,
-      complementary: false,
-      pinned: false,
-      favorite: false,
-      folderId: null,
-      source: { type: 'clone', document: `Clonado de ${author?.name}`, pages: null },
-      clonedFrom: { deckId: deck.id, authorId: deck.authorId, authorName: author?.name, version: deck.version },
-      createdAt: nowIso(),
-      lastStudiedAt: null,
-      publication: { status: 'nao_publicado' }
-    }
-    state.decks.push(clone)
-    state.community.cards
-      .filter((c) => c.deckId === deck.id)
-      .forEach((c, i) =>
-        state.cards.push({
-          id: id('c'),
-          deckId: clone.id,
-          type: c.type,
-          front: c.front,
-          back: c.back,
-          media: c.media,
-          lang: c.lang,
-          origin: { document: `Clone de "${deck.name}" v${deck.version}`, page: null, excerpt: null, model: null, promptVersion: null },
-          uncertain: false,
-          sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 },
-          order: i
+  r.get('/community/search', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.search(req.db, req.user, {
+          q: req.query.q ? String(req.query.q) : '',
+          category: req.query.category ? String(req.query.category) : null,
+          difficulty: req.query.difficulty ? String(req.query.difficulty) : null,
+          sort: String(req.query.sort || 'relevance'),
+          approved: String(req.query.approved || '')
         })
-      )
-    deck.stats.clones += 1
-    if (author) author.neuronsTotal += 5
-    appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'deck_cloned', target: deck.id, details: { cloneId: clone.id, authorBonus: 5 } })
-    res.status(201).json({ deckId: clone.id, credit: { authorName: author?.name, bonus: 5 } })
-  })
-
-  r.post('/community/decks/:id/vote', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const detail = withAuthor(state, deck, req.user.id)
-    if (!detail.viewer.canVote) return fail(res, 403, 'vote_not_allowed', 'Responda ao menos 30% dos cards ou 20 cards deste deck para votar.', { answered: detail.viewer.answered, total: detail.viewer.total })
-    const idx = state.community.votes.findIndex((v) => v.userId === req.user.id && v.deckId === deck.id)
-    if (idx >= 0) {
-      state.community.votes.splice(idx, 1)
-      deck.stats.votes = Math.max(0, deck.stats.votes - 1)
-      return res.json({ voted: false, votes: deck.stats.votes })
+        return res.json(result)
+      }
+      const state = req.store.state
+      const q = String(req.query.q || '')
+        .trim()
+        .toLowerCase()
+      const category = req.query.category ? String(req.query.category) : null
+      const difficulty = req.query.difficulty ? String(req.query.difficulty) : null
+      const sort = String(req.query.sort || 'relevance')
+      const allowedKinds = features.materials ? ['flashcards', ...KINDS] : ['flashcards']
+      const kind = allowedKinds.includes(req.query.kind) ? String(req.query.kind) : null
+      const decks = state.community.decks.map((d) => withAuthor(state, d, req.user.id))
+      const materials = features.materials ? publishedMaterials(state, req.user.id).map((m) => materialPublic(state, m, req.user.id)) : []
+      let results = [...decks, ...materials]
+      if (kind) results = results.filter((d) => d.kind === kind)
+      if (q) {
+        results = results
+          .map((d) => {
+            const name = d.name || d.title
+            const hay = `${name} ${d.description} ${d.tags.join(' ')} ${d.author?.name || ''} ${d.categoryName} ${d.kind === 'flashcards' ? '' : d.kindLabel}`.toLowerCase()
+            const score = name.toLowerCase().includes(q) ? 3 : hay.includes(q) ? 1 : 0
+            return { ...d, score }
+          })
+          .filter((d) => d.score > 0)
+      }
+      if (category) results = results.filter((d) => d.categoryId === category)
+      if (difficulty) results = results.filter((d) => d.kind === 'flashcards' && d.difficulty === difficulty)
+      if (String(req.query.approved || '') === '1') results = results.filter((d) => (d.author?.badges || []).length > 0)
+      const rating = (d) => (d.kind === 'flashcards' ? d.stats.votes : d.stats.favorites)
+      if (sort === 'recent') results.sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+      else if (sort === 'rating') results.sort((a, b) => rating(b) - rating(a))
+      else results.sort((a, b) => (b.score || 0) - (a.score || 0) || engagement(b) - engagement(a))
+      return res.json({ results, total: results.length, q, filters: { categories: state.categories, kinds: allowedKinds, difficulties: ['facil', 'medio', 'dificil'], sorts: ['relevance', 'recent', 'rating'] } })
+    } catch (err) {
+      return next(err)
     }
-    state.community.votes.push({ userId: req.user.id, deckId: deck.id, at: nowIso(), weight: 1 })
-    deck.stats.votes += 1
-    res.json({ voted: true, votes: deck.stats.votes })
   })
 
-  r.post('/community/decks/:id/react', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const { emoji } = req.body || {}
-    if (!state.reactions.includes(emoji)) return fail(res, 422, 'validation', 'Reação fora da lista.')
-    const idx = state.community.myReactions.findIndex((x) => x.userId === req.user.id && x.deckId === deck.id && x.emoji === emoji)
-    if (idx >= 0) {
-      state.community.myReactions.splice(idx, 1)
-      deck.reactions[emoji] = Math.max(0, (deck.reactions[emoji] || 0) - 1)
-    } else {
-      state.community.myReactions.push({ userId: req.user.id, deckId: deck.id, emoji })
-      deck.reactions[emoji] = (deck.reactions[emoji] || 0) + 1
+  r.get('/community/decks/:id', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.getDeckDetail(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const detail = withAuthor(state, deck, req.user.id)
+      const cards = state.community.cards.filter((c) => c.deckId === deck.id).map((c) => ({ ...c, hasTranslation: Boolean(c.translation?.[req.user.locale]) }))
+      const studiedVersion = state.community.answered[req.user.id]?.[deck.id] ? Math.max(1, deck.version - 1) : null
+      return res.json({
+        deck: detail,
+        cards,
+        translation: { available: deck.lang !== req.user.locale, from: deck.lang, to: req.user.locale, cached: true, notice: 'Tradução automática. O moderador revisa apenas o original.' },
+        versions: Array.from({ length: deck.version }, (_, i) => ({ version: i + 1, publishedAt: deck.publishedAt, current: i + 1 === deck.version })),
+        newVersionNotice: studiedVersion && studiedVersion < deck.version ? { studiedVersion, current: deck.version, keepsProgress: true } : null,
+        reactionsList: state.reactions,
+        remixes: remixesOf(state, deck.id, req.user.id)
+      })
+    } catch (err) {
+      return next(err)
     }
-    res.json({ reactions: deck.reactions, mine: state.community.myReactions.filter((x) => x.userId === req.user.id && x.deckId === deck.id).map((x) => x.emoji) })
   })
 
-  r.post('/community/decks/:id/share', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const gate = guardianGate(state, req.user, 'publicLink', `O aluno quer enviar o deck "${deck.name}" por link externo.`)
-    if (gate) return fail(res, 403, gate.code, 'Compartilhar link público depende da liberação do seu responsável.', gate)
-    state.community.shares.push({ userId: req.user.id, deckId: deck.id, at: nowIso(), channel: req.body?.channel || 'link' })
-    res.json({ url: `/d/${deck.publicId}`, preview: { name: deck.name, authorName: withAuthor(state, deck, req.user.id).author?.name, cardCount: state.community.cards.filter((c) => c.deckId === deck.id).length }, requiresLoginToStudy: true })
-  })
-
-  r.post('/community/decks/:id/report', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const { reason, detail } = req.body || {}
-    if (!reason) return fail(res, 422, 'validation', 'Escolha um motivo.')
-    const report = { id: id('rep'), targetType: 'deck', targetId: deck.id, targetName: deck.name, reason, detail: detail || null, reporter: req.user.id, status: 'aberta', createdAt: nowIso() }
-    state.reports.unshift(report)
-    res.status(201).json({ report, message: 'Denúncia registrada. Um moderador vai revisar e você recebe o resultado com o motivo.' })
-  })
-
-  r.post('/community/decks/:id/translate', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const lang = req.body?.lang || req.user.locale
-    const cards = state.community.cards.filter((c) => c.deckId === deck.id).map((c) => ({ id: c.id, translated: c.translation?.[lang] || null }))
-    res.json({ lang, from: deck.lang, cards, cached: true, notice: 'Tradução automática cacheada por (conteúdo, idioma). O conteúdo original permanece no idioma do autor.' })
-  })
-
-  r.get('/community/decks/:id/comments', requireStudent, (req, res) => {
-    const state = req.store.state
-    const threads = state.community.comments
-      .filter((c) => c.deckId === req.params.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((c) => commentView(c, req.user.id))
-    res.json({ threads, total: threads.reduce((n, t) => n + 1 + t.replies.length, 0) })
-  })
-
-  r.post('/community/decks/:id/comments', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const unverified = requireVerified(req.user)
-    if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para comentar.', unverified)
-    const gate = guardianGate(state, req.user, 'community', 'O aluno quer comentar em decks da comunidade.')
-    if (gate) return fail(res, 403, gate.code, 'Comentar depende da liberação do seu responsável.', gate)
-    const { text, parentId } = req.body || {}
-    if (!text?.trim()) return fail(res, 422, 'validation', 'Escreva algo antes de enviar.')
-    const entry = { id: id('cm'), authorName: req.user.name, authorId: req.user.id, text: text.trim(), createdAt: nowIso() }
-    if (parentId) {
-      const parent = state.community.comments.find((c) => c.id === parentId && c.deckId === deck.id)
-      if (!parent) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
-      parent.replies.push(entry)
-    } else {
-      state.community.comments.push({ ...entry, deckId: deck.id, replies: [] })
+  r.post('/community/decks/:id/favorite', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.toggleFavorite(req.db, req.user, req.params.id, {
+          folderId: req.body?.folderId || null
+        })
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const idx = state.community.favorites.findIndex((f) => f.userId === req.user.id && f.deckId === deck.id)
+      if (idx >= 0) {
+        state.community.favorites.splice(idx, 1)
+        deck.stats.favorites = Math.max(0, deck.stats.favorites - 1)
+        return res.json({ favorited: false })
+      }
+      state.community.favorites.push({ userId: req.user.id, deckId: deck.id, folderId: req.body?.folderId || null, at: nowIso() })
+      deck.stats.favorites += 1
+      return res.json({ favorited: true, undoWindowMs: 3000 })
+    } catch (err) {
+      return next(err)
     }
-    deck.stats.comments += 1
-    res.status(201).json({ comment: commentView(entry, req.user.id), notifiedAuthor: true })
   })
 
-  r.post('/community/comments/:id/like', requireStudent, (req, res) => {
-    const state = req.store.state
-    const all = state.community.comments.flatMap((c) => [c, ...c.replies])
-    const comment = all.find((c) => c.id === req.params.id)
-    if (!comment) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
-    comment.likes = comment.likes || []
-    const idx = comment.likes.indexOf(req.user.id)
-    if (idx >= 0) comment.likes.splice(idx, 1)
-    else comment.likes.push(req.user.id)
-    res.json(commentView(comment, req.user.id))
+  r.post('/community/decks/:id/clone', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.cloneDeck(req.db, req.user, req.params.id, {
+          ledgerRepo: req.data.ledger,
+          auditRepo: req.data.audit
+        })
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.status(201).json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const author = state.community.authors.find((a) => a.id === deck.authorId)
+      const clone = {
+        id: id('d'),
+        ownerId: req.user.id,
+        name: deck.name,
+        categoryId: deck.categoryId,
+        tags: deck.tags,
+        difficulty: deck.difficulty,
+        lang: deck.lang,
+        difficult: false,
+        focus: false,
+        complementary: false,
+        pinned: false,
+        favorite: false,
+        folderId: null,
+        source: { type: 'clone', document: `Clonado de ${author?.name}`, pages: null },
+        clonedFrom: { deckId: deck.id, authorId: deck.authorId, authorName: author?.name, version: deck.version },
+        createdAt: nowIso(),
+        lastStudiedAt: null,
+        publication: { status: 'nao_publicado' }
+      }
+      state.decks.push(clone)
+      state.community.cards
+        .filter((c) => c.deckId === deck.id)
+        .forEach((c, i) =>
+          state.cards.push({
+            id: id('c'),
+            deckId: clone.id,
+            type: c.type,
+            front: c.front,
+            back: c.back,
+            media: c.media,
+            lang: c.lang,
+            origin: { document: `Clone de "${deck.name}" v${deck.version}`, page: null, excerpt: null, model: null, promptVersion: null },
+            uncertain: false,
+            sched: { state: 'new', stability: 0, difficulty: 5, due: nowIso(), lastReview: null, reps: 0, lapses: 0, consecutiveLapses: 0 },
+            order: i
+          })
+        )
+      deck.stats.clones += 1
+      if (author) author.neuronsTotal += 5
+      appendAudit(state, { actor: req.user.id, actorRole: 'student', action: 'deck_cloned', target: deck.id, details: { cloneId: clone.id, authorBonus: 5 } })
+      return res.status(201).json({ deckId: clone.id, credit: { authorName: author?.name, bonus: 5 } })
+    } catch (err) {
+      return next(err)
+    }
   })
 
-  r.post('/community/comments/:id/report', requireStudent, (req, res) => {
-    const state = req.store.state
-    const report = { id: id('rep'), targetType: 'comment', targetId: req.params.id, targetName: 'Comentário', reason: req.body?.reason || 'Outro', detail: null, reporter: req.user.id, status: 'auto_analise', createdAt: nowIso() }
-    state.reports.unshift(report)
-    res.status(201).json({ report, message: 'Comentário enviado para análise automática.' })
+  r.post('/community/decks/:id/vote', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.toggleVote(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        if (result.voteNotAllowed) {
+          return fail(
+            res,
+            403,
+            'vote_not_allowed',
+            'Responda ao menos 30% dos cards ou 20 cards deste deck para votar.',
+            { answered: result.answered, total: result.total }
+          )
+        }
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const detail = withAuthor(state, deck, req.user.id)
+      if (!detail.viewer.canVote) return fail(res, 403, 'vote_not_allowed', 'Responda ao menos 30% dos cards ou 20 cards deste deck para votar.', { answered: detail.viewer.answered, total: detail.viewer.total })
+      const idx = state.community.votes.findIndex((v) => v.userId === req.user.id && v.deckId === deck.id)
+      if (idx >= 0) {
+        state.community.votes.splice(idx, 1)
+        deck.stats.votes = Math.max(0, deck.stats.votes - 1)
+        return res.json({ voted: false, votes: deck.stats.votes })
+      }
+      state.community.votes.push({ userId: req.user.id, deckId: deck.id, at: nowIso(), weight: 1 })
+      deck.stats.votes += 1
+      return res.json({ voted: true, votes: deck.stats.votes })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/decks/:id/react', requireStudent, async (req, res, next) => {
+    try {
+      const { emoji } = req.body || {}
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.toggleReaction(req.db, req.user, req.params.id, emoji)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        if (result.invalidEmoji) return fail(res, 422, 'validation', 'Reação fora da lista.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      if (!state.reactions.includes(emoji)) return fail(res, 422, 'validation', 'Reação fora da lista.')
+      const idx = state.community.myReactions.findIndex((x) => x.userId === req.user.id && x.deckId === deck.id && x.emoji === emoji)
+      if (idx >= 0) {
+        state.community.myReactions.splice(idx, 1)
+        deck.reactions[emoji] = Math.max(0, (deck.reactions[emoji] || 0) - 1)
+      } else {
+        state.community.myReactions.push({ userId: req.user.id, deckId: deck.id, emoji })
+        deck.reactions[emoji] = (deck.reactions[emoji] || 0) + 1
+      }
+      return res.json({ reactions: deck.reactions, mine: state.community.myReactions.filter((x) => x.userId === req.user.id && x.deckId === deck.id).map((x) => x.emoji) })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/decks/:id/share', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.shareDeck(req.db, req.user, req.params.id, {
+          channel: req.body?.channel || 'link',
+          auditRepo: req.data.audit
+        })
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const gate = guardianGate(state, req.user, 'publicLink', `O aluno quer enviar o deck "${deck.name}" por link externo.`)
+      if (gate) return fail(res, 403, gate.code, 'Compartilhar link público depende da liberação do seu responsável.', gate)
+      state.community.shares.push({ userId: req.user.id, deckId: deck.id, at: nowIso(), channel: req.body?.channel || 'link' })
+      return res.json({ url: `/d/${deck.publicId}`, preview: { name: deck.name, authorName: withAuthor(state, deck, req.user.id).author?.name, cardCount: state.community.cards.filter((c) => c.deckId === deck.id).length }, requiresLoginToStudy: true })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/decks/:id/report', requireStudent, commentReportLimiter, async (req, res, next) => {
+    try {
+      const { reason, detail } = req.body || {}
+      if (!reason) return fail(res, 422, 'validation', 'Escolha um motivo.')
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.reportDeck(
+          req.db,
+          req.user,
+          req.params.id,
+          { reason, detail },
+          req.data.audit
+        )
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.status(201).json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const report = { id: id('rep'), targetType: 'deck', targetId: deck.id, targetName: deck.name, reason, detail: detail || null, reporter: req.user.id, status: 'aberta', createdAt: nowIso() }
+      state.reports.unshift(report)
+      return res.status(201).json({ report, message: 'Denúncia registrada. Um moderador vai revisar e você recebe o resultado com o motivo.' })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/decks/:id/translate', requireStudent, async (req, res, next) => {
+    try {
+      const lang = req.body?.lang || req.user.locale
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.translateDeck(req.db, req.user, req.params.id, lang)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const cards = state.community.cards.filter((c) => c.deckId === deck.id).map((c) => ({ id: c.id, translated: c.translation?.[lang] || null }))
+      return res.json({ lang, from: deck.lang, cards, cached: true, notice: 'Tradução automática cacheada por (conteúdo, idioma). O conteúdo original permanece no idioma do autor.' })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.get('/community/decks/:id/comments', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.listComments(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const threads = state.community.comments
+        .filter((c) => c.deckId === req.params.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((c) => commentView(c, req.user.id))
+      return res.json({ threads, total: threads.reduce((n, t) => n + 1 + t.replies.length, 0) })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/decks/:id/comments', requireStudent, commentReportLimiter, async (req, res, next) => {
+    try {
+      const { text, parentId } = req.body || {}
+      if (!text?.trim()) return fail(res, 422, 'validation', 'Escreva algo antes de enviar.')
+      if (req.useSupabase && req.db) {
+        const unverified = requireVerified(req.user)
+        if (unverified) return fail(res, 403, unverified.code, 'Confirme seu e-mail para comentar.', unverified)
+        const result = await req.data.community.createComment(req.db, req.user, req.params.id, {
+          text: text.trim(),
+          parentId: parentId || null
+        })
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.status(201).json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const unverified = requireVerified(req.user)
+      if (unverified) return fail(res, 403, unverified.code, 'Confirme e-mail e telefone para comentar.', unverified)
+      const gate = guardianGate(state, req.user, 'community', 'O aluno quer comentar em decks da comunidade.')
+      if (gate) return fail(res, 403, gate.code, 'Comentar depende da liberação do seu responsável.', gate)
+      const entry = { id: id('cm'), authorName: req.user.name, authorId: req.user.id, text: text.trim(), createdAt: nowIso() }
+      if (parentId) {
+        const parent = state.community.comments.find((c) => c.id === parentId && c.deckId === deck.id)
+        if (!parent) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
+        parent.replies.push(entry)
+      } else {
+        state.community.comments.push({ ...entry, deckId: deck.id, replies: [] })
+      }
+      deck.stats.comments += 1
+      return res.status(201).json({ comment: commentView(entry, req.user.id), notifiedAuthor: true })
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/comments/:id/like', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.toggleCommentLike(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const all = state.community.comments.flatMap((c) => [c, ...c.replies])
+      const comment = all.find((c) => c.id === req.params.id)
+      if (!comment) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
+      comment.likes = comment.likes || []
+      const idx = comment.likes.indexOf(req.user.id)
+      if (idx >= 0) comment.likes.splice(idx, 1)
+      else comment.likes.push(req.user.id)
+      return res.json(commentView(comment, req.user.id))
+    } catch (err) {
+      return next(err)
+    }
+  })
+
+  r.post('/community/comments/:id/report', requireStudent, commentReportLimiter, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.reportComment(req.db, req.user, req.params.id, {
+          reason: req.body?.reason || 'Outro',
+          detail: req.body?.detail || null
+        })
+        if (!result) return fail(res, 404, 'not_found', 'Comentário não encontrado.')
+        return res.status(201).json(result)
+      }
+      const state = req.store.state
+      const report = { id: id('rep'), targetType: 'comment', targetId: req.params.id, targetName: 'Comentário', reason: req.body?.reason || 'Outro', detail: null, reporter: req.user.id, status: 'auto_analise', createdAt: nowIso() }
+      state.reports.unshift(report)
+      return res.status(201).json({ report, message: 'Comentário enviado para análise automática.' })
+    } catch (err) {
+      return next(err)
+    }
   })
 
   if (features.studyGroups) {
@@ -365,29 +537,46 @@ export function communityRoutes(features = FEATURES) {
     })
   }
 
-  r.get('/community/authors/:id', requireStudent, (req, res) => {
-    const state = req.store.state
-    const author = state.community.authors.find((a) => a.id === req.params.id)
-    if (!author) return fail(res, 404, 'not_found', 'Autor não encontrado.')
-    const decks = state.community.decks.filter((d) => d.authorId === author.id).map((d) => withAuthor(state, d, req.user.id))
-    res.json({ author: authorPublic(state, author, req.user.id), decks, badgesShown: author.badges.slice(0, 3), badgesTotal: author.badges.length })
+  r.get('/community/authors/:id', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.getAuthorProfile(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Autor não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const author = state.community.authors.find((a) => a.id === req.params.id)
+      if (!author) return fail(res, 404, 'not_found', 'Autor não encontrado.')
+      const decks = state.community.decks.filter((d) => d.authorId === author.id).map((d) => withAuthor(state, d, req.user.id))
+      return res.json({ author: authorPublic(state, author, req.user.id), decks, badgesShown: author.badges.slice(0, 3), badgesTotal: author.badges.length })
+    } catch (err) {
+      return next(err)
+    }
   })
 
-  r.post('/community/authors/:id/follow', requireStudent, (req, res) => {
-    const state = req.store.state
-    const author = state.community.authors.find((a) => a.id === req.params.id)
-    if (!author) return fail(res, 404, 'not_found', 'Autor não encontrado.')
-    const gate = guardianGate(state, req.user, 'community', `O aluno quer seguir ${author.name}.`)
-    if (gate) return fail(res, 403, gate.code, 'Seguir criadores depende da liberação do seu responsável.', gate)
-    const idx = state.community.follows.findIndex((f) => f.userId === req.user.id && f.authorId === author.id)
-    if (idx >= 0) {
-      state.community.follows.splice(idx, 1)
-      author.followers = Math.max(0, author.followers - 1)
-      return res.json({ following: false, followers: author.followers })
+  r.post('/community/authors/:id/follow', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.toggleFollowAuthor(req.db, req.user, req.params.id)
+        return res.json(result)
+      }
+      const state = req.store.state
+      const author = state.community.authors.find((a) => a.id === req.params.id)
+      if (!author) return fail(res, 404, 'not_found', 'Autor não encontrado.')
+      const gate = guardianGate(state, req.user, 'community', `O aluno quer seguir ${author.name}.`)
+      if (gate) return fail(res, 403, gate.code, 'Seguir criadores depende da liberação do seu responsável.', gate)
+      const idx = state.community.follows.findIndex((f) => f.userId === req.user.id && f.authorId === author.id)
+      if (idx >= 0) {
+        state.community.follows.splice(idx, 1)
+        author.followers = Math.max(0, author.followers - 1)
+        return res.json({ following: false, followers: author.followers })
+      }
+      state.community.follows.push({ userId: req.user.id, authorId: author.id })
+      author.followers += 1
+      return res.json({ following: true, followers: author.followers })
+    } catch (err) {
+      return next(err)
     }
-    state.community.follows.push({ userId: req.user.id, authorId: author.id })
-    author.followers += 1
-    res.json({ following: true, followers: author.followers })
   })
 
   if (features.rankings) {
@@ -406,12 +595,21 @@ export function communityRoutes(features = FEATURES) {
     })
   }
 
-  r.post('/community/decks/:id/study-start', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.community.decks.find((d) => d.id === req.params.id)
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const cards = state.community.cards.filter((c) => c.deckId === deck.id)
-    res.json({ cards, deck: withAuthor(state, deck, req.user.id) })
+  r.post('/community/decks/:id/study-start', requireStudent, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.startCommunityStudy(req.db, req.user, req.params.id)
+        if (!result) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        return res.json(result)
+      }
+      const state = req.store.state
+      const deck = state.community.decks.find((d) => d.id === req.params.id)
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const cards = state.community.cards.filter((c) => c.deckId === deck.id)
+      return res.json({ cards, deck: withAuthor(state, deck, req.user.id) })
+    } catch (err) {
+      return next(err)
+    }
   })
 
   return r

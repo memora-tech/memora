@@ -29,7 +29,7 @@ function reviewFor(state, userId, risk) {
   }
 }
 
-export function submitDeckPublication(state, user, deck, { acceptPolicy } = {}) {
+export function submitDeckPublication(state, user, deck, { acceptPolicy, autoApprove = false } = {}) {
   const blocked = publishPreconditions(state, user, { what: `o deck "${deck.name}"`, acceptPolicy })
   if (blocked) return blocked
   const cards = cardsOfDeck(state, deck.id)
@@ -37,6 +37,8 @@ export function submitDeckPublication(state, user, deck, { acceptPolicy } = {}) 
   const version = deck.publication?.status === 'aprovado' ? (deck.publication.version || 1) + 1 : 1
   const limits = PLAN_LIMITS[user.plan]
   const risk = { score: 14 + (cards.some((c) => c.type === 'image' && !c.media?.alt) ? 6 : 0), level: 'baixo', factors: ['Sem duplicidade', 'Idioma consistente', `Completude ${Math.round((cards.filter((c) => c.front && c.back).length / cards.length) * 100)}%`] }
+  const publicId = deck.publication?.publicId || `p-${id('').replace(/^_/, '').slice(0, 8)}`
+  const initialStatus = autoApprove ? 'aprovado' : 'em_triagem'
   const publication = {
     id: id('pub'),
     kind: 'deck',
@@ -45,25 +47,33 @@ export function submitDeckPublication(state, user, deck, { acceptPolicy } = {}) 
     authorName: user.name,
     deckName: deck.name,
     version,
-    status: 'em_triagem',
+    status: initialStatus,
+    hiddenAt: null,
     plan: user.plan,
     submittedAt: nowIso(),
-    decidedAt: null,
-    slaHours: limits.slaHours,
+    decidedAt: autoApprove ? nowIso() : null,
+    slaHours: autoApprove ? 0 : limits.slaHours,
     risk,
     ...reviewFor(state, user.id, risk),
     assignedTo: null,
-    decision: null,
-    publicId: deck.publication?.publicId || null,
+    decision: autoApprove ? { by: 'auto_moderation', at: nowIso() } : null,
+    publicId: autoApprove ? publicId : deck.publication?.publicId || null,
     categoryId: deck.categoryId,
     difficulty: deck.difficulty,
     cardCount: cards.length,
     snapshot: cards.map(({ sched: _s, ...c }) => c)
   }
   state.publications.unshift(publication)
-  deck.publication = { ...(deck.publication || {}), status: version > 1 ? 'aprovado' : 'em_triagem', pendingVersion: version > 1 ? version : null, publicationId: publication.id, version: deck.publication?.version || null }
+  deck.publication = {
+    ...(deck.publication || {}),
+    status: autoApprove || version > 1 ? 'aprovado' : 'em_triagem',
+    pendingVersion: !autoApprove && version > 1 ? version : null,
+    publicationId: publication.id,
+    publicId: autoApprove ? publicId : deck.publication?.publicId || null,
+    version: autoApprove ? version : deck.publication?.version || null
+  }
   appendAudit(state, { actor: user.id, actorRole: 'student', action: 'publication_submitted', target: publication.id, details: { deckId: deck.id, version } })
-  return { publication, sla: { hours: limits.slaHours, dueAt: hoursFromNow(limits.slaHours) } }
+  return { publication, sla: { hours: autoApprove ? 0 : limits.slaHours, dueAt: autoApprove ? nowIso() : hoursFromNow(limits.slaHours) } }
 }
 
 export function submitMaterialPublication(state, user, material, { acceptPolicy } = {}) {

@@ -1,26 +1,79 @@
 import { Router } from 'express'
+import { CONTENT_POLICY_SUMMARY, CONTENT_POLICY_VERSION } from '../data/community.repo.js'
 import { fail, categoryName } from '../lib/helpers.js'
 
 export function publicRoutes() {
   const r = Router()
 
-  r.get('/public/decks/:publicId', (req, res) => {
-    const state = req.store.state
-    const community = state.community.decks.find((d) => d.publicId === req.params.publicId)
-    if (community) {
-      const author = state.community.authors.find((a) => a.id === community.authorId)
-      const cards = state.community.cards.filter((c) => c.deckId === community.id)
-      return res.json({ preview: { id: community.id, kind: 'community', name: community.name, authorName: author?.name, categoryName: categoryName(state, community.categoryId), difficulty: community.difficulty, cardCount: cards.length, sample: cards.slice(0, 3).map((c) => c.front), version: community.version, lang: community.lang }, requiresLogin: true })
+  r.get('/public/decks/:publicId', async (req, res, next) => {
+    try {
+      if (req.useSupabase) {
+        const result = await req.data.community.getPublicDeckPreview(
+          req.serviceClient || req.db || null,
+          req.params.publicId
+        )
+        if (!result) {
+          return fail(res, 404, 'not_found', 'Este link não aponta para um deck público.')
+        }
+        return res.json(result)
+      }
+      const state = req.store.state
+      const community = state.community.decks.find((d) => d.publicId === req.params.publicId)
+      if (community) {
+        const author = state.community.authors.find((a) => a.id === community.authorId)
+        const cards = state.community.cards.filter((c) => c.deckId === community.id)
+        return res.json({
+          preview: {
+            id: community.id,
+            kind: 'community',
+            name: community.name,
+            authorName: author?.name,
+            categoryName: categoryName(state, community.categoryId),
+            difficulty: community.difficulty,
+            cardCount: cards.length,
+            sample: cards.slice(0, 3).map((c) => c.front),
+            version: community.version,
+            lang: community.lang
+          },
+          requiresLogin: true
+        })
+      }
+      const publication = state.publications.find(
+        (p) => p.publicId === req.params.publicId && p.status === 'aprovado' && !p.hiddenAt
+      )
+      if (publication) {
+        return res.json({
+          preview: {
+            id: publication.deckId,
+            kind: 'published',
+            name: publication.deckName,
+            authorName: publication.authorName,
+            categoryName: categoryName(state, publication.categoryId),
+            difficulty: publication.difficulty,
+            cardCount: publication.cardCount,
+            sample: (publication.snapshot || []).slice(0, 3).map((c) => c.front),
+            version: publication.version,
+            lang: 'pt-BR'
+          },
+          requiresLogin: true
+        })
+      }
+      return fail(res, 404, 'not_found', 'Este link não aponta para um deck público.')
+    } catch (err) {
+      return next(err)
     }
-    const publication = state.publications.find((p) => p.publicId === req.params.publicId && p.status === 'aprovado')
-    if (publication) {
-      return res.json({ preview: { id: publication.deckId, kind: 'published', name: publication.deckName, authorName: publication.authorName, categoryName: categoryName(state, publication.categoryId), difficulty: publication.difficulty, cardCount: publication.cardCount, sample: (publication.snapshot || []).slice(0, 3).map((c) => c.front), version: publication.version, lang: 'pt-BR' }, requiresLogin: true })
-    }
-    return fail(res, 404, 'not_found', 'Este link não aponta para um deck público.')
   })
 
   r.get('/public/content-policy', (req, res) => {
-    res.json({ policy: req.store.state.admin.policy })
+    if (req.useSupabase) {
+      return res.json({
+        policy: {
+          version: CONTENT_POLICY_VERSION,
+          summary: CONTENT_POLICY_SUMMARY
+        }
+      })
+    }
+    return res.json({ policy: req.store.state.admin.policy })
   })
 
   return r

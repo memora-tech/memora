@@ -14,6 +14,7 @@ import {
 import { hoursFromNow, id, nowIso } from '../lib/ids.js'
 import { appendAudit } from '../lib/audit.js'
 import { submitDeckPublication } from '../lib/publishing.js'
+import { rateLimit } from '../lib/rateLimit.js'
 
 export const LIMITS = {
   cardsPerDeck: 2000,
@@ -46,6 +47,13 @@ export function deckSummary(state, deck) {
 
 export function deckRoutes(features = FEATURES) {
   const r = Router()
+  const publishLimiter = rateLimit({
+    scope: 'publish',
+    maxHits: 10,
+    windowSeconds: 3600,
+    keyFrom: (req) => req.user?.id || req.ip || 'anon',
+    message: 'Muitas publicações em pouco tempo. Tente novamente mais tarde.'
+  })
 
   r.get('/decks', requireStudent, async (req, res, next) => {
     try {
@@ -369,23 +377,74 @@ export function deckRoutes(features = FEATURES) {
     }
   })
 
-  r.post('/decks/:id/publish', requireStudent, (req, res) => {
-    const state = req.store.state
-    const deck = state.decks.find(
-      (d) => d.id === req.params.id && d.ownerId === req.user.id && !d.deletedAt
-    )
-    if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
-    const result = submitDeckPublication(state, req.user, deck, {
-      acceptPolicy: req.body?.acceptPolicy
-    })
-    if (result.error) {
-      return fail(res, result.error.status, result.error.code, result.error.message, result.error.extra)
+  r.post('/decks/:id/publish', requireStudent, publishLimiter, async (req, res, next) => {
+    try {
+      if (req.useSupabase && req.db) {
+        const result = await req.data.community.publishDeck(
+          req.db,
+          req.user,
+          req.params.id,
+          {
+            acceptPolicy: Boolean(req.body?.acceptPolicy),
+            description: req.body?.description || ''
+          },
+          req.data.audit
+        )
+        if (result.deactivated) {
+          return fail(res, 403, 'account_deactivated', 'Conta desativada: reative para publicar.')
+        }
+        if (result.verificationRequired) {
+          return fail(
+            res,
+            403,
+            'verification_required',
+            'Confirme seu e-mail antes de publicar.',
+            { email: false, phone: true }
+          )
+        }
+        if (result.policyRequired) {
+          return fail(
+            res,
+            428,
+            'policy_acceptance_required',
+            'Aceite a política de conteúdo para publicar (só na primeira vez).',
+            {
+              policyVersion: result.policyVersion,
+              policy: {
+                version: result.policyVersion,
+                summary: result.summary
+              }
+            }
+          )
+        }
+        if (result.notFound) {
+          return fail(res, 404, 'not_found', 'Deck não encontrado.')
+        }
+        if (result.emptyDeck) {
+          return fail(res, 422, 'empty_deck', 'Um deck vazio não pode ser publicado.')
+        }
+        return res.status(201).json(result)
+      }
+
+      const state = req.store.state
+      const deck = state.decks.find(
+        (d) => d.id === req.params.id && d.ownerId === req.user.id && !d.deletedAt
+      )
+      if (!deck) return fail(res, 404, 'not_found', 'Deck não encontrado.')
+      const result = submitDeckPublication(state, req.user, deck, {
+        acceptPolicy: req.body?.acceptPolicy
+      })
+      if (result.error) {
+        return fail(res, result.error.status, result.error.code, result.error.message, result.error.extra)
+      }
+      return res.status(201).json({
+        publication: result.publication,
+        deck: deckSummary(state, deck),
+        sla: result.sla
+      })
+    } catch (err) {
+      return next(err)
     }
-    return res.status(201).json({
-      publication: result.publication,
-      deck: deckSummary(state, deck),
-      sla: result.sla
-    })
   })
 
   if (features.publicationAppeals) {

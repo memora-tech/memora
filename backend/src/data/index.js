@@ -1,4 +1,5 @@
 import { createAuditRepo } from './audit.repo.js'
+import { createCommunityRepo } from './community.repo.js'
 import { createDecksRepo } from './decks.repo.js'
 import { createGenerationRepo } from './generation.repo.js'
 import { createLedgerRepo } from './ledger.repo.js'
@@ -13,6 +14,7 @@ export function createDataLayer({ serviceClient = null } = {}) {
     decks: createDecksRepo(),
     study: createStudyRepo(),
     generation: createGenerationRepo({ serviceClient }),
+    community: createCommunityRepo({ serviceClient }),
     noa: createNoaRepo({ serviceClient }),
     ledger: createLedgerRepo({ serviceClient }),
     audit: createAuditRepo({ serviceClient }),
