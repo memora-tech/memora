@@ -78,6 +78,15 @@ export function resolveGenerationModel(preferred = null) {
   ).trim()
 }
 
+export function resolveChatModel(preferred = null) {
+  return String(
+    preferred ||
+      process.env.GEMINI_MODEL_CHAT ||
+      process.env.GEMINI_MODEL_GENERATION ||
+      DEFAULT_GEMINI_MODEL
+  ).trim()
+}
+
 export function countPdfPages(input) {
   if (!input) return 0
   let raw = ''
@@ -117,7 +126,8 @@ function waitMs(ms) {
 }
 
 export async function callGeminiFlash({
-  parts,
+  parts = null,
+  contents = null,
   systemInstruction = null,
   responseSchema = null,
   model = null,
@@ -151,6 +161,16 @@ export async function callGeminiFlash({
         candidateModel
       )}:generateContent`
 
+      const resolvedContents =
+        Array.isArray(contents) && contents.length > 0
+          ? contents
+          : [
+              {
+                role: 'user',
+                parts: parts || []
+              }
+            ]
+
       const payload = {
         ...(systemInstruction
           ? {
@@ -159,12 +179,7 @@ export async function callGeminiFlash({
               }
             }
           : {}),
-        contents: [
-          {
-            role: 'user',
-            parts
-          }
-        ],
+        contents: resolvedContents,
         generationConfig: {
           temperature,
           maxOutputTokens,
@@ -485,5 +500,52 @@ export async function generateFlashcardsWithGemini(
     generatorModel: response.model,
     pages: detectedPages,
     result
+  }
+}
+
+export async function generateNoaChatReply({
+  message,
+  history = [],
+  context = {},
+  model = null,
+  fetchImpl = globalThis.fetch,
+  retryDelayMs = 250
+}) {
+  const studentName = context.userName ? String(context.userName).split(' ')[0] : 'estudante'
+  const deckContext = context.deckName ? ` O deck em foco é "${context.deckName}".` : ''
+
+  const systemInstruction = `Você é a Nôa, assistente pedagógica do Memora. Converse com ${studentName} em português do Brasil (pt-BR) de forma acolhedora, direta, clara e didática.${deckContext} Ajude a tirar dúvidas sobre matérias, explicar conceitos passo a passo, criar exemplos práticos de memorização e organizar revisões espaçadas. Mantenha respostas objetivas (até 3 parágrafos curtos) e nunca invente citações ou dados pessoais.`
+
+  const recentHistory = Array.isArray(history) ? history.slice(-10) : []
+  const contents = []
+
+  for (const item of recentHistory) {
+    const text = String(item?.content || '').trim()
+    if (!text) continue
+    contents.push({
+      role: item.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text }]
+    })
+  }
+
+  contents.push({
+    role: 'user',
+    parts: [{ text: String(message || '').trim() }]
+  })
+
+  const response = await callGeminiFlash({
+    contents,
+    systemInstruction,
+    model: resolveChatModel(model),
+    temperature: 0.4,
+    maxOutputTokens: 1024,
+    fetchImpl,
+    retryDelayMs
+  })
+
+  return {
+    reply: response.text,
+    model: response.model,
+    tokens: Number(response.usageMetadata?.totalTokenCount ?? 0)
   }
 }

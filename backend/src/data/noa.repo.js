@@ -1,6 +1,9 @@
+import { generateNoaChatReply, isGeminiConfigured } from '../lib/gemini.js'
 import { dayKey, daysFromNow, id, nowIso } from '../lib/ids.js'
+import { isDeterministicFallbackAllowed } from './generation.repo.js'
 import {
   mapCardRow,
+  mapNoaChatMessageRow,
   mapNoaDecisionRow,
   mapNoaSuggestionRow,
   mapNotifications
@@ -153,7 +156,199 @@ export function createNoaRepo({ serviceClient = null } = {}) {
         autonomousUsed: Number(row.autonomous_used ?? 0),
         autonomousLimit: Number(row.autonomous_limit ?? 1),
         chatUsed: Number(row.chat_used ?? 0),
-        chatLimit: Number(row.chat_limit ?? chatLimit)
+        chatLimit: Number(process.env.NOA_DAILY_CHAT_LIMIT || row.chat_limit || chatLimit)
+      }
+    },
+
+    async setChatUsed(userId, today, nextChatUsed, chatLimit) {
+      const admin = getService()
+      const safeUsed = Math.max(0, Number(nextChatUsed))
+      const { data: existing, error: selErr } = await admin
+        .from('noa_daily_budget')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('day_key', today)
+        .maybeSingle()
+      if (selErr) throw selErr
+
+      if (existing) {
+        const { error: updErr } = await admin
+          .from('noa_daily_budget')
+          .update({ chat_used: safeUsed })
+          .eq('user_id', userId)
+          .eq('day_key', today)
+        if (updErr) throw updErr
+      } else {
+        const { error: insErr } = await admin.from('noa_daily_budget').insert({
+          user_id: userId,
+          day_key: today,
+          suggestions_used: 0,
+          suggestions_limit: 5,
+          autonomous_used: 0,
+          autonomous_limit: 1,
+          chat_used: safeUsed,
+          chat_limit: Number(chatLimit || process.env.NOA_DAILY_CHAT_LIMIT || 20)
+        })
+        if (insErr) throw insErr
+      }
+      return safeUsed
+    },
+
+    async listChatMessages(db, user, { limit = 50 } = {}) {
+      const budget = await this.ensureDailyBudget(db, user)
+      const { data: rows, error } = await db
+        .from('noa_chat_messages')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+        .limit(limit)
+      if (error) throw error
+
+      return {
+        messages: (rows || []).map(mapNoaChatMessageRow),
+        budget: {
+          used: budget.chatUsed,
+          limit: budget.chatLimit
+        }
+      }
+    },
+
+    async sendChatMessage(
+      db,
+      user,
+      { message, deckId = null },
+      { aiChatGenerator = null } = {}
+    ) {
+      const budget = await this.ensureDailyBudget(db, user)
+      if (budget.chatUsed >= budget.chatLimit) {
+        return {
+          limitExceeded: {
+            used: budget.chatUsed,
+            limit: budget.chatLimit
+          }
+        }
+      }
+
+      const cleanMessage = String(message || '').trim()
+      const { data: historyRows, error: histErr } = await db
+        .from('noa_chat_messages')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+        .limit(20)
+      if (histErr) throw histErr
+
+      let deckName = null
+      if (deckId) {
+        const { data: deckRow } = await db
+          .from('decks')
+          .select('name')
+          .eq('id', deckId)
+          .eq('owner_id', user.id)
+          .maybeSingle()
+        if (deckRow?.name) deckName = deckRow.name
+      }
+
+      const nextUsed = await this.setChatUsed(
+        user.id,
+        budget.dayKey,
+        budget.chatUsed + 1,
+        budget.chatLimit
+      )
+
+      const history = (historyRows || []).map(mapNoaChatMessageRow)
+
+      let replyText = ''
+      let usedModel = 'gemini-2.5-flash'
+      let usedTokens = 0
+
+      try {
+        if (typeof aiChatGenerator === 'function') {
+          const generated = await aiChatGenerator(
+            { message: cleanMessage, history, deckId, deckName },
+            user
+          )
+          replyText = String(generated?.reply ?? generated?.text ?? generated ?? '').trim()
+          usedModel = generated?.model || 'gemini-2.5-flash'
+          usedTokens = Number(generated?.tokens ?? 0)
+        } else if (isGeminiConfigured()) {
+          const generated = await generateNoaChatReply({
+            message: cleanMessage,
+            history,
+            context: { userName: user.name, deckId, deckName }
+          })
+          replyText = generated.reply
+          usedModel = generated.model
+          usedTokens = generated.tokens
+        } else if (isDeterministicFallbackAllowed()) {
+          const firstName = String(user.name || 'estudante').split(' ')[0]
+          replyText = `Olá, ${firstName}! Sobre "${cleanMessage.slice(
+            0,
+            60
+          )}": recomendo revisar os conceitos-chave em blocos curtos e focar nos cards que você mais errou hoje.`
+          usedModel = 'deterministic-test-fallback'
+          usedTokens = 42
+        } else {
+          const err = new Error('Provedor de IA não configurado para o chat da Nôa.')
+          err.code = 'ai_unavailable'
+          err.status = 503
+          throw err
+        }
+      } catch (err) {
+        await this.setChatUsed(
+          user.id,
+          budget.dayKey,
+          Math.max(0, nextUsed - 1),
+          budget.chatLimit
+        )
+        throw err
+      }
+
+      const userPayload = {
+        id: id('msg'),
+        user_id: user.id,
+        role: 'user',
+        content: cleanMessage,
+        metadata: deckId ? { deckId } : {},
+        created_at: nowIso()
+      }
+      const { data: insUser, error: uErr } = await db
+        .from('noa_chat_messages')
+        .insert(userPayload)
+        .select('*')
+        .single()
+      if (uErr) throw uErr
+
+      const assistantPayload = {
+        id: id('msg'),
+        user_id: user.id,
+        role: 'assistant',
+        content: replyText,
+        metadata: {
+          ...(deckId ? { deckId } : {}),
+          model: usedModel,
+          tokens: usedTokens
+        },
+        created_at: nowIso()
+      }
+      const { data: insAssistant, error: aErr } = await db
+        .from('noa_chat_messages')
+        .insert(assistantPayload)
+        .select('*')
+        .single()
+      if (aErr) throw aErr
+
+      const userMessage = mapNoaChatMessageRow(insUser || userPayload)
+      const assistantMessage = mapNoaChatMessageRow(insAssistant || assistantPayload)
+
+      return {
+        userMessage,
+        assistantMessage,
+        message: assistantMessage,
+        budget: {
+          used: nextUsed,
+          limit: budget.chatLimit
+        }
       }
     },
 

@@ -1,10 +1,21 @@
 import { Router } from 'express'
 import { FEATURES } from '../config/features.js'
+import { isDeterministicFallbackAllowed } from '../data/generation.repo.js'
 import { appendAudit } from '../lib/audit.js'
 import { requireStudent } from '../lib/auth.js'
+import { generateNoaChatReply, isGeminiConfigured } from '../lib/gemini.js'
 import { cardsOfDeck, ensureDay, fail, ownDecksOf } from '../lib/helpers.js'
-import { nowIso } from '../lib/ids.js'
+import { id, nowIso } from '../lib/ids.js'
+import { rateLimit } from '../lib/rateLimit.js'
 import { todaySession } from './study.js'
+
+const noaChatLimiter = rateLimit({
+  scope: 'ai',
+  maxHits: 10,
+  windowSeconds: 60,
+  keyFrom: (req) => req.user?.id || req.ip || 'local',
+  message: 'Muitas mensagens enviadas em pouco tempo. Aguarde um minuto e tente novamente.'
+})
 
 export function noaRoutes(features = FEATURES) {
   const r = Router()
@@ -123,6 +134,158 @@ export function noaRoutes(features = FEATURES) {
         'penalizar reputação, banir ou suspender cupons sem revisão humana',
         'expandir sinais analisados sem aviso'
       ]
+    })
+  })
+
+  r.get('/noa/chat', requireStudent, async (req, res) => {
+    if (req.useSupabase && req.db) {
+      const data = await req.data.noa.listChatMessages(req.db, req.user)
+      return res.json(data)
+    }
+    const state = req.store.state
+    ensureDay(state, req.user.id)
+    if (!state.noa.chatMessages) state.noa.chatMessages = []
+    const b = state.noa.budget[req.user.id] || {}
+    const limit = Number(process.env.NOA_DAILY_CHAT_LIMIT || b.chatLimit || 20)
+    const used = Number(b.chatUsed ?? 0)
+    const messages = state.noa.chatMessages.filter((m) => m.userId === req.user.id)
+    res.json({
+      messages,
+      budget: { used, limit }
+    })
+  })
+
+  r.post('/noa/chat', requireStudent, noaChatLimiter, async (req, res) => {
+    const rawContent = String(req.body?.message ?? req.body?.text ?? '').trim()
+    const deckId = req.body?.deckId || null
+
+    if (!rawContent) {
+      return fail(res, 422, 'validation', 'Digite uma mensagem para a Nôa.')
+    }
+    if (rawContent.length > 2000) {
+      return fail(res, 422, 'validation', 'A mensagem pode ter no máximo 2000 caracteres.')
+    }
+    if (/\bcpf\b|\bsenha\b|\brg\b\s*\d/i.test(rawContent)) {
+      return fail(
+        res,
+        422,
+        'content_filtered',
+        'A mensagem parece conter dados pessoais de terceiros. Remova-os antes de enviar.',
+        { filter: 'pii' }
+      )
+    }
+
+    if (req.useSupabase && req.db) {
+      const sent = await req.data.noa.sendChatMessage(
+        req.db,
+        req.user,
+        { message: rawContent, deckId },
+        { aiChatGenerator: req.aiChatGenerator }
+      )
+      if (sent.limitExceeded) {
+        const lim = sent.limitExceeded
+        return fail(
+          res,
+          429,
+          'daily_limit',
+          `Você atingiu o limite diário de ${lim.limit} mensagens com a Nôa hoje.`,
+          lim
+        )
+      }
+      return res.status(201).json(sent)
+    }
+
+    const state = req.store.state
+    ensureDay(state, req.user.id)
+    if (!state.noa.chatMessages) state.noa.chatMessages = []
+    if (!state.noa.budget[req.user.id]) {
+      state.noa.budget[req.user.id] = {
+        suggestionsUsed: 0,
+        suggestionsLimit: 5,
+        autonomousUsed: 0,
+        autonomousLimit: 1,
+        chatUsed: 0,
+        chatLimit: 20
+      }
+    }
+    const b = state.noa.budget[req.user.id]
+    const limit = Number(process.env.NOA_DAILY_CHAT_LIMIT || b.chatLimit || 20)
+    const used = Number(b.chatUsed ?? 0)
+    if (used >= limit) {
+      return fail(
+        res,
+        429,
+        'daily_limit',
+        `Você atingiu o limite diário de ${limit} mensagens com a Nôa hoje.`,
+        { used, limit }
+      )
+    }
+
+    const history = state.noa.chatMessages.filter((m) => m.userId === req.user.id).slice(-10)
+    let replyText = ''
+    let usedModel = 'gemini-2.5-flash'
+    let usedTokens = 0
+
+    if (typeof req.aiChatGenerator === 'function') {
+      const generated = await req.aiChatGenerator(
+        { message: rawContent, history, deckId },
+        req.user
+      )
+      replyText = String(generated?.reply ?? generated?.text ?? generated ?? '').trim()
+      usedModel = generated?.model || 'gemini-2.5-flash'
+      usedTokens = Number(generated?.tokens ?? 0)
+    } else if (isGeminiConfigured()) {
+      const generated = await generateNoaChatReply({
+        message: rawContent,
+        history,
+        context: { userName: req.user.name, deckId }
+      })
+      replyText = generated.reply
+      usedModel = generated.model
+      usedTokens = generated.tokens
+    } else if (isDeterministicFallbackAllowed()) {
+      const firstName = String(req.user.name || 'estudante').split(' ')[0]
+      replyText = `Olá, ${firstName}! Sobre "${rawContent.slice(
+        0,
+        60
+      )}": recomendo revisar os conceitos-chave em blocos curtos e focar nos cards que você mais errou hoje.`
+      usedModel = 'deterministic-test-fallback'
+      usedTokens = 42
+    } else {
+      return fail(
+        res,
+        503,
+        'ai_unavailable',
+        'Provedor de IA não configurado para o chat da Nôa.'
+      )
+    }
+
+    b.chatUsed = used + 1
+    b.chatLimit = limit
+
+    const userMessage = {
+      id: id('msg'),
+      userId: req.user.id,
+      role: 'user',
+      content: rawContent,
+      metadata: deckId ? { deckId } : {},
+      createdAt: nowIso()
+    }
+    const assistantMessage = {
+      id: id('msg'),
+      userId: req.user.id,
+      role: 'assistant',
+      content: replyText,
+      metadata: { ...(deckId ? { deckId } : {}), model: usedModel, tokens: usedTokens },
+      createdAt: nowIso()
+    }
+    state.noa.chatMessages.push(userMessage, assistantMessage)
+
+    res.status(201).json({
+      userMessage,
+      assistantMessage,
+      message: assistantMessage,
+      budget: { used: b.chatUsed, limit }
     })
   })
 

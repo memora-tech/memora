@@ -352,3 +352,15 @@ export function mapNoaDecisionRow(row) {
     contested: row.contested || null
   }
 }
+
+export function mapNoaChatMessageRow(row) {
+  if (!row) return null
+  return {
+    id: row.id,
+    userId: row.user_id ?? row.userId,
+    role: row.role || 'assistant',
+    content: row.content,
+    metadata: row.metadata || {},
+    createdAt: row.created_at ?? row.createdAt
+  }
+}

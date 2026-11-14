@@ -45,7 +45,22 @@ export const noa = {
     suggestions: 'Sugestões',
     history: 'Histórico',
     catalog: 'O que ela faz',
-    limits: 'Transparência'
+    limits: 'Transparência',
+    chat: 'Conversar'
+  },
+  chat: {
+    title: 'Conversar com a Nôa',
+    lead: 'Tire dúvidas sobre qualquer matéria, peça explicações passo a passo ou exemplos de memorização.',
+    budget: '{used} de {limit} mensagens hoje',
+    inputLabel: 'Pergunte para a Nôa',
+    placeholder: 'Ex.: Explique a diferença entre controle difuso e concentrado',
+    send: 'Enviar mensagem',
+    emptyTitle: 'Comece uma conversa',
+    emptyText: 'A Nôa responde com base nos seus estudos usando o Google Gemini Flash.',
+    limitReached: 'Você atingiu o limite diário de {limit} mensagens com a Nôa hoje. Amanhã sua cota volta.',
+    privacyNote: 'As mensagens enviadas são processadas pelo Google Gemini Flash para responder suas dúvidas de estudo. Não envie dados pessoais de terceiros.',
+    you: 'Você',
+    assistant: 'Nôa'
   },
   suggestions: {
     accept: 'Aceitar',

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import styles from './noa.module.css'
 import { FEATURES } from '../../config/features.js'
-import { Badge, Banner, Button, EmptyState, Icon, Screen, ScreenHeader, Skeleton, TabBar, TabPanel, useToast } from '../../design-system/index.js'
+import { Badge, Banner, Button, EmptyState, Icon, Input, Screen, ScreenHeader, Skeleton, TabBar, TabPanel, useToast } from '../../design-system/index.js'
 import { useT } from '../../i18n/index.js'
 import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
@@ -60,11 +60,18 @@ export function NoaHub() {
   const outlet = useOutletContext() || {}
   useDocumentTitle(t('noa.title'))
   const overview = useAsync(() => studentApi.get('/noa/overview'), [])
+  const chatInfo = useAsync(() => studentApi.get('/noa/chat'), [])
   const [busy, setBusy] = useState(null)
   const [tab, setTab] = useState('suggestions')
+  const [chatInput, setChatInput] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const [chatError, setChatError] = useState(null)
   const requests = useMcpRequests()
   const data = overview.data
-  const refresh = () => overview.run().catch(() => {})
+  const refresh = () => {
+    overview.run().catch(() => {})
+    chatInfo.run().catch(() => {})
+  }
   const name = session.user?.name?.split(' ')[0] || ''
 
   const respond = async (suggestion, accepted) => {
@@ -93,9 +100,107 @@ export function NoaHub() {
     }
   }
 
+  const sendChat = async (e) => {
+    if (e?.preventDefault) e.preventDefault()
+    const clean = chatInput.trim()
+    if (!clean || chatBusy) return
+    setChatBusy(true)
+    setChatError(null)
+    try {
+      await studentApi.post('/noa/chat', {
+        message: clean,
+        deckId: data?.insights?.weakest?.id || null
+      })
+      setChatInput('')
+      await chatInfo.run()
+      overview.run().catch(() => {})
+    } catch (err) {
+      if (err.code === 'daily_limit') {
+        setChatError(
+          t('noa.chat.limitReached', {
+            limit: err.body?.limit ?? chatInfo.data?.budget?.limit ?? 20
+          })
+        )
+        chatInfo.run().catch(() => {})
+      } else {
+        setChatError(err.message)
+      }
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
   const ins = data?.insights
   const budget = data?.budget
   const activeDecisions = data?.decisions.filter((d) => !d.reverted).length || 0
+  const chatMessages = chatInfo.data?.messages || []
+  const chatBudget = chatInfo.data?.budget || {
+    used: budget?.chatUsed ?? 0,
+    limit: budget?.chatLimit ?? 20
+  }
+  const chatLimitReached = chatBudget.used >= chatBudget.limit
+
+  const renderChatBox = (idSuffix = 'main') => (
+    <section className={styles.chatSection} aria-labelledby={`noa-chat-${idSuffix}`}>
+      <div className={styles.chatHead}>
+        <div>
+          <h2 id={`noa-chat-${idSuffix}`} className={styles.sectionTitle}>
+            {t('noa.chat.title')}
+          </h2>
+          <p className={styles.briefingLead}>{t('noa.chat.lead')}</p>
+        </div>
+        <Badge tone={chatLimitReached ? 'warning' : 'brand'}>
+          {t('noa.chat.budget', { used: chatBudget.used, limit: chatBudget.limit })}
+        </Badge>
+      </div>
+
+      {chatError || chatLimitReached ? (
+        <Banner tone={chatLimitReached ? 'warning' : 'danger'} icon="alert">
+          {chatError || t('noa.chat.limitReached', { limit: chatBudget.limit })}
+        </Banner>
+      ) : null}
+
+      {chatMessages.length ? (
+        <ul className={styles.chatMessages} aria-label={t('noa.chat.title')}>
+          {chatMessages.map((msg) => (
+            <li key={msg.id} className={styles.chatBubble} data-role={msg.role}>
+              <span className={styles.chatAuthor}>
+                {msg.role === 'user' ? t('noa.chat.you') : t('noa.chat.assistant')}
+              </span>
+              <span className={styles.itemText}>{msg.content}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState
+          icon="sparkle"
+          title={t('noa.chat.emptyTitle')}
+          text={t('noa.chat.emptyText')}
+        />
+      )}
+
+      <form className={styles.chatForm} onSubmit={sendChat}>
+        <div className={styles.chatInputWrap}>
+          <Input
+            label={t('noa.chat.inputLabel')}
+            placeholder={t('noa.chat.placeholder')}
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            disabled={chatBusy || chatLimitReached}
+          />
+        </div>
+        <Button
+          type="submit"
+          icon="send"
+          loading={chatBusy}
+          disabled={!chatInput.trim() || chatLimitReached}
+        >
+          {t('noa.chat.send')}
+        </Button>
+      </form>
+      <p className={styles.itemMeta}>{t('noa.chat.privacyNote')}</p>
+    </section>
+  )
 
   return (
     <Screen>
@@ -226,6 +331,8 @@ export function NoaHub() {
             </div>
           </section>
 
+          {tab !== 'chat' ? renderChatBox('main') : null}
+
           <TabBar
             idBase="noa"
             label={t('noa.tabsLabel')}
@@ -235,7 +342,8 @@ export function NoaHub() {
               { value: 'suggestions', label: t('noa.tabs.suggestions'), icon: 'message', count: data.suggestions.length },
               { value: 'history', label: t('noa.tabs.history'), icon: 'clock', count: activeDecisions },
               { value: 'catalog', label: t('noa.tabs.catalog'), icon: 'list', count: data.catalog.length },
-              { value: 'limits', label: t('noa.tabs.limits'), icon: 'shield' }
+              { value: 'limits', label: t('noa.tabs.limits'), icon: 'shield' },
+              { value: 'chat', label: t('noa.tabs.chat'), icon: 'sparkle', count: chatMessages.length }
             ]}
           />
 
@@ -335,6 +443,8 @@ export function NoaHub() {
                 <p className={styles.itemMeta}>{t('noa.limits.budget', { suggestions: budget?.suggestionsLimit ?? 0, autonomous: budget?.autonomousLimit ?? 0, version: data.catalogVersion })}</p>
               </div>
             ) : null}
+
+            {tab === 'chat' ? renderChatBox('tab') : null}
           </TabPanel>
         </>
       ) : null}

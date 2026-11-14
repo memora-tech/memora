@@ -1974,6 +1974,279 @@ describe('geração', () => {
       process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
     }
   })
+
+  it('Etapa 7C (Chat da Nôa com Gemini Flash): persiste noa_chat_messages, envia histórico multi-turn e aplica NOA_DAILY_CHAT_LIMIT via service_role', async () => {
+    const userId = '88888888-8888-4888-8888-888888888888'
+    const deckId = 'deck-e7c-1'
+    const now = new Date().toISOString()
+
+    const tables = {
+      profiles: [
+        {
+          id: userId,
+          email: 'diego@exemplo.br',
+          name: 'Diego Rocha',
+          role: 'student',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          birth_date: '1993-11-05',
+          onboarding_done: true,
+          settings: {},
+          notifications: { intensity: 'padrao', reminderTime: '19:00', push: true },
+          public_profile: { level: 1, topic: 'Geral', points: 0, badges: [], cardsGenerated: 0 },
+          deactivated_at: null,
+          created_at: now
+        }
+      ],
+      study_settings: [
+        {
+          user_id: userId,
+          goal: 20,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2026-11-13',
+          streak: 4,
+          study_days: 7,
+          reschedules_week_key: '2026-W46',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          fatigue_detection: true,
+          plan_order: [deckId],
+          plan_adjustments: {},
+          community_answered: {}
+        }
+      ],
+      decks: [
+        {
+          id: deckId,
+          owner_id: userId,
+          name: 'Fisiologia Humana',
+          category_id: 'saude',
+          difficulty: 'medio',
+          scheduled: true,
+          deleted_at: null,
+          created_at: now
+        }
+      ],
+      noa_daily_budget: [],
+      noa_suggestions: [],
+      noa_chat_messages: [],
+      audit_log: []
+    }
+
+    function buildQuery(table, isService = false) {
+      const state = { op: 'select', payload: null, eqs: {}, isNulls: [] }
+      function matches(row) {
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+      function execute() {
+        if (!isService && table === 'noa_daily_budget' && state.op !== 'select') {
+          throw new Error('rls_write_denied_for_authenticated')
+        }
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const items = Array.isArray(state.payload) ? state.payload : [state.payload]
+          const inserted = items.map((item, idx) => ({
+            id: item.id || `${table}_${list.length + idx + 1}`,
+            created_at: item.created_at || new Date().toISOString(),
+            ...item
+          }))
+          list.push(...inserted)
+          return inserted
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload)
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order() {
+          return builder
+        },
+        async limit(n) {
+          return { data: execute().slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeServiceClient = {
+      from(table) {
+        return buildQuery(table, true)
+      },
+      async rpc(fnName) {
+        if (fnName === 'check_rate_limit') {
+          return { data: { allowed: true, remaining: 9 }, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_diego') return { data: { user: { id: userId } }, error: null }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        }
+      },
+      from(table) {
+        return buildQuery(table, false)
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const originalFetch = globalThis.fetch
+    const prevKey = process.env.GEMINI_API_KEY
+    const prevChatModel = process.env.GEMINI_MODEL_CHAT
+    const prevChatLimit = process.env.NOA_DAILY_CHAT_LIMIT
+
+    process.env.GEMINI_API_KEY = 'fake-gemini-key-chat-test'
+    process.env.GEMINI_MODEL_CHAT = 'gemini-2.5-flash'
+    process.env.NOA_DAILY_CHAT_LIMIT = '2'
+    process.env.ENABLE_GEMINI_IN_TEST = 'true'
+    process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'false'
+
+    const capturedPayloads = []
+
+    globalThis.fetch = async (url, options = {}) => {
+      if (String(url).includes('generativelanguage.googleapis.com')) {
+        const parsed = JSON.parse(options.body || '{}')
+        capturedPayloads.push(parsed)
+        const turnCount = parsed.contents?.length || 1
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        text: `Resposta da Nôa (turno ${turnCount}): a bomba de sódio e potássio mantém o potencial de repouso transportando 3 Na+ para fora e 2 K+ para dentro.`
+                      }
+                    ]
+                  }
+                }
+              ],
+              usageMetadata: { totalTokenCount: 120 }
+            }
+          }
+        }
+      }
+      return originalFetch(url, options)
+    }
+
+    try {
+      const initialChat = await request(sbApp).get('/v1/noa/chat').set(auth('jwt_diego'))
+      expect(initialChat.status).toBe(200)
+      expect(initialChat.body.messages).toEqual([])
+      expect(initialChat.body.budget).toEqual({ used: 0, limit: 2 })
+
+      const piiRejected = await request(sbApp)
+        .post('/v1/noa/chat')
+        .set(auth('jwt_diego'))
+        .send({ message: 'Meu CPF 111.222.333-44' })
+      expect(piiRejected.status).toBe(422)
+      expect(piiRejected.body.code).toBe('content_filtered')
+
+      const firstMsg = await request(sbApp)
+        .post('/v1/noa/chat')
+        .set(auth('jwt_diego'))
+        .send({ message: 'Como funciona a bomba de sódio e potássio?', deckId })
+      expect(firstMsg.status).toBe(201)
+      expect(firstMsg.body.userMessage.role).toBe('user')
+      expect(firstMsg.body.assistantMessage.role).toBe('assistant')
+      expect(firstMsg.body.assistantMessage.content).toContain('3 Na+ para fora')
+      expect(firstMsg.body.budget).toEqual({ used: 1, limit: 2 })
+      expect(tables.noa_chat_messages.length).toBe(2)
+
+      const secondMsg = await request(sbApp)
+        .post('/v1/noa/chat')
+        .set(auth('jwt_diego'))
+        .send({ message: 'E ela gasta ATP?', deckId })
+      expect(secondMsg.status).toBe(201)
+      expect(secondMsg.body.budget).toEqual({ used: 2, limit: 2 })
+      expect(tables.noa_chat_messages.length).toBe(4)
+      expect(capturedPayloads[1].contents.length).toBe(3)
+
+      const thirdBlocked = await request(sbApp)
+        .post('/v1/noa/chat')
+        .set(auth('jwt_diego'))
+        .send({ message: 'Mais uma pergunta após o limite' })
+      expect(thirdBlocked.status).toBe(429)
+      expect(thirdBlocked.body.code).toBe('daily_limit')
+      expect(thirdBlocked.body.used).toBe(2)
+      expect(thirdBlocked.body.limit).toBe(2)
+      expect(tables.noa_chat_messages.length).toBe(4)
+
+      const historyRes = await request(sbApp).get('/v1/noa/chat').set(auth('jwt_diego'))
+      expect(historyRes.status).toBe(200)
+      expect(historyRes.body.messages.length).toBe(4)
+      expect(historyRes.body.budget).toEqual({ used: 2, limit: 2 })
+    } finally {
+      globalThis.fetch = originalFetch
+      if (prevKey === undefined) delete process.env.GEMINI_API_KEY
+      else process.env.GEMINI_API_KEY = prevKey
+      if (prevChatModel === undefined) delete process.env.GEMINI_MODEL_CHAT
+      else process.env.GEMINI_MODEL_CHAT = prevChatModel
+      if (prevChatLimit === undefined) delete process.env.NOA_DAILY_CHAT_LIMIT
+      else process.env.NOA_DAILY_CHAT_LIMIT = prevChatLimit
+      process.env.ENABLE_GEMINI_IN_TEST = 'false'
+      process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
+    }
+  })
 })
 
 describe('carteira e cupons (legado com flags ativas)', () => {
