@@ -1,3 +1,8 @@
+import {
+  generateFlashcardsWithGemini,
+  isGeminiConfigured,
+  MAX_PDF_PAGES
+} from '../lib/gemini.js'
 import { PLAN_LIMITS } from '../lib/helpers.js'
 import { dayKey, hoursFromNow, id, nowIso } from '../lib/ids.js'
 import { CATEGORY_MAP } from './decks.repo.js'
@@ -6,6 +11,7 @@ import { createServiceClient } from './supabase.js'
 
 export const TOKENS_PER_PAGE = 267
 export const READ_BUDGET_TOKENS = 200000
+export { MAX_PDF_PAGES }
 
 const DETERMINISTIC_SAMPLES = {
   file: {
@@ -157,6 +163,41 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
     return safeUsed
   }
 
+  async function refundAndMarkFailed(db, user, jobRow, today, auditRepo, details = {}) {
+    if (!jobRow.quota_refunded && jobRow.source !== 'empty') {
+      const currentUsage = await getUsageRow(db, user.id, today)
+      const refundedUsed = Math.max(0, Number(currentUsage?.used ?? 1) - 1)
+      await setDailyUsed(user.id, today, refundedUsed)
+    }
+
+    const failedPatch = {
+      status: 'falhou',
+      attempt: Number(details.attempts || jobRow.attempt || 1),
+      failed_at: nowIso(),
+      quota_refunded: true
+    }
+    const { data: updated, error: updErr } = await db
+      .from('generation_jobs')
+      .update(failedPatch)
+      .eq('id', jobRow.id)
+      .eq('user_id', user.id)
+      .select('*')
+      .maybeSingle()
+    if (updErr) throw updErr
+
+    if (auditRepo) {
+      await auditRepo.append({
+        actor: 'system',
+        actorRole: 'pipeline',
+        action: 'generation_failed',
+        target: jobRow.id,
+        details: { attempts: failedPatch.attempt, quotaRefunded: true, ...details }
+      })
+    }
+
+    return mapGenerationJobRow(updated || { ...jobRow, ...failedPatch })
+  }
+
   async function executeJobNow(
     db,
     user,
@@ -164,55 +205,49 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
     { aiGenerator = null, auditRepo = null, scenario = null, today }
   ) {
     if (scenario === 'fail') {
-      const currentUsage = await getUsageRow(db, user.id, today)
-      const refundedUsed = Math.max(0, Number(currentUsage?.used ?? 1) - 1)
-      await setDailyUsed(user.id, today, refundedUsed)
-
-      const failedPatch = {
-        status: 'falhou',
-        attempt: 3,
-        failed_at: nowIso(),
-        quota_refunded: true
-      }
-      const { data: updated, error: updErr } = await db
-        .from('generation_jobs')
-        .update(failedPatch)
-        .eq('id', jobRow.id)
-        .eq('user_id', user.id)
-        .select('*')
-        .maybeSingle()
-      if (updErr) throw updErr
-
-      if (auditRepo) {
-        await auditRepo.append({
-          actor: 'system',
-          actorRole: 'pipeline',
-          action: 'generation_failed',
-          target: jobRow.id,
-          details: { attempts: 3, quotaRefunded: true }
-        })
-      }
-      return mapGenerationJobRow(updated || { ...jobRow, ...failedPatch })
+      return refundAndMarkFailed(db, user, jobRow, today, auditRepo, { attempts: 3 })
     }
 
-    if (typeof aiGenerator === 'function') {
-      const generated = await aiGenerator(mapGenerationJobRow(jobRow), user)
-      const readyPatch = {
-        status: 'pronto',
-        ready_at: nowIso(),
-        reader_model: generated.readerModel || 'gemini-2.5-flash',
-        generator_model: generated.generatorModel || 'gemini-2.5-flash',
-        result: generated.result || generated
+    const jobForGenerator = {
+      ...mapGenerationJobRow(jobRow),
+      textContent: jobRow.text_content ?? jobRow.textContent ?? null
+    }
+
+    if (typeof aiGenerator === 'function' || isGeminiConfigured()) {
+      try {
+        const generated =
+          typeof aiGenerator === 'function'
+            ? await aiGenerator(jobForGenerator, user)
+            : await generateFlashcardsWithGemini(jobForGenerator, user, {
+                serviceClient: getService()
+              })
+        const readyPatch = {
+          status: 'pronto',
+          ready_at: nowIso(),
+          pages: Number(generated.pages || jobRow.pages || 1),
+          reader_model: generated.readerModel || 'gemini-2.5-flash',
+          generator_model: generated.generatorModel || 'gemini-2.5-flash',
+          result: generated.result || generated
+        }
+        const { data: updated, error: updErr } = await db
+          .from('generation_jobs')
+          .update(readyPatch)
+          .eq('id', jobRow.id)
+          .eq('user_id', user.id)
+          .select('*')
+          .maybeSingle()
+        if (updErr) throw updErr
+        return mapGenerationJobRow(updated || { ...jobRow, ...readyPatch })
+      } catch (err) {
+        const failedJob = await refundAndMarkFailed(db, user, jobRow, today, auditRepo, {
+          attempts: 3,
+          errorCode: err?.code || 'ai_error'
+        })
+        if (err?.code === 'pdf_page_limit' || err?.code === 'forbidden') {
+          throw err
+        }
+        return failedJob
       }
-      const { data: updated, error: updErr } = await db
-        .from('generation_jobs')
-        .update(readyPatch)
-        .eq('id', jobRow.id)
-        .eq('user_id', user.id)
-        .select('*')
-        .maybeSingle()
-      if (updErr) throw updErr
-      return mapGenerationJobRow(updated || { ...jobRow, ...readyPatch })
     }
 
     if (isDeterministicFallbackAllowed()) {
@@ -238,20 +273,10 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
       return mapGenerationJobRow(updated || { ...jobRow, ...readyPatch })
     }
 
-    const currentUsage = await getUsageRow(db, user.id, today)
-    const refundedUsed = Math.max(0, Number(currentUsage?.used ?? 1) - 1)
-    await setDailyUsed(user.id, today, refundedUsed)
-
-    const unconfiguredPatch = {
-      status: 'falhou',
-      failed_at: nowIso(),
-      quota_refunded: true
-    }
-    await db
-      .from('generation_jobs')
-      .update(unconfiguredPatch)
-      .eq('id', jobRow.id)
-      .eq('user_id', user.id)
+    await refundAndMarkFailed(db, user, jobRow, today, auditRepo, {
+      attempts: 1,
+      errorCode: 'ai_unavailable'
+    })
 
     const err = new Error('Provedor de IA não configurado para geração de cards.')
     err.code = 'ai_unavailable'
@@ -274,6 +299,7 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
         tokens: limits.generationTokens,
         readBudgetTokens: READ_BUDGET_TOKENS,
         maxPages: Math.round(READ_BUDGET_TOKENS / TOKENS_PER_PAGE),
+        maxPdfPages: MAX_PDF_PAGES,
         priority: limits.queuePriority,
         dayKey: today
       }
@@ -289,7 +315,12 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
       return (data || []).map(mapGenerationJobRow)
     },
 
-    async getJob(db, user, jobId) {
+    async getJob(
+      db,
+      user,
+      jobId,
+      { aiGenerator = null, auditRepo = null, executePending = true } = {}
+    ) {
       const { data, error } = await db
         .from('generation_jobs')
         .select('*')
@@ -297,6 +328,22 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
         .eq('user_id', user.id)
         .maybeSingle()
       if (error) throw error
+      if (!data) return null
+
+      if (
+        executePending &&
+        ['na_fila', 'lendo', 'gerando', 'criado'].includes(data.status)
+      ) {
+        const tz = user.timezone || 'America/Sao_Paulo'
+        const today = dayKey(nowIso(), tz)
+        return executeJobNow(db, user, data, {
+          aiGenerator,
+          auditRepo,
+          scenario: null,
+          today
+        })
+      }
+
       return mapGenerationJobRow(data)
     },
 
@@ -321,14 +368,48 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
       }
 
       const {
-        source = 'file',
+        source: rawSource = 'file',
         documentName,
         sizeTokens = 8000,
+        pages: explicitPages = null,
         text = '',
         scenario = null,
         legibility = 'ok',
-        storagePath = null
+        storagePath = null,
+        defer = null
       } = body
+
+      const source = rawSource === 'topic' ? 'text' : rawSource
+
+      if (storagePath && !String(storagePath).startsWith(`${user.id}/`)) {
+        const forbiddenErr = new Error('Caminho de arquivo inválido para este usuário.')
+        forbiddenErr.status = 403
+        forbiddenErr.code = 'forbidden'
+        throw forbiddenErr
+      }
+
+      const pages =
+        Number(explicitPages) >= 1
+          ? Math.round(Number(explicitPages))
+          : Math.max(1, Math.round(Number(sizeTokens) / TOKENS_PER_PAGE))
+
+      const overBudget =
+        Number(sizeTokens) > READ_BUDGET_TOKENS
+          ? {
+              sizeTokens: Number(sizeTokens),
+              budgetTokens: READ_BUDGET_TOKENS,
+              pages,
+              maxPages: Math.round(READ_BUDGET_TOKENS / TOKENS_PER_PAGE)
+            }
+          : null
+
+      if (!overBudget && source === 'file' && Number(explicitPages) > MAX_PDF_PAGES) {
+        const limitErr = new Error('O limite para PDF é de até 50 páginas.')
+        limitErr.status = 422
+        limitErr.code = 'pdf_page_limit'
+        limitErr.details = { pages: Number(explicitPages), maxPages: MAX_PDF_PAGES }
+        throw limitErr
+      }
 
       const quota = await this.getQuota(db, user)
       if (quota.used >= quota.limit) {
@@ -343,37 +424,36 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
         }
       }
 
-      const pages = Math.max(1, Math.round(Number(sizeTokens) / TOKENS_PER_PAGE))
       const resolvedDocName =
         documentName ||
-        (source === 'text'
-          ? 'Texto colado'
-          : source === 'camera'
-            ? 'Foto da câmera'
-            : source === 'anki'
-              ? 'baralho.apkg'
-              : 'documento.pdf')
+        (rawSource === 'topic'
+          ? `Tema: ${String(text || '').trim().slice(0, 60) || 'Estudo'}`
+          : source === 'text'
+            ? 'Texto colado'
+            : source === 'camera'
+              ? 'Foto da câmera'
+              : source === 'anki'
+                ? 'baralho.apkg'
+                : 'documento.pdf')
 
       let nextUsed = quota.used
       if (source !== 'empty') {
         nextUsed = await setDailyUsed(user.id, quota.dayKey, quota.used + 1)
       }
 
-      const overBudget =
-        Number(sizeTokens) > READ_BUDGET_TOKENS
-          ? {
-              sizeTokens: Number(sizeTokens),
-              budgetTokens: READ_BUDGET_TOKENS,
-              pages,
-              maxPages: Math.round(READ_BUDGET_TOKENS / TOKENS_PER_PAGE)
-            }
-          : null
+      const shouldDeferToPolling =
+        !overBudget &&
+        source !== 'empty' &&
+        scenario !== 'fail' &&
+        (defer === true || (defer !== false && isGeminiConfigured()))
 
       const initialStatus = overBudget
         ? 'acima_do_orcamento'
         : source === 'empty'
           ? 'pronto'
-          : 'gerando'
+          : shouldDeferToPolling
+            ? 'na_fila'
+            : 'gerando'
 
       const emptyResult =
         source === 'empty'
@@ -421,7 +501,7 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
         .single()
       if (insErr) throw insErr
 
-      if (overBudget || source === 'empty') {
+      if (overBudget || source === 'empty' || shouldDeferToPolling) {
         return {
           job: mapGenerationJobRow(inserted),
           quota: { used: nextUsed, limit: quota.limit }
@@ -583,8 +663,15 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
       )
     },
 
-    async approveJob(db, user, jobId, body = {}, auditRepo = null) {
-      const { data: jobRow, error } = await db
+    async approveJob(
+      db,
+      user,
+      jobId,
+      body = {},
+      auditRepo = null,
+      { aiGenerator = null } = {}
+    ) {
+      let { data: jobRow, error } = await db
         .from('generation_jobs')
         .select('*')
         .eq('id', jobId)
@@ -592,6 +679,25 @@ export function createGenerationRepo({ serviceClient = null } = {}) {
         .maybeSingle()
       if (error) throw error
       if (!jobRow) return { notFound: true }
+
+      if (['na_fila', 'lendo', 'gerando', 'criado'].includes(jobRow.status)) {
+        const tz = user.timezone || 'America/Sao_Paulo'
+        const today = dayKey(nowIso(), tz)
+        await executeJobNow(db, user, jobRow, {
+          aiGenerator,
+          auditRepo,
+          scenario: null,
+          today
+        })
+        const { data: refreshed } = await db
+          .from('generation_jobs')
+          .select('*')
+          .eq('id', jobId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (refreshed) jobRow = refreshed
+      }
+
       if (jobRow.status !== 'pronto') return { invalidState: true }
       const existingDeckId = jobRow.approved_deck_id ?? jobRow.approvedDeckId
       if (existingDeckId) {

@@ -3,6 +3,7 @@ import request from 'supertest'
 import { createApp } from '../src/app.js'
 import { createStore } from '../src/store.js'
 import { verifyChain } from '../src/lib/audit.js'
+import { countPdfPages } from '../src/lib/gemini.js'
 
 const ALL_FEATURES = {
   proto: true,
@@ -41,6 +42,7 @@ const auth = (token) => ({ Authorization: `Bearer ${token}` })
 
 beforeEach(() => {
   process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
+  process.env.ENABLE_GEMINI_IN_TEST = 'false'
   store = createStore()
   app = createApp(store)
 })
@@ -1596,6 +1598,381 @@ describe('geração', () => {
     const reactivateRes = await request(sbApp).post('/v1/privacy/reactivate').set(auth('jwt_bruno'))
     expect(reactivateRes.status).toBe(200)
     expect(tables.profiles[0].deactivated_at).toBeNull()
+  })
+
+  it('Etapa 7B (Gemini Flash): executa job no polling com retry de 503, suporta texto, tema digitado e PDF via Storage (até 50 páginas)', async () => {
+    function buildFakePdfBuffer(numPages) {
+      let body = '%PDF-1.4\n'
+      for (let i = 1; i <= numPages; i += 1) {
+        body += `${i} 0 obj\n<< /Type /Page /Parent 999 0 R >>\nendobj\n`
+      }
+      body += `999 0 obj\n<< /Type /Pages /Count ${numPages} >>\nendobj\n%%EOF`
+      return Buffer.from(body, 'latin1')
+    }
+
+    expect(countPdfPages(buildFakePdfBuffer(5))).toBe(5)
+    expect(countPdfPages(buildFakePdfBuffer(51))).toBe(51)
+
+    const userId = '77777777-7777-4777-8777-777777777777'
+    const now = new Date().toISOString()
+
+    const storageBuckets = {
+      'generation-uploads': {
+        [`${userId}/apostila_5p.pdf`]: buildFakePdfBuffer(5),
+        [`${userId}/apostila_55p.pdf`]: buildFakePdfBuffer(55)
+      }
+    }
+
+    const tables = {
+      profiles: [
+        {
+          id: userId,
+          email: 'clara@exemplo.br',
+          name: 'Clara Mendes',
+          role: 'student',
+          plan: 'free',
+          locale: 'pt-BR',
+          timezone: 'America/Sao_Paulo',
+          birth_date: '1997-08-21',
+          onboarding_done: true,
+          settings: {},
+          notifications: { intensity: 'padrao', reminderTime: '19:00', push: true },
+          public_profile: { level: 1, topic: 'Geral', points: 0, badges: [], cardsGenerated: 0 },
+          deactivated_at: null,
+          created_at: now
+        }
+      ],
+      study_settings: [
+        {
+          user_id: userId,
+          goal: 20,
+          goal_suggested: 20,
+          done_today: 0,
+          day_key: '2026-11-13',
+          streak: 1,
+          study_days: 2,
+          reschedules_week_key: '2026-W46',
+          reschedules_used: 0,
+          reschedules_limit: 3,
+          fatigue_detection: true,
+          plan_order: [],
+          plan_adjustments: {},
+          community_answered: {}
+        }
+      ],
+      decks: [],
+      cards: [],
+      generation_daily_usage: [],
+      generation_jobs: [],
+      neuron_ledger: [],
+      audit_log: []
+    }
+
+    function buildQuery(table, isService = false) {
+      const state = { op: 'select', payload: null, eqs: {}, isNulls: [] }
+      function matches(row) {
+        for (const [k, v] of Object.entries(state.eqs)) {
+          if (row[k] !== v) return false
+        }
+        for (const col of state.isNulls) {
+          if (row[col] !== null && row[col] !== undefined) return false
+        }
+        return true
+      }
+      function execute() {
+        if (!isService && table === 'generation_daily_usage' && state.op !== 'select') {
+          throw new Error('rls_write_denied_for_authenticated')
+        }
+        const list = tables[table] || []
+        if (state.op === 'insert') {
+          const items = Array.isArray(state.payload) ? state.payload : [state.payload]
+          const inserted = items.map((item, idx) => ({
+            id: item.id || `${table}_${list.length + idx + 1}`,
+            created_at: item.created_at || new Date().toISOString(),
+            ...item
+          }))
+          list.push(...inserted)
+          return inserted
+        }
+        if (state.op === 'update') {
+          const updated = []
+          for (const row of list) {
+            if (matches(row)) {
+              Object.assign(row, state.payload)
+              updated.push({ ...row })
+            }
+          }
+          return updated
+        }
+        return list.filter(matches).map((r) => ({ ...r }))
+      }
+      const builder = {
+        select() {
+          return builder
+        },
+        insert(payload) {
+          state.op = 'insert'
+          state.payload = payload
+          return builder
+        },
+        update(payload) {
+          state.op = 'update'
+          state.payload = payload
+          return builder
+        },
+        eq(col, val) {
+          state.eqs[col] = val
+          return builder
+        },
+        is(col, val) {
+          if (val === null) state.isNulls.push(col)
+          return builder
+        },
+        order() {
+          return builder
+        },
+        async limit(n) {
+          return { data: execute().slice(0, n), error: null }
+        },
+        async single() {
+          const rows = execute()
+          return { data: rows[0] || null, error: rows[0] ? null : new Error('not_found') }
+        },
+        async maybeSingle() {
+          const rows = execute()
+          return { data: rows[0] || null, error: null }
+        },
+        then(resolve) {
+          return Promise.resolve({ data: execute(), error: null }).then(resolve)
+        }
+      }
+      return builder
+    }
+
+    const fakeServiceClient = {
+      from(table) {
+        return buildQuery(table, true)
+      },
+      storage: {
+        from(bucketName) {
+          return {
+            async download(filePath) {
+              const fileBuf = storageBuckets[bucketName]?.[filePath]
+              if (!fileBuf) return { data: null, error: new Error('not_found') }
+              return { data: fileBuf, error: null }
+            }
+          }
+        }
+      },
+      async rpc(fnName, params) {
+        if (fnName === 'check_rate_limit') {
+          return { data: { allowed: true, remaining: 9 }, error: null }
+        }
+        if (fnName === 'append_audit_entry') {
+          const entry = {
+            seq: tables.audit_log.length + 1,
+            actor_id: params.p_actor_id,
+            actor_role: params.p_actor_role,
+            action: params.p_action,
+            target: params.p_target,
+            details: params.p_details || {}
+          }
+          tables.audit_log.push(entry)
+          return { data: entry, error: null }
+        }
+        return { data: null, error: null }
+      }
+    }
+
+    const fakeCreateUserClient = () => ({
+      auth: {
+        async getUser(token) {
+          if (token === 'jwt_clara') return { data: { user: { id: userId } }, error: null }
+          return { data: { user: null }, error: new Error('invalid_jwt') }
+        }
+      },
+      from(table) {
+        return buildQuery(table, false)
+      }
+    })
+
+    const sbApp = createApp(store, {
+      useSupabase: true,
+      serviceClient: fakeServiceClient,
+      createUserClient: fakeCreateUserClient
+    })
+
+    const originalFetch = globalThis.fetch
+    const prevKey = process.env.GEMINI_API_KEY
+    const prevModel = process.env.GEMINI_MODEL_GENERATION
+    process.env.GEMINI_API_KEY = 'fake-gemini-key-for-unit-test'
+    process.env.GEMINI_MODEL_GENERATION = 'gemini-3.6-flash'
+    process.env.ENABLE_GEMINI_IN_TEST = 'true'
+    process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'false'
+
+    let geminiCalls = 0
+    const capturedRequests = []
+
+    globalThis.fetch = async (url, options = {}) => {
+      if (String(url).includes('generativelanguage.googleapis.com')) {
+        geminiCalls += 1
+        const parsedBody = JSON.parse(options.body || '{}')
+        capturedRequests.push({ url: String(url), body: parsedBody })
+
+        if (geminiCalls === 1) {
+          return {
+            ok: false,
+            status: 503,
+            async json() {
+              return {
+                error: {
+                  code: 503,
+                  message: 'This model is currently experiencing high demand.',
+                  status: 'UNAVAILABLE'
+                }
+              }
+            }
+          }
+        }
+
+        const responseJson = {
+          suggested: {
+            name: 'Controle de Constitucionalidade',
+            categoryId: 'direito',
+            tags: ['constitucional', 'stf'],
+            difficulty: 'medio'
+          },
+          cards: [
+            {
+              front: 'O que caracteriza o controle concentrado de constitucionalidade?',
+              back: 'É exercido originariamente pelo STF por meio de ações diretas (ADI, ADC, ADPF, ADO).',
+              page: 1,
+              excerpt: 'Controle concentrado no STF',
+              uncertain: false
+            },
+            {
+              front: 'Qual o efeito regra da decisão em ADI?',
+              back: 'Efeito erga omnes, vinculante e ex tunc (retroativo), salvo modulação.',
+              page: 2,
+              excerpt: 'Efeitos erga omnes e ex tunc',
+              uncertain: false
+            }
+          ]
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              candidates: [
+                {
+                  content: {
+                    parts: [{ text: JSON.stringify(responseJson) }]
+                  }
+                }
+              ],
+              usageMetadata: { promptTokenCount: 300, candidatesTokenCount: 150, totalTokenCount: 450 }
+            }
+          }
+        }
+      }
+      return originalFetch(url, options)
+    }
+
+    try {
+      const topicPost = await request(sbApp)
+        .post('/v1/generation/jobs')
+        .set(auth('jwt_clara'))
+        .send({ source: 'topic', text: 'Controle de Constitucionalidade no STF' })
+      expect(topicPost.status).toBe(201)
+      expect(topicPost.body.job.status).toBe('na_fila')
+      expect(topicPost.body.job.documentName).toContain('Tema:')
+      expect(geminiCalls).toBe(0)
+
+      const topicPoll = await request(sbApp)
+        .get(`/v1/generation/jobs/${topicPost.body.job.id}`)
+        .set(auth('jwt_clara'))
+      expect(topicPoll.status).toBe(200)
+      expect(topicPoll.body.job.status).toBe('pronto')
+      expect(geminiCalls).toBe(2)
+      expect(topicPoll.body.job.result.suggested.categoryId).toBe('direito')
+      expect(topicPoll.body.job.result.cards.length).toBe(2)
+
+      const pdfPost = await request(sbApp)
+        .post('/v1/generation/jobs')
+        .set(auth('jwt_clara'))
+        .send({
+          source: 'file',
+          documentName: 'apostila_5p.pdf',
+          storagePath: `${userId}/apostila_5p.pdf`,
+          pages: 5,
+          sizeTokens: 2000
+        })
+      expect(pdfPost.status).toBe(201)
+      expect(pdfPost.body.job.status).toBe('na_fila')
+
+      const pdfPoll = await request(sbApp)
+        .get(`/v1/generation/jobs/${pdfPost.body.job.id}`)
+        .set(auth('jwt_clara'))
+      expect(pdfPoll.status).toBe(200)
+      expect(pdfPoll.body.job.status).toBe('pronto')
+      expect(pdfPoll.body.job.pages).toBe(5)
+      const lastGeminiReq = capturedRequests[capturedRequests.length - 1]
+      expect(lastGeminiReq.body.contents[0].parts[0].inlineData.mimeType).toBe('application/pdf')
+
+      const reject55Direct = await request(sbApp)
+        .post('/v1/generation/jobs')
+        .set(auth('jwt_clara'))
+        .send({
+          source: 'file',
+          documentName: 'grande_55p.pdf',
+          pages: 55,
+          sizeTokens: 15000
+        })
+      expect(reject55Direct.status).toBe(422)
+      expect(reject55Direct.body.code).toBe('pdf_page_limit')
+      expect(tables.generation_daily_usage[0].used).toBe(2)
+
+      const rejectOtherUserStorage = await request(sbApp)
+        .post('/v1/generation/jobs')
+        .set(auth('jwt_clara'))
+        .send({
+          source: 'file',
+          documentName: 'outro.pdf',
+          storagePath: '99999999-9999-4999-8999-999999999999/outro.pdf',
+          pages: 3
+        })
+      expect(rejectOtherUserStorage.status).toBe(403)
+      expect(rejectOtherUserStorage.body.code).toBe('forbidden')
+
+      const hidden55Post = await request(sbApp)
+        .post('/v1/generation/jobs')
+        .set(auth('jwt_clara'))
+        .send({
+          source: 'file',
+          documentName: 'apostila_55p.pdf',
+          storagePath: `${userId}/apostila_55p.pdf`,
+          sizeTokens: 5000
+        })
+      expect(hidden55Post.status).toBe(201)
+      expect(tables.generation_daily_usage[0].used).toBe(3)
+
+      const hidden55Poll = await request(sbApp)
+        .get(`/v1/generation/jobs/${hidden55Post.body.job.id}`)
+        .set(auth('jwt_clara'))
+      expect(hidden55Poll.status).toBe(422)
+      expect(hidden55Poll.body.code).toBe('pdf_page_limit')
+      expect(tables.generation_daily_usage[0].used).toBe(2)
+    } finally {
+      globalThis.fetch = originalFetch
+      if (prevKey === undefined) delete process.env.GEMINI_API_KEY
+      else process.env.GEMINI_API_KEY = prevKey
+      if (prevModel === undefined) delete process.env.GEMINI_MODEL_GENERATION
+      else process.env.GEMINI_MODEL_GENERATION = prevModel
+      process.env.ENABLE_GEMINI_IN_TEST = 'false'
+      process.env.ALLOW_DETERMINISTIC_AI_FALLBACK = 'true'
+    }
   })
 })
 

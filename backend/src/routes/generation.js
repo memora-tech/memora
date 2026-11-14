@@ -2,11 +2,13 @@ import { Router } from 'express'
 import {
   buildDeterministicResult,
   isDeterministicFallbackAllowed,
+  MAX_PDF_PAGES,
   READ_BUDGET_TOKENS,
   TOKENS_PER_PAGE
 } from '../data/generation.repo.js'
 import { appendAudit } from '../lib/audit.js'
 import { requireStudent } from '../lib/auth.js'
+import { generateFlashcardsWithGemini, isGeminiConfigured } from '../lib/gemini.js'
 import { ensureDay, fail, PLAN_LIMITS } from '../lib/helpers.js'
 import { hoursFromNow, id, nowIso } from '../lib/ids.js'
 import { rateLimit } from '../lib/rateLimit.js'
@@ -41,14 +43,39 @@ async function executeStoreJob(state, job, req) {
     return job
   }
 
-  if (typeof req.aiGenerator === 'function') {
-    const generated = await req.aiGenerator(job, req.user)
-    job.status = 'pronto'
-    job.readyAt = nowIso()
-    job.readerModel = generated.readerModel || 'gemini-2.5-flash'
-    job.generatorModel = generated.generatorModel || 'gemini-2.5-flash'
-    job.result = generated.result || generated
-    return job
+  if (typeof req.aiGenerator === 'function' || isGeminiConfigured()) {
+    try {
+      const generated =
+        typeof req.aiGenerator === 'function'
+          ? await req.aiGenerator(job, req.user)
+          : await generateFlashcardsWithGemini(job, req.user)
+      job.status = 'pronto'
+      job.readyAt = nowIso()
+      job.pages = Number(generated.pages || job.pages || 1)
+      job.readerModel = generated.readerModel || 'gemini-2.5-flash'
+      job.generatorModel = generated.generatorModel || 'gemini-2.5-flash'
+      job.result = generated.result || generated
+      return job
+    } catch (err) {
+      job.status = 'falhou'
+      job.failedAt = nowIso()
+      const quota = state.generation.quota[job.userId]
+      if (quota && !job.quotaRefunded) {
+        quota.used = Math.max(0, quota.used - 1)
+        job.quotaRefunded = true
+      }
+      appendAudit(state, {
+        actor: 'system',
+        actorRole: 'pipeline',
+        action: 'generation_failed',
+        target: job.id,
+        details: { attempts: job.attempt, quotaRefunded: true, errorCode: err?.code || 'ai_error' }
+      })
+      if (err?.code === 'pdf_page_limit' || err?.code === 'forbidden') {
+        throw err
+      }
+      return job
+    }
   }
 
   if (isDeterministicFallbackAllowed()) {
@@ -96,6 +123,7 @@ export function generationRoutes() {
       tokens: limits.generationTokens,
       readBudgetTokens: READ_BUDGET_TOKENS,
       maxPages: Math.round(READ_BUDGET_TOKENS / TOKENS_PER_PAGE),
+      maxPdfPages: MAX_PDF_PAGES,
       priority: limits.queuePriority
     })
   })
@@ -111,19 +139,29 @@ export function generationRoutes() {
 
   r.post('/generation/jobs', requireStudent, aiGenerationLimiter, async (req, res) => {
     const {
-      source = 'file',
+      source: rawSource = 'file',
       documentName,
       sizeTokens = 8000,
+      pages: explicitPages = null,
       text = '',
       scenario = null,
       legibility = 'ok',
-      storagePath = null
+      storagePath = null,
+      defer = null
     } = req.body || {}
-    if (!['camera', 'file', 'text', 'anki', 'empty'].includes(source)) {
+    if (!['camera', 'file', 'text', 'topic', 'anki', 'empty'].includes(rawSource)) {
       return fail(res, 422, 'validation', 'Origem inválida.')
     }
+    const source = rawSource === 'topic' ? 'text' : rawSource
     if (source === 'text' && !text.trim()) {
-      return fail(res, 422, 'validation', 'Cole um texto para gerar os cards.')
+      return fail(
+        res,
+        422,
+        'validation',
+        rawSource === 'topic'
+          ? 'Digite um tema para gerar os cards.'
+          : 'Cole um texto para gerar os cards.'
+      )
     }
     if (/\bcpf\b|\bsenha\b|\brg\b\s*\d/i.test(text)) {
       return fail(
@@ -134,25 +172,55 @@ export function generationRoutes() {
         { filter: 'pii' }
       )
     }
+    if (
+      source === 'file' &&
+      Number(sizeTokens) <= READ_BUDGET_TOKENS &&
+      Number(explicitPages) > MAX_PDF_PAGES
+    ) {
+      return fail(
+        res,
+        422,
+        'pdf_page_limit',
+        'O limite para PDF é de até 50 páginas.',
+        { pages: Number(explicitPages), maxPages: MAX_PDF_PAGES }
+      )
+    }
 
     const key = req.get('Idempotency-Key')
 
     if (req.useSupabase && req.db) {
-      const created = await req.data.generation.createJob(
-        req.db,
-        req.user,
-        { source, documentName, sizeTokens, text, scenario, legibility, storagePath },
-        key,
-        { aiGenerator: req.aiGenerator, auditRepo: req.data.audit }
-      )
-      if (created.duplicate) {
-        return res.json({ job: created.job, duplicate: true })
+      try {
+        const created = await req.data.generation.createJob(
+          req.db,
+          req.user,
+          {
+            source: rawSource,
+            documentName,
+            sizeTokens,
+            pages: explicitPages,
+            text,
+            scenario,
+            legibility,
+            storagePath,
+            defer
+          },
+          key,
+          { aiGenerator: req.aiGenerator, auditRepo: req.data.audit }
+        )
+        if (created.duplicate) {
+          return res.json({ job: created.job, duplicate: true })
+        }
+        if (created.quotaExceeded) {
+          const q = created.quotaExceeded
+          return fail(res, 429, 'daily_limit', `Você já criou ${q.limit} decks hoje.`, q)
+        }
+        return res.status(201).json(created)
+      } catch (err) {
+        if (err?.code === 'pdf_page_limit' || err?.code === 'forbidden') {
+          return fail(res, err.status || 422, err.code, err.message, err.details || null)
+        }
+        throw err
       }
-      if (created.quotaExceeded) {
-        const q = created.quotaExceeded
-        return fail(res, 429, 'daily_limit', `Você já criou ${q.limit} decks hoje.`, q)
-      }
-      return res.status(201).json(created)
     }
 
     const state = req.store.state
@@ -182,6 +250,11 @@ export function generationRoutes() {
       )
     }
 
+    const computedPages =
+      Number(explicitPages) >= 1
+        ? Math.round(Number(explicitPages))
+        : Math.max(1, Math.round(sizeTokens / TOKENS_PER_PAGE))
+
     const job = {
       id: id('job'),
       userId: req.user.id,
@@ -189,21 +262,25 @@ export function generationRoutes() {
       source,
       documentName:
         documentName ||
-        (source === 'text'
-          ? 'Texto colado'
-          : source === 'camera'
-            ? 'Foto da câmera'
-            : source === 'anki'
-              ? 'baralho.apkg'
-              : 'documento.pdf'),
+        (rawSource === 'topic'
+          ? `Tema: ${text.trim().slice(0, 60) || 'Estudo'}`
+          : source === 'text'
+            ? 'Texto colado'
+            : source === 'camera'
+              ? 'Foto da câmera'
+              : source === 'anki'
+                ? 'baralho.apkg'
+                : 'documento.pdf'),
+      storagePath,
       textPreview: text.slice(0, 200),
+      textContent: text || null,
       sizeTokens,
-      pages: Math.max(1, Math.round(sizeTokens / TOKENS_PER_PAGE)),
+      pages: computedPages,
       scenario,
       legibility,
       idempotencyKey: key || null,
       createdAt: nowIso(),
-      status: 'criado',
+      status: 'na_fila',
       queuePosition: null,
       attempt: 0,
       tokensBudget: limits.generationTokens,
@@ -246,20 +323,42 @@ export function generationRoutes() {
         .json({ job, quota: { used: quota.used, limit: limits.decksPerDay } })
     }
 
+    const shouldDeferToPolling =
+      scenario !== 'fail' && (defer === true || (defer !== false && isGeminiConfigured()))
+    if (shouldDeferToPolling) {
+      return res
+        .status(201)
+        .json({ job, quota: { used: quota.used, limit: limits.decksPerDay } })
+    }
+
     await executeStoreJob(state, job, req)
     res.status(201).json({ job, quota: { used: quota.used, limit: limits.decksPerDay } })
   })
 
   r.get('/generation/jobs/:id', requireStudent, async (req, res) => {
     if (req.useSupabase && req.db) {
-      const job = await req.data.generation.getJob(req.db, req.user, req.params.id)
-      if (!job) return fail(res, 404, 'not_found', 'Geração não encontrada.')
-      return res.json({ job })
+      try {
+        const job = await req.data.generation.getJob(req.db, req.user, req.params.id, {
+          aiGenerator: req.aiGenerator,
+          auditRepo: req.data.audit,
+          executePending: true
+        })
+        if (!job) return fail(res, 404, 'not_found', 'Geração não encontrada.')
+        return res.json({ job })
+      } catch (err) {
+        if (err?.code === 'pdf_page_limit' || err?.code === 'forbidden') {
+          return fail(res, err.status || 422, err.code, err.message, err.details || null)
+        }
+        throw err
+      }
     }
     const job = req.store.state.generation.jobs.find(
       (j) => j.id === req.params.id && j.userId === req.user.id
     )
     if (!job) return fail(res, 404, 'not_found', 'Geração não encontrada.')
+    if (['na_fila', 'lendo', 'gerando', 'criado'].includes(job.status)) {
+      await executeStoreJob(req.store.state, job, req)
+    }
     res.json({ job })
   })
 
@@ -411,7 +510,8 @@ export function generationRoutes() {
         req.user,
         req.params.id,
         req.body || {},
-        req.data.audit
+        req.data.audit,
+        { aiGenerator: req.aiGenerator }
       )
       if (approved.notFound) return fail(res, 404, 'not_found', 'Geração não encontrada.')
       if (approved.invalidState) {
@@ -428,6 +528,9 @@ export function generationRoutes() {
       (j) => j.id === req.params.id && j.userId === req.user.id
     )
     if (!job) return fail(res, 404, 'not_found', 'Geração não encontrada.')
+    if (['na_fila', 'lendo', 'gerando', 'criado'].includes(job.status)) {
+      await executeStoreJob(state, job, req)
+    }
     if (job.status !== 'pronto') {
       return fail(res, 409, 'invalid_state', 'A geração ainda não terminou.')
     }
@@ -474,8 +577,8 @@ export function generationRoutes() {
           document: job.documentName,
           page: null,
           excerpt: null,
-          model: 'claude-sonnet-5',
-          promptVersion: 'v1.3'
+          model: 'gemini-2.5-flash',
+          promptVersion: 'v2.0-gemini-flash'
         },
         uncertain: Boolean(c.uncertain) && !c.edited,
         sched: {

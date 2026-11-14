@@ -13,10 +13,12 @@ import { useAsync } from '../../hooks/useAsync.js'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle.js'
 import { studentApi } from '../../lib/api.js'
 import { storage } from '../../lib/storage.js'
+import { getSupabaseBrowserClient, isSupabaseClientConfigured } from '../../lib/supabase.js'
 import { uid } from '../../lib/ids.js'
 import { ACTIVE_JOB_KEY } from '../../areas/student/LayoutBanners.jsx'
 
 const TOKENS_PER_BYTE = 0.25
+const MAX_PDF_PAGES = 50
 const IDEMPOTENCY_TTL_MS = 24 * 3600 * 1000
 
 function idempotencyKeyFor(fingerprint) {
@@ -25,6 +27,28 @@ function idempotencyKeyFor(fingerprint) {
   if (!map[fingerprint]) map[fingerprint] = { key: uid('idem'), expiresAt: now + IDEMPOTENCY_TTL_MS }
   storage.set('memora.idem', map)
   return map[fingerprint].key
+}
+
+async function countClientPdfPages(file) {
+  if (!file || typeof file.arrayBuffer !== 'function') return null
+  try {
+    const buffer = await file.arrayBuffer()
+    const raw = new TextDecoder('latin1').decode(new Uint8Array(buffer))
+    const pageMatches = raw.match(/\/Type\s*\/Page(?!s)\b/g)
+    if (pageMatches && pageMatches.length > 0) return pageMatches.length
+
+    let declaredMax = 0
+    const pagesNodeRegex = /\/Type\s*\/Pages\b[\s\S]{0,600}?\/Count\s+(\d+)/g
+    let match = pagesNodeRegex.exec(raw)
+    while (match !== null) {
+      const val = Number(match[1])
+      if (Number.isFinite(val) && val > declaredMax) declaredMax = val
+      match = pagesNodeRegex.exec(raw)
+    }
+    return declaredMax > 0 ? declaredMax : null
+  } catch {
+    return null
+  }
 }
 
 function McpDecksPanel() {
@@ -84,6 +108,7 @@ export function CreatePage() {
   const navigate = useNavigate()
   const [mode, setMode] = useState(null)
   const [text, setText] = useState('')
+  const [topic, setTopic] = useState('')
   const [emptyName, setEmptyName] = useState('')
   const [clipboard, setClipboard] = useState(false)
   const [limit, setLimit] = useState(null)
@@ -108,33 +133,116 @@ export function CreatePage() {
       .catch(() => {})
   }, [])
 
-  const submit = async ({ source, documentName, sizeTokens, textValue, fingerprint }) => {
+  const submit = async ({
+    source,
+    documentName,
+    sizeTokens,
+    pages = null,
+    storagePath = null,
+    textValue,
+    fingerprint
+  }) => {
     setBusy(true)
     setError(null)
     const scenario = proto.consumeNextGeneration()
-    const body = { source, documentName, sizeTokens: scenario === 'big' ? 400000 : sizeTokens, text: textValue, scenario: scenario === 'fail' ? 'fail' : null }
+    const body = {
+      source,
+      documentName,
+      sizeTokens: scenario === 'big' ? 400000 : sizeTokens,
+      ...(pages ? { pages } : {}),
+      ...(storagePath ? { storagePath } : {}),
+      text: textValue,
+      scenario: scenario === 'fail' ? 'fail' : null
+    }
     try {
-      const data = await studentApi.request('/generation/jobs', { method: 'POST', body, headers: { 'Idempotency-Key': idempotencyKeyFor(fingerprint) } })
+      const data = await studentApi.request('/generation/jobs', {
+        method: 'POST',
+        body,
+        headers: { 'Idempotency-Key': idempotencyKeyFor(fingerprint) }
+      })
       if (data.duplicate) toast.show({ message: t('create.progress.duplicate'), icon: 'info' })
       storage.set(ACTIVE_JOB_KEY, data.job.id)
       navigate(`/app/criar/${data.job.id}`)
     } catch (err) {
       if (err.code === 'daily_limit') setLimit(err.body)
       else if (err.code === 'content_filtered') setError(t('create.filtered', { message: err.message }))
-      else setError(err.message)
+      else if (err.code === 'pdf_page_limit') {
+        setError(
+          t('create.pdfPageLimit', {
+            pages: err.body?.pages ?? MAX_PDF_PAGES + 1,
+            maxPages: err.body?.maxPages ?? MAX_PDF_PAGES
+          })
+        )
+      } else setError(err.message)
     } finally {
       setBusy(false)
     }
   }
 
-  const submitText = () => submit({ source: 'text', documentName: t('create.textDocumentName'), sizeTokens: Math.max(500, Math.round(text.length * TOKENS_PER_BYTE)), textValue: text, fingerprint: `text:${text.length}:${text.slice(0, 40)}` })
+  const submitText = () =>
+    submit({
+      source: 'text',
+      documentName: t('create.textDocumentName'),
+      sizeTokens: Math.max(500, Math.round(text.length * TOKENS_PER_BYTE)),
+      textValue: text,
+      fingerprint: `text:${text.length}:${text.slice(0, 40)}`
+    })
 
-  const onFile = (source) => (e) => {
+  const submitTopic = () => {
+    const cleanTopic = topic.trim()
+    if (!cleanTopic) return
+    submit({
+      source: 'topic',
+      documentName: t('create.topicDocumentPrefix', { topic: cleanTopic }),
+      sizeTokens: Math.max(500, Math.round(cleanTopic.length * TOKENS_PER_BYTE)),
+      textValue: cleanTopic,
+      fingerprint: `topic:${cleanTopic.toLowerCase()}`
+    })
+  }
+
+  const onFile = (source) => async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')
+    let detectedPages = null
+    let uploadedStoragePath = null
+
+    if (source === 'file' && isPdf) {
+      detectedPages = await countClientPdfPages(file)
+      if (detectedPages && detectedPages > MAX_PDF_PAGES) {
+        setError(t('create.pdfPageLimit', { pages: detectedPages, maxPages: MAX_PDF_PAGES }))
+        return
+      }
+      if (isSupabaseClientConfigured() && session.user?.id) {
+        const sb = getSupabaseBrowserClient()
+        if (sb) {
+          const safeName = String(file.name || 'documento.pdf').replace(/[^a-zA-Z0-9._-]/g, '_')
+          const candidatePath = `${session.user.id}/${Date.now()}_${safeName}`
+          const { error: upErr } = await sb.storage
+            .from('generation-uploads')
+            .upload(candidatePath, file, {
+              contentType: file.type || 'application/pdf',
+              upsert: true
+            })
+          if (!upErr) {
+            uploadedStoragePath = candidatePath
+          }
+        }
+      }
+    }
+
     const sizeTokens = Math.max(500, Math.round(file.size * TOKENS_PER_BYTE))
-    submit({ source, documentName: file.name, sizeTokens, textValue: '', fingerprint: `${source}:${file.name}:${file.size}` })
+    submit({
+      source,
+      documentName: file.name,
+      sizeTokens,
+      pages: detectedPages,
+      storagePath: uploadedStoragePath,
+      textValue: '',
+      fingerprint: `${source}:${file.name}:${file.size}`
+    })
   }
 
   const createEmpty = async () => {
@@ -158,6 +266,10 @@ export function CreatePage() {
   return (
     <Screen>
       <ScreenHeader eyebrow={t('create.eyebrow')} title={t('create.title')} lead={t('create.lead')} actions={q ? <Chip tone={q.used >= q.limit ? 'warning' : 'neutral'}>{t('create.quota', { used: q.used, limit: q.limit })}</Chip> : null} />
+
+      <Banner tone="neutral" icon="shield">
+        {t('create.privacyNotice')}
+      </Banner>
 
       {error ? (
         <Banner
@@ -208,6 +320,16 @@ export function CreatePage() {
               ) : null}
             </span>
             <span className={styles.originHelp}>{t('create.origin.textHelp')}</span>
+          </span>
+          <Icon name="chevronRight" />
+        </Surface>
+        <Surface interactive className={styles.origin} onClick={() => setMode('topic')} disabled={busy}>
+          <span className={styles.originIcon}>
+            <Icon name="sparkles" size={24} />
+          </span>
+          <span className={styles.originBody}>
+            <span className={styles.originTitle}>{t('create.origin.topic')}</span>
+            <span className={styles.originHelp}>{t('create.origin.topicHelp')}</span>
           </span>
           <Icon name="chevronRight" />
         </Surface>
@@ -263,6 +385,30 @@ export function CreatePage() {
         }
       >
         <Textarea label={t('create.textLabel')} placeholder={t('create.textPlaceholder')} value={text} onChange={(e) => setText(e.target.value)} rows={8} autoFocus />
+        <p className={styles.meta} style={{ marginTop: 12 }}>
+          {t('create.privacyNotice')}
+        </p>
+      </Sheet>
+
+      <Sheet
+        open={mode === 'topic'}
+        onClose={() => setMode(null)}
+        title={t('create.origin.topic')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setMode(null)}>
+              {t('common.actions.cancel')}
+            </Button>
+            <Button loading={busy} disabled={!topic.trim()} onClick={submitTopic}>
+              {t('create.topicSubmit')}
+            </Button>
+          </>
+        }
+      >
+        <Input label={t('create.topicLabel')} placeholder={t('create.topicPlaceholder')} value={topic} onChange={(e) => setTopic(e.target.value)} autoFocus />
+        <p className={styles.meta} style={{ marginTop: 12 }}>
+          {t('create.privacyNotice')}
+        </p>
       </Sheet>
 
       <Sheet
